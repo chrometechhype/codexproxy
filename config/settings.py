@@ -294,6 +294,25 @@ class Settings(BaseSettings):
         default="", validation_alias="ANTHROPIC_AUTH_TOKEN"
     )
 
+    # ==================== Responses API ====================
+    # Comma-separated list of additional model ids to advertise on
+    # ``GET /v1/models`` alongside the default ``MODEL``. Useful when the
+    # configured MODEL is a single alias but you want Codex CLI to pick from
+    # several providers.
+    responses_extra_model_ids: str = Field(
+        default="", validation_alias="CODEX_PROXY_EXTRA_MODEL_IDS"
+    )
+    # Set to ``false`` to disable prompt caching for Responses requests.
+    responses_prompt_caching: bool = Field(
+        default=True, validation_alias="CODEX_PROXY_PROMPT_CACHING"
+    )
+    # When true, route the Responses request to the ``previous_response_id``
+    # chain when the model / provider support it. Default is ``true`` (best
+    # effort, no-op for providers that don't implement conversation threads).
+    responses_use_previous_response_id: bool = Field(
+        default=True, validation_alias="CODEX_PROXY_USE_PREVIOUS_RESPONSE_ID"
+    )
+
     # Handle empty strings for optional string fields
     @field_validator(
         "telegram_bot_token",
