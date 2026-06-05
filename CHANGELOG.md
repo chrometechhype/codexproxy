@@ -4,6 +4,33 @@ All notable changes to `codexproxy` are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] - 2026-06-05
+
+First stable release of `codexproxy`. The fork of `free-claude-code` is
+feature-complete for the OpenAI Responses API: the Codex CLI runs end-to-end
+through the proxy, all 17 providers are reachable, and the legacy
+`/v1/messages` Anthropic surface is preserved as a deprecation shim.
+
+### Added
+- `POST /v1/responses`, `GET /v1/responses/{id}`, and
+  `GET /v1/responses/{id}/input_items` routes backed by an in-memory
+  `ResponseStore` (1-hour TTL).
+- `AnthropicToResponsesAdapter` that consumes provider SSE from the existing
+  transport stack and re-emits standard Responses events.
+- `cdx-codex` launcher that writes `~/.codex/config.toml` with
+  `wire_api = "responses"` and execs the Codex CLI through the proxy.
+- New settings: `CODEX_PROXY_EXTRA_MODEL_IDS`, `CODEX_PROXY_PROMPT_CACHING`,
+  `CODEX_PROXY_USE_PREVIOUS_RESPONSE_ID`.
+- `docs/responses-migration.md` migration log.
+
+### Changed
+- Rebrand complete: package is `codexproxy`, scripts are `cdx-server`,
+  `cdx-init`, `cdx-codex`, user config dir is `~/.codexproxy/`, auth env var
+  is `CODEX_PROXY_AUTH_TOKEN`.
+- All 17 provider backends reused unchanged (Anthropic Messages transports
+  reach the Responses adapter without provider-specific plumbing).
+- README rewritten around `codex exec` and the OpenAI Responses API.
+
 ## [0.7.0] - 2026-06-05
 
 ### Added
