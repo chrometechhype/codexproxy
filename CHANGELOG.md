@@ -4,6 +4,61 @@ All notable changes to `codexproxy` are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-06-05
+
+### Added
+- `cdx-codex` writes `~/.codex/config.toml` with `wire_api = "responses"`,
+  `openai_base_url = http://127.0.0.1:PORT/v1`, and the configured auth token
+  as `OPENAI_API_KEY`, then execs the `codex` binary. The writer is idempotent
+  and preserves any pre-existing user settings.
+- New settings: `CODEX_PROXY_EXTRA_MODEL_IDS`, `CODEX_PROXY_PROMPT_CACHING`,
+  `CODEX_PROXY_USE_PREVIOUS_RESPONSE_ID` for Responses API configuration.
+- `docs/responses-migration.md` documenting the migration to the OpenAI
+  Responses API.
+- Tests for the config writer, the launcher, and the proxy-unreachable error
+  path (`tests/cli/test_cdx_codex.py`, 14 tests).
+- Live smoke tests for the Codex CLI integration
+  (`smoke/product/test_cdx_codex_cli_product_live.py`, 2 tests).
+
+### Changed
+- `scripts/install.sh` and `scripts/install.ps1` now install the Codex CLI
+  (`npm i -g @openai/codex`) and the `codexproxy` package via
+  `uv tool install`. Final message references `cdx-server` and `cdx-codex`.
+- `README.md` rewritten around the Codex CLI and the OpenAI Responses API;
+  per-tier `MODEL_OPUS` / `MODEL_SONNET` / `MODEL_HAIKU` references removed.
+- `tests/scripts/test_installers.py` rewritten to assert Codex CLI install and
+  `codexproxy` package spec (12 tests).
+
+## [0.6.0] - 2026-06-05
+
+### Added
+- `tests/test_cdx_codex_smoke_target.py` registering the `cdx_codex_cli` smoke
+  target alongside the existing CLI product smokes.
+
+## [0.5.0] - 2026-06-05
+
+### Fixed
+- `AnthropicToResponsesAdapter.finalize()` no longer returns an empty list on
+  the second invocation. Idempotency is now driven by a `_completed_emitted`
+  flag; the first call always flushes unclosed blocks and emits the terminal
+  event.
+
+### Added
+- 14 unit tests in `tests/cli/test_cdx_codex.py` covering the config writer,
+  the launcher, and the proxy-unreachable error path.
+
+## [0.4.0] - 2026-06-05
+
+### Added
+- `cdx-codex` launcher that writes `~/.codex/config.toml` and execs the
+  Codex CLI through the proxy.
+
+## [0.3.0] - 2026-06-05
+
+### Added
+- New `CODEX_PROXY_*` settings: `CODEX_PROXY_EXTRA_MODEL_IDS`,
+  `CODEX_PROXY_PROMPT_CACHING`, `CODEX_PROXY_USE_PREVIOUS_RESPONSE_ID`.
+
 ## [0.2.0] - 2026-06-05
 
 ### Added
