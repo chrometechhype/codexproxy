@@ -1,0 +1,19 @@
+# Auto-normalize line endings so cross-platform diffs stay clean
+* text=auto eol=lf
+
+# Shell scripts always LF
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Windows scripts always CRLF
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Python files normalized to LF; tests and lockfiles too
+*.py text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
