@@ -28,10 +28,11 @@ DEFAULT_TARGETS = frozenset(
     }
 )
 SIDE_EFFECT_TARGETS = frozenset({"discord", "telegram", "voice"})
-OPT_IN_TARGETS = frozenset({"nvidia_nim_cli", "openrouter_free_cli"})
+OPT_IN_TARGETS = frozenset({"cdx_codex_cli", "nvidia_nim_cli", "openrouter_free_cli"})
 ALL_TARGETS = DEFAULT_TARGETS | SIDE_EFFECT_TARGETS | OPT_IN_TARGETS
 TARGET_ALIASES = {
     "contract": "api",
+    "cdx_codex": "cdx_codex_cli",
     "nim_cli": "nvidia_nim_cli",
     "openrouter_cli": "openrouter_free_cli",
     "openrouter_free": "openrouter_free_cli",
@@ -97,6 +98,7 @@ TARGET_REQUIRED_ENV: dict[str, tuple[str, ...]] = {
         "OPENROUTER_API_KEY",
         "FCC_SMOKE_CLAUDE_BIN or claude on PATH",
     ),
+    "cdx_codex_cli": ("codex on PATH",),
     "telegram": (
         "TELEGRAM_BOT_TOKEN",
         "ALLOWED_TELEGRAM_USER_ID or FCC_SMOKE_TELEGRAM_CHAT_ID",

@@ -42,3 +42,11 @@ def cmd_fcc_init() -> list[str]:
 
 def cmd_free_claude_code_serve() -> list[str]:
     return [python_exe(), "-c", "from cli.entrypoints import serve; serve()"]
+
+
+def cmd_cdx_codex() -> list[str]:
+    return [
+        python_exe(),
+        "-c",
+        "from cli.entrypoints import launch_codex; launch_codex()",
+    ]

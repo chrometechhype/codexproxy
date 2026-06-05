@@ -283,7 +283,7 @@ def _write_codex_config(
         f'name = "codexproxy"\n'
         f'base_url = "{_toml_quote(base_url)}"\n'
         f'api_key = "{_toml_quote(api_key)}"\n'
-        "wire_api = \"responses\"\n"
+        'wire_api = "responses"\n'
         "requires_openai_auth = true\n"
         "\n"
         "[model_providers.codexproxy.env]\n"
