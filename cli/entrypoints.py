@@ -241,15 +241,88 @@ def _preflight_proxy(proxy_root_url: str) -> str | None:
     return None
 
 
+def _codex_config_path() -> Path:
+    """Return the path of the Codex CLI ``config.toml`` for the current user."""
+    return Path.home() / ".codex" / "config.toml"
+
+
+def _codex_config_path_alt() -> Path:
+    """Return the alt Codex config path (Windows ``%CODEX_HOME%/config.toml``)."""
+    custom = os.environ.get("CODEX_HOME")
+    if custom:
+        return Path(custom) / "config.toml"
+    return _codex_config_path()
+
+
+def _toml_quote(value: str) -> str:
+    """Render a string for embedding inside a double-quoted TOML literal."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _write_codex_config(
+    config_path: Path, *, base_url: str, api_key: str, model: str
+) -> None:
+    """Write or update ``config.toml`` so Codex CLI targets this proxy.
+
+    The Codex CLI reads ``openai_base_url`` and ``api_key`` from the
+    ``[model_providers.codexproxy]`` table; the top-level ``model_provider`` and
+    ``model`` keys select that provider. We never delete pre-existing user
+    settings — we only update the ``codexproxy`` block.
+    """
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = ""
+    if config_path.is_file():
+        try:
+            existing = config_path.read_text(encoding="utf-8")
+        except OSError:
+            existing = ""
+
+    block = (
+        "\n# >>> codexproxy (managed by cdx-codex) >>>\n"
+        "[model_providers.codexproxy]\n"
+        f'name = "codexproxy"\n'
+        f'base_url = "{_toml_quote(base_url)}"\n'
+        f'api_key = "{_toml_quote(api_key)}"\n'
+        'wire_api = "responses"\n'
+        "requires_openai_auth = true\n"
+        "\n"
+        "[model_providers.codexproxy.env]\n"
+        f'OPENAI_API_KEY = "{_toml_quote(api_key)}"\n'
+        "\n"
+        f'model = "{_toml_quote(model)}"\n'
+        f'model_provider = "codexproxy"\n'
+        f'approval_policy = "never"\n'
+        f'sandbox_mode = "workspace-write"\n'
+        "# <<< codexproxy <<<\n"
+    )
+    if "# >>> codexproxy (managed by cdx-codex) >>>" in existing:
+        head, _, _ = existing.partition("# >>> codexproxy (managed by cdx-codex) >>>")
+        merged = head.rstrip() + "\n" + block
+    else:
+        merged = existing.rstrip() + "\n" + block if existing.strip() else block
+
+    config_path.write_text(merged, encoding="utf-8")
+
+
+def _default_codex_model(settings: Settings) -> str:
+    """Return the model id Codex CLI should default to.
+
+    Codex CLI requires the model to look like an OpenAI Responses id (e.g.
+    ``gpt-4o``). We expose the bare model id (without the ``provider/``
+    prefix) so the proxy's ``/v1/models`` and the configured ``MODEL`` line up.
+    """
+    raw = settings.model.strip()
+    if "/" in raw:
+        return raw.split("/", 1)[1] or "gpt-4o"
+    return raw or "gpt-4o"
+
+
 def launch_codex(argv: Sequence[str] | None = None) -> None:
     """Launch the OpenAI Codex CLI through this proxy.
 
-    Phase 1 stub: this entry point exists so the package script is wired up
-    and the user can validate the runtime, but the actual Codex Responses
-    integration (writing ``~/.codex/config.toml``, parsing ``codex app-server``
-    events, etc.) lands in Phase 6. For now we exec the ``codex`` binary with
-    ``OPENAI_BASE_URL`` pointed at the proxy and a stub warning that the
-    integration is not yet feature-complete.
+    Writes ``~/.codex/config.toml`` with ``wire_api = "responses"``,
+    ``openai_base_url`` pointing at the running proxy, and the configured
+    auth token as ``OPENAI_API_KEY``, then exec's the ``codex`` binary.
     """
 
     settings = get_settings()
@@ -262,10 +335,15 @@ def launch_codex(argv: Sequence[str] | None = None) -> None:
         print("Start it in another terminal with: cdx-server", file=sys.stderr)
         raise SystemExit(1)
 
-    print(
-        "Note: Codex Responses API integration lands in Phase 3+.",
-        file=sys.stderr,
+    token = settings.effective_auth_token or "freecc"
+    config_path = _codex_config_path_alt()
+    _write_codex_config(
+        config_path,
+        base_url=f"{proxy_root_url.rstrip('/')}/v1",
+        api_key=token,
+        model=_default_codex_model(settings),
     )
+    print(f"Codex CLI config written to {config_path}", file=sys.stderr)
 
     args = list(sys.argv[1:] if argv is None else argv)
     codex_command = shutil.which(settings.codex_cli_bin)
