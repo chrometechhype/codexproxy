@@ -16,12 +16,13 @@ $RepoGitUrl = "git+https://github.com/Alishahryar1/free-claude-code.git"
 $PythonVersion = "3.14.0"
 $MinUvVersion = "0.11.0"
 $UvInstallUrl = "https://astral.sh/uv/install.ps1"
+$PackageName = "codexproxy"
 
 function Show-Usage {
     @"
 Usage: install.ps1 [options]
 
-Installs Claude Code if missing, installs or updates uv, Python 3.14.0, and Free Claude Code.
+Installs Codex CLI if missing, installs or updates uv, Python 3.14.0, and CodexProxy.
 
 Options:
   -VoiceNim              Install NVIDIA NIM voice transcription support.
@@ -282,14 +283,14 @@ function Update-ExistingUv {
     throw "uv $MinUvVersion or newer is required; found uv $version. The existing uv install source was not detected. Upgrade uv manually with the package manager that installed it, then rerun this installer."
 }
 
-function Install-ClaudeIfMissing {
-    if (Get-Command claude -ErrorAction SilentlyContinue) {
-        Write-Host "Claude Code already found on PATH; skipping install."
+function Install-CodexIfMissing {
+    if (Get-Command codex -ErrorAction SilentlyContinue) {
+        Write-Host "Codex CLI already found on PATH; skipping install."
         return
     }
 
     Assert-CommandAvailable "npm"
-    Invoke-InstallCommand -FilePath "npm" -Arguments @("install", "-g", "@anthropic-ai/claude-code")
+    Invoke-InstallCommand -FilePath "npm" -Arguments @("install", "-g", "@openai/codex")
 }
 
 function Install-OrUpdateUv {
@@ -325,21 +326,21 @@ function Get-PackageSpec {
     }
 
     if ($includeNim -and $includeLocal) {
-        return "free-claude-code[voice,voice_local] @ $RepoGitUrl"
+        return "$PackageName[voice,voice_local] @ $RepoGitUrl"
     }
 
     if ($includeNim) {
-        return "free-claude-code[voice] @ $RepoGitUrl"
+        return "$PackageName[voice] @ $RepoGitUrl"
     }
 
     if ($includeLocal) {
-        return "free-claude-code[voice_local] @ $RepoGitUrl"
+        return "$PackageName[voice_local] @ $RepoGitUrl"
     }
 
     return $RepoGitUrl
 }
 
-function Install-FreeClaudeCode {
+function Install-CodexProxy {
     $packageSpec = Get-PackageSpec
     $toolArgs = @("tool", "install", "--force")
 
@@ -365,8 +366,8 @@ if ((-not [string]::IsNullOrWhiteSpace($TorchBackend)) -and (-not ($VoiceLocal -
     throw "-TorchBackend requires -VoiceLocal or -VoiceAll."
 }
 
-Write-Step "Installing Claude Code if missing"
-Install-ClaudeIfMissing
+Write-Step "Installing Codex CLI if missing"
+Install-CodexIfMissing
 
 Write-Step "Installing uv if missing, updating if present"
 Install-OrUpdateUv
@@ -374,8 +375,9 @@ Install-OrUpdateUv
 Write-Step "Installing Python $PythonVersion"
 Invoke-InstallCommand -FilePath "uv" -Arguments @("python", "install", $PythonVersion)
 
-Write-Step "Installing or updating Free Claude Code"
-Install-FreeClaudeCode
+Write-Step "Installing or updating CodexProxy"
+Install-CodexProxy
 
 Write-Host ""
-Write-Host "Free Claude Code is installed. Start the proxy with: fcc-server"
+Write-Host "CodexProxy is installed. Start the proxy with: cdx-server"
+Write-Host "Launch the Codex CLI through the proxy with: cdx-codex"

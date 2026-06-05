@@ -25,19 +25,19 @@ def _braced_body(text: str, declaration: str) -> str:
     raise AssertionError(f"Unclosed function body for {declaration}")
 
 
-def test_install_sh_installs_claude_only_when_missing() -> None:
+def test_install_sh_installs_codex_only_when_missing() -> None:
     text = _script_text("install.sh")
-    body = _braced_body(text, "install_claude_if_missing()")
+    body = _braced_body(text, "install_codex_if_missing()")
     main = text[text.index('parse_args "$@"') :]
 
-    assert "Installs Claude Code if missing" in text
-    assert "if command -v claude >/dev/null 2>&1; then" in body
-    assert "Claude Code already found on PATH; skipping install." in body
+    assert "Installs Codex CLI if missing" in text
+    assert "if command -v codex >/dev/null 2>&1; then" in body
+    assert "Codex CLI already found on PATH; skipping install." in body
     assert "require_command npm" in body
-    assert "run npm install -g @anthropic-ai/claude-code" in body
-    assert body.index("command -v claude") < body.index("run npm install")
+    assert "run npm install -g @openai/codex" in body
+    assert body.index("command -v codex") < body.index("run npm install")
     assert body.index("return 0") < body.index("run npm install")
-    assert 'step "Installing Claude Code if missing"\ninstall_claude_if_missing' in main
+    assert 'step "Installing Codex CLI if missing"\ninstall_codex_if_missing' in main
     assert "npm install -g @anthropic-ai/claude-code" not in main
 
 
@@ -89,23 +89,43 @@ def test_install_sh_validates_minimum_uv_version() -> None:
     assert "uv $MIN_UV_VERSION or newer is required" in validate_body
 
 
-def test_install_ps1_installs_claude_only_when_missing() -> None:
-    text = _script_text("install.ps1")
-    body = _braced_body(text, "function Install-ClaudeIfMissing")
+def test_install_sh_package_spec_uses_codexproxy() -> None:
+    text = _script_text("install.sh")
+    body = _braced_body(text, "package_spec()")
 
-    assert "Installs Claude Code if missing" in text
-    assert "if (Get-Command claude -ErrorAction SilentlyContinue)" in body
-    assert "Claude Code already found on PATH; skipping install." in body
+    assert 'PACKAGE_NAME="codexproxy"' in text
+    assert "free-claude-code[" not in text
+    assert (
+        'printf \'%s[voice,voice_local] @ %s\' "$PACKAGE_NAME" "$REPO_GIT_URL"' in body
+    )
+    assert 'printf \'%s[voice] @ %s\' "$PACKAGE_NAME" "$REPO_GIT_URL"' in body
+    assert 'printf \'%s[voice_local] @ %s\' "$PACKAGE_NAME" "$REPO_GIT_URL"' in body
+
+
+def test_install_sh_post_install_message_references_cdx_commands() -> None:
+    text = _script_text("install.sh")
+
+    assert "CodexProxy is installed" in text
+    assert "cdx-server" in text
+    assert "cdx-codex" in text
+    assert "fcc-server" not in text
+
+
+def test_install_ps1_installs_codex_only_when_missing() -> None:
+    text = _script_text("install.ps1")
+    body = _braced_body(text, "function Install-CodexIfMissing")
+
+    assert "Installs Codex CLI if missing" in text
+    assert "if (Get-Command codex -ErrorAction SilentlyContinue)" in body
+    assert "Codex CLI already found on PATH; skipping install." in body
     assert 'Assert-CommandAvailable "npm"' in body
     assert (
-        'Invoke-InstallCommand -FilePath "npm" '
-        '-Arguments @("install", "-g", "@anthropic-ai/claude-code")'
+        'Invoke-InstallCommand -FilePath "npm" -Arguments @("install", "-g", "@openai/codex")'
     ) in body
-    assert body.index("Get-Command claude") < body.index("Invoke-InstallCommand")
+    assert body.index("Get-Command codex") < body.index("Invoke-InstallCommand")
     assert body.index("return") < body.index("Invoke-InstallCommand")
     assert (
-        'Write-Step "Installing Claude Code if missing"\nInstall-ClaudeIfMissing'
-        in text
+        'Write-Step "Installing Codex CLI if missing"\nInstall-CodexIfMissing' in text
     )
 
 
@@ -166,3 +186,22 @@ def test_install_ps1_validates_minimum_uv_version() -> None:
     assert '"self", "version", "--short"' in text
     assert "[version]" in text
     assert "uv $MinUvVersion or newer is required" in validate_body
+
+
+def test_install_ps1_package_spec_uses_codexproxy() -> None:
+    text = _script_text("install.ps1")
+
+    assert '$PackageName = "codexproxy"' in text
+    assert "free-claude-code[" not in text
+    assert "$PackageName[voice,voice_local] @ $RepoGitUrl" in text
+    assert "$PackageName[voice] @ $RepoGitUrl" in text
+    assert "$PackageName[voice_local] @ $RepoGitUrl" in text
+
+
+def test_install_ps1_post_install_message_references_cdx_commands() -> None:
+    text = _script_text("install.ps1")
+
+    assert "CodexProxy is installed" in text
+    assert "cdx-server" in text
+    assert "cdx-codex" in text
+    assert "fcc-server" not in text

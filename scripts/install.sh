@@ -5,6 +5,7 @@ REPO_GIT_URL="git+https://github.com/Alishahryar1/free-claude-code.git"
 PYTHON_VERSION="3.14.0"
 MIN_UV_VERSION="0.11.0"
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
+PACKAGE_NAME="codexproxy"
 
 dry_run=0
 voice_nim=0
@@ -16,7 +17,7 @@ show_usage() {
     cat <<'USAGE'
 Usage: install.sh [options]
 
-Installs Claude Code if missing, installs or updates uv, Python 3.14.0, and Free Claude Code.
+Installs Codex CLI if missing, installs or updates uv, Python 3.14.0, and CodexProxy.
 
 Options:
   --voice-nim              Install NVIDIA NIM voice transcription support.
@@ -199,14 +200,14 @@ update_existing_uv() {
     fail "uv $MIN_UV_VERSION or newer is required; found uv $version. The existing uv install source was not detected. Upgrade uv manually with the package manager that installed it, then rerun this installer."
 }
 
-install_claude_if_missing() {
-    if command -v claude >/dev/null 2>&1; then
-        printf 'Claude Code already found on PATH; skipping install.\n'
+install_codex_if_missing() {
+    if command -v codex >/dev/null 2>&1; then
+        printf 'Codex CLI already found on PATH; skipping install.\n'
         return 0
     fi
 
     require_command npm
-    run npm install -g @anthropic-ai/claude-code
+    run npm install -g @openai/codex
 }
 
 install_or_update_uv() {
@@ -292,17 +293,17 @@ package_spec() {
     fi
 
     if [ "$include_nim" -eq 1 ] && [ "$include_local" -eq 1 ]; then
-        printf 'free-claude-code[voice,voice_local] @ %s' "$REPO_GIT_URL"
+        printf '%s[voice,voice_local] @ %s' "$PACKAGE_NAME" "$REPO_GIT_URL"
     elif [ "$include_nim" -eq 1 ]; then
-        printf 'free-claude-code[voice] @ %s' "$REPO_GIT_URL"
+        printf '%s[voice] @ %s' "$PACKAGE_NAME" "$REPO_GIT_URL"
     elif [ "$include_local" -eq 1 ]; then
-        printf 'free-claude-code[voice_local] @ %s' "$REPO_GIT_URL"
+        printf '%s[voice_local] @ %s' "$PACKAGE_NAME" "$REPO_GIT_URL"
     else
         printf '%s' "$REPO_GIT_URL"
     fi
 }
 
-install_free_claude_code() {
+install_codexproxy() {
     spec=$(package_spec)
 
     if [ -n "$torch_backend" ]; then
@@ -315,8 +316,8 @@ install_free_claude_code() {
 parse_args "$@"
 validate_args
 
-step "Installing Claude Code if missing"
-install_claude_if_missing
+step "Installing Codex CLI if missing"
+install_codex_if_missing
 
 step "Installing uv if missing, updating if present"
 install_or_update_uv
@@ -324,7 +325,8 @@ install_or_update_uv
 step "Installing Python $PYTHON_VERSION"
 run uv python install "$PYTHON_VERSION"
 
-step "Installing or updating Free Claude Code"
-install_free_claude_code
+step "Installing or updating CodexProxy"
+install_codexproxy
 
-printf '\nFree Claude Code is installed. Start the proxy with: fcc-server\n'
+printf '\nCodexProxy is installed. Start the proxy with: cdx-server\n'
+printf 'Launch the Codex CLI through the proxy with: cdx-codex\n'
