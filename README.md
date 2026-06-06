@@ -36,7 +36,7 @@ cdx-server
 
 ### 3. Open Admin UI
 
-Navigate to `http://127.0.0.1:9090/admin`. Set your provider API key and model, then click **Launch CLI** or **Launch App** on the **Codex** tab.
+Navigate to `http://127.0.0.1:8082/admin`. Set your provider API key and model, then click **Launch CLI** or **Launch App** on the **Codex** tab.
 
 ## Choose A Provider
 

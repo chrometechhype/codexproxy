@@ -397,7 +397,7 @@ def test_admin_apply_restart_required_reports_automatic_restart(monkeypatch, tmp
 
     response = _local_client(app).post(
         "/admin/api/config/apply",
-        json={"values": {"PORT": "9090"}},
+        json={"values": {"PORT": "8083"}},
     )
 
     assert response.status_code == 200
@@ -407,7 +407,7 @@ def test_admin_apply_restart_required_reports_automatic_restart(monkeypatch, tmp
     assert body["restart"] == {
         "required": True,
         "automatic": True,
-        "admin_url": "http://127.0.0.1:9090/admin",
+        "admin_url": "http://127.0.0.1:8083/admin",
         "fields": ["PORT"],
     }
     assert callbacks == ["restart"]

@@ -41,7 +41,7 @@ def test_update_top_level_settings_replaces_existing_model() -> None:
         'sandbox_mode = "danger-full-access"\n'
         "\n"
         "[model_providers.codexproxy]\n"
-        'base_url = "http://localhost:9090/v1/"\n'
+        'base_url = "http://localhost:8082/v1/"\n'
     )
     updated = _update_top_level_codex_settings(text, model="test-model")
 
@@ -51,7 +51,7 @@ def test_update_top_level_settings_replaces_existing_model() -> None:
     assert parsed["model_reasoning_effort"] == "xhigh"
     assert parsed["sandbox_mode"] == "danger-full-access"
     assert parsed["model_providers"]["codexproxy"]["base_url"] == (
-        "http://localhost:9090/v1/"
+        "http://localhost:8082/v1/"
     )
 
 
@@ -223,7 +223,7 @@ def test_write_codex_config_is_idempotent_on_second_call(tmp_path: Path) -> None
 
     _write_codex_config(
         p,
-        base_url="http://127.0.0.1:9090/v1",
+        base_url="http://127.0.0.1:8082/v1",
         api_key="freecc",
         model="test-model",
     )
@@ -232,8 +232,8 @@ def test_write_codex_config_is_idempotent_on_second_call(tmp_path: Path) -> None
     assert first.count(">>> codexproxy (managed by cdx-codex) >>>") == 1
     assert second.count(">>> codexproxy (managed by cdx-codex) >>>") == 1
     assert "http://127.0.0.1:8082/v1" in first
-    assert "http://127.0.0.1:8082/v1" not in second
-    assert "http://127.0.0.1:9090/v1" in second
+    assert "http://127.0.0.1:8082/v1" in second
+    assert first == second
 
 
 def test_write_codex_config_creates_parent_directory(tmp_path: Path) -> None:
