@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -11,6 +13,7 @@ import time
 import webbrowser
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -254,9 +257,108 @@ def _codex_config_path_alt() -> Path:
     return _codex_config_path()
 
 
+def _codex_config_backup_path(config_path: Path) -> Path:
+    """Return the path of the pre-CodexProxy backup for ``config.toml``."""
+    return config_path.with_name(f"{config_path.name}.codexproxy-backup")
+
+
+def _codex_auth_json_path() -> Path:
+    """Return the path of the Codex CLI ``auth.json`` for the current user."""
+    custom = os.environ.get("CODEX_HOME")
+    return (Path(custom) if custom else Path.home() / ".codex") / "auth.json"
+
+
+def _codex_auth_json_backup_path(auth_path: Path) -> Path:
+    """Return the path of the pre-CodexProxy backup for ``auth.json``."""
+    return auth_path.with_name(f"{auth_path.name}.codexproxy-backup")
+
+
 def _toml_quote(value: str) -> str:
     """Render a string for embedding inside a double-quoted TOML literal."""
     return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _update_top_level_codex_settings(
+    text: str, *, model: str, provider: str = "codexproxy"
+) -> str:
+    """Update top-level ``model`` and ``model_provider`` in a Codex config file.
+
+    The Codex CLI (and the Codex Desktop app) treat ``model`` and
+    ``model_provider`` at the top of the file as the conversation defaults.
+    We split the file at the first ``[section]`` header and only touch the
+    top-level prefix, leaving every user-defined section, comment, and key
+    unchanged. If either key is missing we insert it at the top of the file.
+    """
+
+    section_match = re.search(r"^\s*\[", text, re.MULTILINE)
+    prefix = text if section_match is None else text[: section_match.start()]
+    rest = "" if section_match is None else text[section_match.start() :]
+
+    new_model_line = f'model = "{_toml_quote(model)}"'
+    new_provider_line = f'model_provider = "{_toml_quote(provider)}"'
+
+    if re.search(r"^model\s*=", prefix, re.MULTILINE):
+        prefix = re.sub(
+            r'^model\s*=\s*"[^"]*"',
+            lambda _m: new_model_line,
+            prefix,
+            count=1,
+            flags=re.MULTILINE,
+        )
+    else:
+        prefix = f"{new_model_line}\n{prefix}"
+
+    if re.search(r"^model_provider\s*=", prefix, re.MULTILINE):
+        prefix = re.sub(
+            r'^model_provider\s*=\s*"[^"]*"',
+            lambda _m: new_provider_line,
+            prefix,
+            count=1,
+            flags=re.MULTILINE,
+        )
+    else:
+        prefix = f"{new_provider_line}\n{prefix}"
+
+    return prefix + rest
+
+
+def _remove_managed_codexproxy_block(text: str) -> str:
+    """Strip any pre-existing managed ``codexproxy`` tables and their markers.
+
+    The launcher owns two TOML tables — ``[model_providers.codexproxy]`` (with
+    its sub-tables like ``[model_providers.codexproxy.env]``) and the custom
+    ``[codexproxy]`` table. The Codex CLI tolerates a lenient merge when the
+    same table is declared twice, but strict TOML parsers (Python's
+    ``tomllib``, the ``@iarna/toml`` JS package, etc.) reject it. To keep the
+    file parseable in both worlds, we make sure there is exactly one managed
+    block at the bottom of the file: if any of these tables already appear
+    (whether or not the user kept the launcher's previous markers), we delete
+    the section in place before re-appending the new block.
+    """
+
+    managed_roots = ("model_providers.codexproxy", "codexproxy")
+    lines = text.splitlines(keepends=True)
+    output: list[str] = []
+    skipping = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            inner = stripped.strip("[]").strip()
+            normalized = re.sub(r"\s+", "", inner)
+            if any(
+                normalized == root or normalized.startswith(root + ".")
+                for root in managed_roots
+            ):
+                skipping = True
+                continue
+            skipping = False
+        if not skipping:
+            if stripped == "# >>> codexproxy (managed by cdx-codex) >>>":
+                continue
+            if stripped == "# <<< codexproxy <<<":
+                continue
+            output.append(line)
+    return "".join(output)
 
 
 def _write_codex_config(
@@ -267,7 +369,17 @@ def _write_codex_config(
     The Codex CLI reads ``openai_base_url`` and ``api_key`` from the
     ``[model_providers.codexproxy]`` table; the top-level ``model_provider`` and
     ``model`` keys select that provider. We never delete pre-existing user
-    settings — we only update the ``codexproxy`` block.
+    settings — we only update the ``codexproxy`` block and the top-level
+    ``model`` / ``model_provider`` keys. If the file already has a
+    ``[model_providers.codexproxy]`` table (from a previous run or the user's
+    own setup), we strip it before re-appending the managed block so the file
+    remains strictly parseable.
+
+    On the first call against a config that does not yet carry a managed
+    CodexProxy block, the existing file is copied to
+    ``<config_path>.codexproxy-backup`` so the user can later restore their
+    pre-CodexProxy setup via ``cdx-codex-restore``. The backup is only taken
+    once — subsequent runs leave it untouched.
     """
     config_path.parent.mkdir(parents=True, exist_ok=True)
     existing = ""
@@ -277,6 +389,20 @@ def _write_codex_config(
         except OSError:
             existing = ""
 
+    backup_path = _codex_config_backup_path(config_path)
+    if (
+        existing
+        and not backup_path.exists()
+        and "# >>> codexproxy (managed by cdx-codex) >>>" not in existing
+    ):
+        with contextlib.suppress(OSError):
+            backup_path.write_text(existing, encoding="utf-8")
+
+    deduped = _remove_managed_codexproxy_block(existing)
+    deduped = _update_top_level_codex_settings(
+        deduped, model=model, provider="codexproxy"
+    )
+
     block = (
         "\n# >>> codexproxy (managed by cdx-codex) >>>\n"
         "[model_providers.codexproxy]\n"
@@ -284,7 +410,6 @@ def _write_codex_config(
         f'base_url = "{_toml_quote(base_url)}"\n'
         f'api_key = "{_toml_quote(api_key)}"\n'
         'wire_api = "responses"\n'
-        "requires_openai_auth = true\n"
         "\n"
         "[model_providers.codexproxy.env]\n"
         f'OPENAI_API_KEY = "{_toml_quote(api_key)}"\n'
@@ -296,13 +421,93 @@ def _write_codex_config(
         f'sandbox_mode = "workspace-write"\n'
         "# <<< codexproxy <<<\n"
     )
-    if "# >>> codexproxy (managed by cdx-codex) >>>" in existing:
-        head, _, _ = existing.partition("# >>> codexproxy (managed by cdx-codex) >>>")
-        merged = head.rstrip() + "\n" + block
-    else:
-        merged = existing.rstrip() + "\n" + block if existing.strip() else block
+    merged = deduped.rstrip() + "\n" + block if deduped.strip() else block
 
     config_path.write_text(merged, encoding="utf-8")
+
+
+def _clear_user_env_var(name: str) -> bool:
+    """Remove ``name`` from the user-level environment. Returns True on success."""
+    try:
+        import winreg
+    except ImportError:
+        return False
+    try:
+        with (
+            winreg.ConnectRegistry(None, winreg.HKEY_CURRENT_USER) as hive,
+            winreg.OpenKey(
+                hive, r"Environment", 0, winreg.KEY_SET_VALUE | winreg.KEY_READ
+            ) as key,
+            contextlib.suppress(FileNotFoundError),
+        ):
+            winreg.DeleteValue(key, name)
+        return True
+    except OSError:
+        return False
+
+
+def restore_codex_defaults() -> dict[str, Any]:
+    """Restore the user's pre-CodexProxy ``config.toml`` and ``auth.json``.
+
+    On Windows the user-level ``OPENAI_BASE_URL`` and ``OPENAI_API_KEY`` env
+    vars (which Codex CLI v0.136+ treats as a higher-priority override of
+    ``config.toml``) are also cleared so a future ``codex exec`` reads the
+    restored ``config.toml`` and ``auth.json`` instead of pointing at the
+    proxy or the wrong API key.
+
+    Returns a status dict describing what was restored. If no backup exists
+    for either file, that file is left untouched and a warning is recorded.
+    """
+    config_path = _codex_config_path_alt()
+    backup_path = _codex_config_backup_path(config_path)
+    legacy_backup = config_path.with_name(f"{config_path.name}.backup_pre_cdx")
+    auth_path = _codex_auth_json_path()
+    auth_backup = _codex_auth_json_backup_path(auth_path)
+
+    restored: list[str] = []
+    skipped: list[str] = []
+    cleared_env: list[str] = []
+
+    source = None
+    if backup_path.is_file():
+        source = backup_path
+    elif legacy_backup.is_file():
+        source = legacy_backup
+    if source is not None:
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            restored.append(f"config: {config_path} (from {source.name})")
+        except OSError as exc:
+            skipped.append(f"config: {exc.__class__.__name__}")
+    else:
+        skipped.append(
+            f"config: no backup found at {backup_path.name} or {legacy_backup.name}"
+        )
+
+    if auth_backup.is_file():
+        try:
+            auth_path.parent.mkdir(parents=True, exist_ok=True)
+            auth_path.write_text(
+                auth_backup.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            restored.append(f"auth: {auth_path} (from {auth_backup.name})")
+        except OSError as exc:
+            skipped.append(f"auth: {exc.__class__.__name__}")
+    else:
+        skipped.append("auth: no backup found")
+
+    cleared_env.extend(
+        var for var in ("OPENAI_BASE_URL", "OPENAI_API_KEY") if _clear_user_env_var(var)
+    )
+
+    return {
+        "restored": restored,
+        "skipped": skipped,
+        "cleared_env": cleared_env,
+        "config_path": str(config_path),
+        "auth_path": str(auth_path),
+    }
 
 
 def _default_codex_model(settings: Settings) -> str:
@@ -387,6 +592,77 @@ def launch_codex(argv: Sequence[str] | None = None) -> None:
             unregister_pid(process.pid)
 
     raise SystemExit(return_code)
+
+
+def _configure_codex_for_api(
+    skip_preflight: bool = False,
+) -> dict[str, str]:
+    """Write ``~/.codex/config.toml`` so Codex targets this proxy. Raises on error.
+
+    Set *skip_preflight* to ``True`` when called from inside the running proxy
+    server (avoids a synchronous ``urlopen`` deadlock against the asyncio loop).
+
+    Returns a dict with ``base_url``, ``api_key``, ``model``, ``provider`` on success.
+    """
+    settings = get_settings()
+    proxy_root_url = local_proxy_root_url(settings)
+    if not skip_preflight and (error := _preflight_proxy(proxy_root_url)):
+        raise RuntimeError(f"CodexProxy is not reachable at {proxy_root_url}: {error}")
+
+    token = settings.effective_auth_token or "freecc"
+    config_path = _codex_config_path_alt()
+    model = _default_codex_model(settings)
+    _write_codex_config(
+        config_path,
+        base_url=f"{proxy_root_url.rstrip('/')}/v1",
+        api_key=token,
+        model=model,
+    )
+    return {
+        "base_url": f"{proxy_root_url.rstrip('/')}/v1",
+        "api_key": token,
+        "model": model,
+        "provider": "codexproxy",
+    }
+
+
+def configure_codex() -> None:
+    """Write ``~/.codex/config.toml`` so Codex targets this proxy and exit.
+
+    This is the Codex Desktop App entry point: it updates the same config file
+    that ``codex exec`` reads but does not launch any child process. Use it
+    when the Codex Desktop app is already running and you want it to start
+    routing through this proxy. The app-server refreshes its config on every
+    conversation, so the change takes effect on the next turn.
+    """
+
+    settings = get_settings()
+    proxy_root_url = local_proxy_root_url(settings)
+    if error := _preflight_proxy(proxy_root_url):
+        print(
+            f"CodexProxy is not reachable at {proxy_root_url}: {error}",
+            file=sys.stderr,
+        )
+        print("Start it in another terminal with: cdx-server", file=sys.stderr)
+        raise SystemExit(1)
+
+    token = settings.effective_auth_token or "freecc"
+    config_path = _codex_config_path_alt()
+    model = _default_codex_model(settings)
+    _write_codex_config(
+        config_path,
+        base_url=f"{proxy_root_url.rstrip('/')}/v1",
+        api_key=token,
+        model=model,
+    )
+    print(f"Codex CLI config written to {config_path}")
+    print(f"  base_url  = {proxy_root_url.rstrip('/')}/v1")
+    print(f"  api_key   = {token}")
+    print(f"  model     = {model}")
+    print("  provider  = codexproxy")
+    print(
+        "Launch (or restart) the Codex Desktop app to start using this proxy.",
+    )
 
 
 def launch_claude(argv: Sequence[str] | None = None) -> None:

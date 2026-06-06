@@ -4,6 +4,47 @@ All notable changes to `codexproxy` are documented in this file. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-06-05
+
+Codex Desktop App (`codex app`) now routes through CodexProxy alongside
+`codex exec`.
+
+### Added
+- `cdx-codex-config` entry point: writes `~/.codex/config.toml` and exits,
+  for users who run the Codex Desktop App without spawning `codex exec`.
+- Top-level `model` and `model_provider` rewriter in `_write_codex_config`:
+  when the user's existing `config.toml` has a stale `model = "..."`, the
+  launcher now replaces it with the configured `MODEL` (with the
+  `provider/` prefix stripped) so the desktop app picks a real model on
+  its next refresh.
+- 5 new unit tests in `tests/cli/test_cdx_codex.py` covering the
+  rewriter, the `cdx-codex-config` entry point, and the
+  "preserves-user-sections" property of the new behavior.
+- 2 new live smoke tests in `smoke/product/test_cdx_codex_cli_product_live.py`
+  verifying that both `cdx-codex` and `cdx-codex-config` rewrite the stale
+  top-level `model` while preserving unrelated sections.
+
+### Fixed
+- `_responses_input_to_messages` in `api/responses_service.py` now translates
+  Responses-style content blocks (`input_text` / `input_image`) to the
+  Anthropic wire format (`text` / `image`). The Codex CLI v0.136+ ships
+  `{"type": "input_text", "text": "..."}` items in `input[]`, which the
+  Anthropic `Message.content` Pydantic model rejected with a `literal_error`,
+  so `codex exec` was failing with `stream disconnected before completion`.
+  The new helper (`_responses_content_to_anthropic`) uses Pydantic's
+  `TypeAdapter` against the Anthropic content-block union, so unknown blocks
+  are skipped instead of crashing.
+- 7 new unit tests in `tests/api/test_responses_routes.py` covering
+  `input_text` / `input_image` translation, multi-block lists, plain strings,
+  `None` content, and unknown-block skip behaviour.
+
+### Changed
+- README now documents the Codex Desktop App integration under
+  "Connect The Codex CLI".
+- `docs/responses-migration.md` documents the top-level `model` / `model_provider`
+  rewrite and the Codex Desktop App quirks (the internal app-server re-reads
+  `config.toml` on every conversation).
+
 ## [1.0.0] - 2026-06-05
 
 First stable release of `codexproxy`. The fork of `free-claude-code` is

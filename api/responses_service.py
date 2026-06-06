@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from loguru import logger
+from pydantic import TypeAdapter
 
 from config.provider_ids import SUPPORTED_PROVIDER_IDS
 from config.settings import Settings
@@ -28,8 +29,16 @@ from providers.base import BaseProvider
 
 from .model_router import ModelRouter
 from .models.anthropic import (
+    ContentBlockDocument,
+    ContentBlockImage,
+    ContentBlockRedactedThinking,
+    ContentBlockServerToolUse,
+    ContentBlockText,
+    ContentBlockThinking,
     ContentBlockToolResult,
     ContentBlockToolUse,
+    ContentBlockWebFetchToolResult,
+    ContentBlockWebSearchToolResult,
     Message,
     MessagesRequest,
     SystemContent,
@@ -269,8 +278,25 @@ def _responses_input_to_messages(
             if role == "system" or role == "developer":
                 if isinstance(content, str):
                     system_parts.append(content)
+                else:
+                    translated = _responses_content_to_anthropic(content)
+                    if isinstance(translated, str):
+                        if translated:
+                            system_parts.append(translated)
+                    else:
+                        system_parts.extend(
+                            block.text
+                            for block in translated
+                            if isinstance(block, ContentBlockText) and block.text
+                        )
                 continue
-            messages.append(Message(role=role, content=content))
+            translated_content = _responses_content_to_anthropic(content)
+            messages.append(
+                Message(
+                    role=role if role in ("user", "assistant") else "user",
+                    content=translated_content,
+                )
+            )
         elif item["type"] == "function_call":
             arguments = item.get("arguments", "")
             try:
@@ -309,6 +335,79 @@ def _responses_input_to_messages(
     if not messages:
         messages.append(Message(role="user", content=""))
     return messages, system
+
+
+_CONTENT_BLOCK_UNION = (
+    ContentBlockText
+    | ContentBlockImage
+    | ContentBlockDocument
+    | ContentBlockToolUse
+    | ContentBlockToolResult
+    | ContentBlockThinking
+    | ContentBlockRedactedThinking
+    | ContentBlockServerToolUse
+    | ContentBlockWebSearchToolResult
+    | ContentBlockWebFetchToolResult
+)
+
+_CONTENT_BLOCK_ADAPTER: TypeAdapter[Any] = TypeAdapter(_CONTENT_BLOCK_UNION)
+_CONTENT_LIST_ADAPTER: TypeAdapter[Any] = TypeAdapter(list[_CONTENT_BLOCK_UNION])
+
+
+def _responses_content_to_anthropic(
+    content: str | list[Any] | None,
+) -> str | list[_CONTENT_BLOCK_UNION]:
+    """Translate a Responses ``content`` value into Anthropic content blocks.
+
+    The Codex CLI ships Responses-style content parts such as
+    ``{"type": "input_text", "text": "..."}`` and
+    ``{"type": "input_image", ...}``. The Anthropic Messages Pydantic model
+    only accepts the legacy ``text`` / ``image`` types, so we rewrite the
+    well-known Responses shapes here. Unknown blocks are validated against
+    the Anthropic content union; parts that still don't match are skipped.
+    """
+
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return str(content)
+
+    translated: list[Any] = []
+    for part in content:
+        if isinstance(part, str):
+            translated.append(ContentBlockText(type="text", text=part))
+            continue
+        if not isinstance(part, dict):
+            continue
+        part_type = part.get("type")
+        if part_type in ("input_text", "text"):
+            translated.append(
+                ContentBlockText(
+                    type="text",
+                    text=part.get("text", ""),
+                )
+            )
+        elif part_type in ("input_image", "image"):
+            image_dict: dict[str, Any] = {"type": "image", "source": {}}
+            for key in ("source", "media_type", "detail"):
+                if key in part:
+                    image_dict[key] = part[key]
+            try:
+                translated.append(_CONTENT_BLOCK_ADAPTER.validate_python(image_dict))
+            except Exception:
+                continue
+        else:
+            try:
+                translated.append(_CONTENT_BLOCK_ADAPTER.validate_python(part))
+            except Exception:
+                continue
+    if not translated:
+        return ""
+    if len(translated) == 1 and isinstance(translated[0], ContentBlockText):
+        return translated[0].text
+    return _CONTENT_LIST_ADAPTER.validate_python(translated)
 
 
 def _normalise_input_items(

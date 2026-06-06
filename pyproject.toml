@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codexproxy"
-version = "1.0.0"
+version = "1.1.0"
 description = "Middleware between OpenAI Codex CLI (Responses API) and 17 provider backends"
 readme = "README.md"
 requires-python = ">=3.14.0"
@@ -30,6 +30,7 @@ cdx-server = "cli.entrypoints:serve"
 codexproxy = "cli.entrypoints:serve"
 cdx-init = "cli.entrypoints:init"
 cdx-codex = "cli.entrypoints:launch_codex"
+cdx-codex-config = "cli.entrypoints:configure_codex"
 
 [project.optional-dependencies]
 voice = [

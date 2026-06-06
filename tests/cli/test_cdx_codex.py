@@ -30,6 +30,102 @@ def test_toml_quote_escapes_backslash_and_quote() -> None:
     assert _toml_quote('a"b\\c') == 'a\\"b\\\\c'
 
 
+def test_update_top_level_settings_replaces_existing_model() -> None:
+    from cli.entrypoints import _update_top_level_codex_settings
+
+    text = (
+        'model = "proxy-model"\n'
+        'model_provider = "codexproxy"\n'
+        'model_reasoning_effort = "xhigh"\n'
+        "\n"
+        'sandbox_mode = "danger-full-access"\n'
+        "\n"
+        "[model_providers.codexproxy]\n"
+        'base_url = "http://localhost:9090/v1/"\n'
+    )
+    updated = _update_top_level_codex_settings(text, model="test-model")
+
+    parsed = tomllib.loads(updated)
+    assert parsed["model"] == "test-model"
+    assert parsed["model_provider"] == "codexproxy"
+    assert parsed["model_reasoning_effort"] == "xhigh"
+    assert parsed["sandbox_mode"] == "danger-full-access"
+    assert parsed["model_providers"]["codexproxy"]["base_url"] == (
+        "http://localhost:9090/v1/"
+    )
+
+
+def test_update_top_level_settings_preserves_user_sections() -> None:
+    from cli.entrypoints import _update_top_level_codex_settings
+
+    text = (
+        'model = "old-model"\n'
+        "\n"
+        "[plugins.browser]\n"
+        "enabled = true\n"
+        "\n"
+        "[mcp_servers.node_repl]\n"
+        "args = []\n"
+    )
+    updated = _update_top_level_codex_settings(
+        text, model="new-model", provider="codexproxy"
+    )
+
+    parsed = tomllib.loads(updated)
+    assert parsed["model"] == "new-model"
+    assert parsed["model_provider"] == "codexproxy"
+    assert parsed["plugins"]["browser"]["enabled"] is True
+    assert parsed["mcp_servers"]["node_repl"]["args"] == []
+
+
+def test_update_top_level_settings_inserts_missing_keys() -> None:
+    from cli.entrypoints import _update_top_level_codex_settings
+
+    text = 'sandbox_mode = "danger-full-access"\n'
+    updated = _update_top_level_codex_settings(text, model="test-model")
+
+    parsed = tomllib.loads(updated)
+    assert parsed["model"] == "test-model"
+    assert parsed["model_provider"] == "codexproxy"
+    assert parsed["sandbox_mode"] == "danger-full-access"
+
+
+def test_update_top_level_settings_quotes_special_chars_in_model() -> None:
+    from cli.entrypoints import _update_top_level_codex_settings
+
+    text = 'model = "old"\n'
+    updated = _update_top_level_codex_settings(text, model='evil"model\\name')
+
+    assert 'model = "evil\\"model\\\\name"' in updated
+    parsed = tomllib.loads(updated)
+    assert parsed["model"] == 'evil"model\\name'
+
+    updated2 = _update_top_level_codex_settings(text, model="has\\backslash")
+    assert 'model = "has\\\\backslash"' in updated2
+    parsed2 = tomllib.loads(updated2)
+    assert parsed2["model"] == "has\\backslash"
+
+
+def test_update_top_level_settings_does_not_match_nested_keys() -> None:
+    from cli.entrypoints import _update_top_level_codex_settings
+
+    text = (
+        'model = "old-model"\n'
+        "\n"
+        "[features]\n"
+        "multi_agent = true\n"
+        "\n"
+        "[model_providers.codexproxy]\n"
+        'model = "nested-model"\n'
+        'name = "codexproxy"\n'
+    )
+    updated = _update_top_level_codex_settings(text, model="new-model")
+
+    parsed = tomllib.loads(updated)
+    assert parsed["model"] == "new-model"
+    assert parsed["model_providers"]["codexproxy"]["model"] == "nested-model"
+
+
 def test_default_codex_model_strips_provider_prefix() -> None:
     from cli.entrypoints import _default_codex_model
 
@@ -84,7 +180,7 @@ def test_write_codex_config_produces_parseable_toml(tmp_path: Path) -> None:
     assert provider["base_url"] == "http://127.0.0.1:8082/v1"
     assert provider["api_key"] == "freecc"
     assert provider["wire_api"] == "responses"
-    assert provider["requires_openai_auth"] is True
+    assert "requires_openai_auth" not in provider
     assert provider["env"]["OPENAI_API_KEY"] == "freecc"
     assert parsed["codexproxy"]["model"] == "test-model"
     assert parsed["codexproxy"]["model_provider"] == "codexproxy"
@@ -296,3 +392,239 @@ def test_launch_codex_propagates_process_returncode(
     with pytest.raises(SystemExit) as excinfo:
         entrypoints.launch_codex([])
     assert excinfo.value.code == 7
+
+
+def test_write_codex_config_updates_existing_top_level_model(
+    tmp_path: Path,
+) -> None:
+    """When the user already has ``model = \"...\"`` we must rewrite it so the
+    Codex Desktop app picks a model the proxy actually advertises."""
+    from cli.entrypoints import _write_codex_config
+
+    p = tmp_path / "config.toml"
+    p.write_text(
+        'model = "proxy-model"\n'
+        'model_provider = "codexproxy"\n'
+        'model_reasoning_effort = "xhigh"\n'
+        "\n"
+        "[model_providers.ollama-launch]\n"
+        'name = "Ollama"\n'
+        'base_url = "http://127.0.0.1:11434/v1/"\n',
+        encoding="utf-8",
+    )
+
+    _write_codex_config(
+        p,
+        base_url="http://127.0.0.1:19095/v1",
+        api_key="freecc",
+        model="test-model",
+    )
+
+    parsed = tomllib.loads(p.read_text(encoding="utf-8"))
+    assert parsed["model"] == "test-model"
+    assert parsed["model_provider"] == "codexproxy"
+    assert parsed["model_reasoning_effort"] == "xhigh"
+    assert parsed["model_providers"]["ollama-launch"]["base_url"] == (
+        "http://127.0.0.1:11434/v1/"
+    )
+    assert parsed["model_providers"]["codexproxy"]["base_url"] == (
+        "http://127.0.0.1:19095/v1"
+    )
+    assert parsed["model_providers"]["codexproxy"]["api_key"] == "freecc"
+
+
+def test_configure_codex_writes_config_and_exits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from cli import entrypoints
+
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setenv("CODEX_PROXY_AUTH_TOKEN", "freecc")
+    from config.settings import get_settings
+
+    get_settings.cache_clear()
+
+    monkeypatch.setattr(entrypoints, "_preflight_proxy", lambda _url: None)
+
+    entrypoints.configure_codex()
+
+    config_path = tmp_path / "config.toml"
+    assert config_path.is_file()
+    parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert parsed["model_providers"]["codexproxy"]["wire_api"] == "responses"
+    assert parsed["model"] == parsed["codexproxy"]["model"]
+
+    out = capsys.readouterr().out
+    assert "Codex CLI config written to" in out
+    assert "base_url" in out
+    assert "api_key" in out
+    assert "Codex Desktop app" in out
+
+
+def test_configure_codex_errors_when_proxy_unreachable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from cli import entrypoints
+
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    from config.settings import get_settings
+
+    get_settings.cache_clear()
+
+    monkeypatch.setattr(
+        entrypoints, "_preflight_proxy", lambda _url: "connection refused"
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        entrypoints.configure_codex()
+    assert excinfo.value.code == 1
+    assert not (tmp_path / "config.toml").exists()
+
+
+def test_configure_codex_updates_existing_top_level_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``cdx-codex-config`` must replace the user's top-level ``model`` so the
+    Codex Desktop app picks a real model on its next refresh."""
+    from cli import entrypoints
+
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setenv("CODEX_PROXY_AUTH_TOKEN", "freecc")
+    from config.settings import get_settings
+
+    get_settings.cache_clear()
+
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        'model = "proxy-model"\n'
+        'model_provider = "codexproxy"\n'
+        "\n"
+        "[plugins.browser]\n"
+        "enabled = true\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(entrypoints, "_preflight_proxy", lambda _url: None)
+    entrypoints.configure_codex()
+
+    parsed = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert parsed["model"] == parsed["codexproxy"]["model"]
+    assert parsed["model"] != "proxy-model"
+    assert parsed["model_provider"] == "codexproxy"
+    assert parsed["plugins"]["browser"]["enabled"] is True
+
+
+# ---------------------------------------------------------------------------
+# Backup / restore defaults
+# ---------------------------------------------------------------------------
+
+
+def test_write_codex_config_creates_backup_on_first_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cli import entrypoints
+
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        'model = "user-model"\n'
+        'model_provider = "openai"\n'
+        "\n"
+        "[plugins]\n"
+        "browser = { enabled = true }\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(entrypoints, "_codex_config_path_alt", lambda: config_path)
+    monkeypatch.setattr(entrypoints, "_preflight_proxy", lambda _url: None)
+
+    entrypoints.configure_codex()
+
+    backup = tmp_path / "config.toml.codexproxy-backup"
+    assert backup.is_file()
+    assert 'model = "user-model"' in backup.read_text(encoding="utf-8")
+    assert "[plugins]" in backup.read_text(encoding="utf-8")
+
+
+def test_write_codex_config_does_not_overwrite_existing_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cli import entrypoints
+
+    config_path = tmp_path / "config.toml"
+    backup = tmp_path / "config.toml.codexproxy-backup"
+    backup.write_text('model = "old-original"\n', encoding="utf-8")
+    config_path.write_text(
+        'model = "current"\n'
+        "\n"
+        "# >>> codexproxy (managed by cdx-codex) >>>\n"
+        "[model_providers.codexproxy]\n"
+        'name = "codexproxy"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(entrypoints, "_codex_config_path_alt", lambda: config_path)
+    monkeypatch.setattr(entrypoints, "_preflight_proxy", lambda _url: None)
+
+    entrypoints.configure_codex()
+
+    assert backup.read_text(encoding="utf-8") == 'model = "old-original"\n'
+
+
+def test_restore_codex_defaults_restores_config_from_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cli import entrypoints
+
+    config_path = tmp_path / "config.toml"
+    backup = tmp_path / "config.toml.codexproxy-backup"
+    config_path.write_text(
+        'model = "codexproxy-model"\n'
+        'model_provider = "codexproxy"\n'
+        "\n"
+        "# >>> codexproxy (managed by cdx-codex) >>>\n"
+        "[model_providers.codexproxy]\n",
+        encoding="utf-8",
+    )
+    backup.write_text('model = "user-original-model"\n', encoding="utf-8")
+    monkeypatch.setattr(entrypoints, "_codex_config_path_alt", lambda: config_path)
+    monkeypatch.setattr(entrypoints, "_clear_user_env_var", lambda _name: True)
+
+    result = entrypoints.restore_codex_defaults()
+
+    assert "restored" in result
+    assert any("config:" in r for r in result["restored"])
+    assert config_path.read_text(encoding="utf-8") == 'model = "user-original-model"\n'
+    assert "OPENAI_BASE_URL" in result["cleared_env"]
+    assert "OPENAI_API_KEY" in result["cleared_env"]
+
+
+def test_restore_codex_defaults_falls_back_to_legacy_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cli import entrypoints
+
+    config_path = tmp_path / "config.toml"
+    legacy = tmp_path / "config.toml.backup_pre_cdx"
+    config_path.write_text('model = "codexproxy-model"\n', encoding="utf-8")
+    legacy.write_text('model = "legacy-original"\n', encoding="utf-8")
+    monkeypatch.setattr(entrypoints, "_codex_config_path_alt", lambda: config_path)
+    monkeypatch.setattr(entrypoints, "_clear_user_env_var", lambda _name: True)
+
+    result = entrypoints.restore_codex_defaults()
+
+    assert any("backup_pre_cdx" in r for r in result["restored"])
+    assert config_path.read_text(encoding="utf-8") == 'model = "legacy-original"\n'
+
+
+def test_restore_codex_defaults_reports_missing_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cli import entrypoints
+
+    config_path = tmp_path / "config.toml"
+    config_path.write_text('model = "codexproxy-model"\n', encoding="utf-8")
+    monkeypatch.setattr(entrypoints, "_codex_config_path_alt", lambda: config_path)
+    monkeypatch.setattr(entrypoints, "_clear_user_env_var", lambda _name: True)
+
+    result = entrypoints.restore_codex_defaults()
+
+    assert any("no backup" in s for s in result["skipped"])
+    assert config_path.read_text(encoding="utf-8") == 'model = "codexproxy-model"\n'

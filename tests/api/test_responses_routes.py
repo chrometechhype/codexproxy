@@ -9,6 +9,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from api.models.anthropic import (
+    ContentBlockImage,
+    ContentBlockText,
+)
+from api.responses_service import _responses_content_to_anthropic
 from core.responses.store import ResponseStore, StoredResponse
 
 # A local module-level app avoids touching the global ``app`` fixture used by
@@ -295,3 +300,71 @@ def test_create_conversation_stub(
     assert data["id"].startswith("conv_")
     assert data["object"] == "conversation"
     assert isinstance(data["created_at"], int)
+
+
+# ---------------------------------------------------------------------------
+# _responses_content_to_anthropic (Codex CLI input translation)
+# ---------------------------------------------------------------------------
+
+
+def test_responses_content_translates_input_text_to_text() -> None:
+    result = _responses_content_to_anthropic([{"type": "input_text", "text": "hello"}])
+    assert result == "hello"
+
+
+def test_responses_content_preserves_plain_text_block() -> None:
+    result = _responses_content_to_anthropic([{"type": "text", "text": "hi"}])
+    assert result == "hi"
+
+
+def test_responses_content_returns_list_for_multiple_text_blocks() -> None:
+    result = _responses_content_to_anthropic(
+        [
+            {"type": "input_text", "text": "first"},
+            {"type": "input_text", "text": "second"},
+        ]
+    )
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert all(isinstance(b, ContentBlockText) for b in result)
+    assert [b.text for b in result if isinstance(b, ContentBlockText)] == [
+        "first",
+        "second",
+    ]
+
+
+def test_responses_content_translates_input_image_to_image_block() -> None:
+    result = _responses_content_to_anthropic(
+        [
+            {
+                "type": "input_image",
+                "source": {"type": "base64", "media_type": "image/png", "data": "x"},
+            }
+        ]
+    )
+    assert isinstance(result, list)
+    assert len(result) == 1
+    assert isinstance(result[0], ContentBlockImage)
+    assert result[0].source == {
+        "type": "base64",
+        "media_type": "image/png",
+        "data": "x",
+    }
+
+
+def test_responses_content_returns_string_for_plain_string_input() -> None:
+    assert _responses_content_to_anthropic("hello") == "hello"
+
+
+def test_responses_content_returns_empty_string_for_none() -> None:
+    assert _responses_content_to_anthropic(None) == ""
+
+
+def test_responses_content_skips_unknown_blocks() -> None:
+    result = _responses_content_to_anthropic(
+        [
+            {"type": "input_text", "text": "keep"},
+            {"type": "weird_thing", "data": "drop"},
+        ]
+    )
+    assert result == "keep"

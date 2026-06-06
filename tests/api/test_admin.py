@@ -512,3 +512,260 @@ def test_admin_launch_url_uses_loopback_for_wildcard_host():
     settings = Settings.model_construct(host="0.0.0.0", port=8082)
 
     assert local_admin_url(settings) == "http://127.0.0.1:8082/admin"
+
+
+# ---------------------------------------------------------------------------
+# /admin/api/codex/* — Codex CLI / App launchers + restore defaults
+# ---------------------------------------------------------------------------
+
+
+def _codex_client(monkeypatch, tmp_path: Path):
+    _set_home(monkeypatch, tmp_path)
+    app = create_app(lifespan_enabled=False)
+    return _local_client(app)
+
+
+def test_admin_codex_status_returns_config_paths(monkeypatch, tmp_path):
+    client = _codex_client(monkeypatch, tmp_path)
+
+    response = client.get("/admin/api/codex/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "config_path" in payload
+    assert "config_exists" in payload
+    assert "backup_exists" in payload
+    assert "codex_cli_available" in payload
+    assert "codex_app_installed" in payload
+    assert "proxy_url" in payload
+
+
+def test_admin_codex_status_is_loopback_only(monkeypatch, tmp_path):
+    _set_home(monkeypatch, tmp_path)
+    app = create_app(lifespan_enabled=False)
+    remote_client = TestClient(app, client=("203.0.113.10", 50000))
+
+    response = remote_client.get("/admin/api/codex/status")
+
+    assert response.status_code == 403
+
+
+def _fake_settings():
+    from config.settings import Settings
+
+    return Settings.model_construct(
+        host="127.0.0.1",
+        port=19095,
+        anthropic_auth_token="freecc",
+        model="big-pickle",
+    )
+
+
+def test_admin_codex_launch_cli_spawns_detached(monkeypatch, tmp_path):
+    from api import admin_routes
+    from cli import process_registry
+
+    client = _codex_client(monkeypatch, tmp_path)
+
+    captured: list[tuple] = []
+
+    def _fake_spawn(cmd, **kwargs):
+        captured.append((cmd, kwargs))
+        return _StubPopen(pid=999_001)
+
+    def _fake_configure(**kw):
+        return {
+            "base_url": "http://127.0.0.1:19095/v1",
+            "api_key": "freecc",
+            "model": "big-pickle",
+            "provider": "codexproxy",
+        }
+
+    monkeypatch.setattr(admin_routes, "_spawn_with_new_console", _fake_spawn)
+    monkeypatch.setattr(
+        admin_routes, "shutil", _StubShutil(which=lambda name: "C:/codex.exe")
+    )
+    monkeypatch.setattr("cli.entrypoints._configure_codex_for_api", _fake_configure)
+    monkeypatch.setattr(admin_routes, "get_cached_settings", _fake_settings)
+    monkeypatch.setattr("config.settings.get_settings", _fake_settings)
+    process_registry._pids.clear()
+
+    response = client.post("/admin/api/codex/launch-cli", json={})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pid"] == 999_001
+    assert data["command"][0] == "C:/codex.exe"
+    assert data["proxy_url"] == "http://127.0.0.1:19095"
+    assert captured, "spawn with new console was not called"
+    assert "OPENAI_BASE_URL" in captured[0][1].get("env", {})
+    process_registry._pids.clear()
+
+
+def test_admin_codex_launch_cli_accepts_flags(monkeypatch, tmp_path):
+    from api import admin_routes
+    from cli import process_registry
+
+    client = _codex_client(monkeypatch, tmp_path)
+
+    def _fake_spawn(cmd, **kwargs):
+        return _StubPopen(pid=999_002)
+
+    def _fake_configure(**kw):
+        return {
+            "base_url": "http://127.0.0.1:19095/v1",
+            "api_key": "freecc",
+            "model": "big-pickle",
+            "provider": "codexproxy",
+        }
+
+    monkeypatch.setattr(admin_routes, "_spawn_with_new_console", _fake_spawn)
+    monkeypatch.setattr(admin_routes, "shutil", _StubShutil(which=lambda name: "codex"))
+    monkeypatch.setattr("cli.entrypoints._configure_codex_for_api", _fake_configure)
+    monkeypatch.setattr(admin_routes, "get_cached_settings", _fake_settings)
+    monkeypatch.setattr("config.settings.get_settings", _fake_settings)
+    process_registry._pids.clear()
+
+    response = client.post(
+        "/admin/api/codex/launch-cli",
+        json={"flags": ["--skip-git-repo-check", "--model", "big-pickle"]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "--skip-git-repo-check" in data["command"]
+    assert "--model" in data["command"]
+    assert "big-pickle" in data["command"]
+    process_registry._pids.clear()
+
+
+def test_admin_codex_launch_cli_404_when_codex_missing(monkeypatch, tmp_path):
+    from api import admin_routes
+
+    client = _codex_client(monkeypatch, tmp_path)
+    monkeypatch.setattr(admin_routes, "shutil", _StubShutil(which=lambda name: None))
+
+    response = client.post("/admin/api/codex/launch-cli", json={})
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_admin_codex_launch_cli_503_when_proxy_down(monkeypatch, tmp_path):
+    client = _codex_client(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "cli.entrypoints._configure_codex_for_api",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("connection refused")),
+    )
+
+    response = client.post("/admin/api/codex/launch-cli", json={})
+
+    assert response.status_code == 503
+    assert "connection refused" in response.json()["detail"].lower()
+
+
+def test_admin_codex_launch_app_503_when_proxy_down(monkeypatch, tmp_path):
+    from api import admin_routes
+
+    client = _codex_client(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        admin_routes, "_codex_app_install_path", lambda: "C:/Codex/Codex.exe"
+    )
+    monkeypatch.setattr(
+        "cli.entrypoints._configure_codex_for_api",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("connection refused")),
+    )
+
+    response = client.post("/admin/api/codex/launch-app", json={})
+
+    assert response.status_code == 503
+    assert "connection refused" in response.json()["detail"].lower()
+
+
+def test_admin_codex_launch_app_404_when_not_installed(monkeypatch, tmp_path):
+    from api import admin_routes
+
+    client = _codex_client(monkeypatch, tmp_path)
+    monkeypatch.setattr(admin_routes, "_codex_app_install_path", lambda: None)
+
+    response = client.post("/admin/api/codex/launch-app", json={})
+
+    assert response.status_code == 404
+    assert "not installed" in response.json()["detail"].lower()
+
+
+def test_admin_codex_launch_app_spawns_detached(monkeypatch, tmp_path):
+    from api import admin_routes
+    from cli import process_registry
+
+    client = _codex_client(monkeypatch, tmp_path)
+
+    def _fake_configure(**kw):
+        return {
+            "base_url": "http://127.0.0.1:19095/v1",
+            "api_key": "freecc",
+            "model": "big-pickle",
+            "provider": "codexproxy",
+        }
+
+    monkeypatch.setattr(
+        admin_routes, "_codex_app_install_path", lambda: "C:/Codex/Codex.exe"
+    )
+    monkeypatch.setattr(
+        admin_routes, "_spawn_detached", lambda cmd, **kw: _StubPopen(pid=999_003)
+    )
+    monkeypatch.setattr("cli.entrypoints._configure_codex_for_api", _fake_configure)
+    monkeypatch.setattr(admin_routes, "get_cached_settings", _fake_settings)
+    monkeypatch.setattr("config.settings.get_settings", _fake_settings)
+    process_registry._pids.clear()
+
+    response = client.post("/admin/api/codex/launch-app", json={})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["pid"] == 999_003
+    assert data["proxy_url"] == "http://127.0.0.1:19095"
+    process_registry._pids.clear()
+
+
+def test_admin_codex_restore_default_calls_entrypoint(monkeypatch, tmp_path):
+    client = _codex_client(monkeypatch, tmp_path)
+
+    expected = {
+        "restored": ["config: C:/fake/config.toml"],
+        "skipped": [],
+        "cleared_env": ["OPENAI_BASE_URL", "OPENAI_API_KEY"],
+    }
+    monkeypatch.setattr("cli.entrypoints.restore_codex_defaults", lambda: expected)
+
+    response = client.post("/admin/api/codex/restore-default", json={})
+
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
+def test_admin_codex_restore_default_is_loopback_only(monkeypatch, tmp_path):
+    _set_home(monkeypatch, tmp_path)
+    app = create_app(lifespan_enabled=False)
+    remote_client = TestClient(app, client=("203.0.113.10", 50000))
+
+    response = remote_client.post("/admin/api/codex/restore-default", json={})
+
+    assert response.status_code == 403
+
+
+class _StubShutil:
+    """Minimal stub replacing api.admin_routes.shutil (used in monkeypatch)."""
+
+    def __init__(self, which) -> None:
+        self._which = which
+
+    def which(self, name: str):  # mirrors shutil.which
+        return self._which(name)
+
+
+class _StubPopen:
+    """Stand-in for subprocess.Popen with just a pid attribute."""
+
+    def __init__(self, pid: int) -> None:
+        self.pid = pid

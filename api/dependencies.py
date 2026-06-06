@@ -97,7 +97,13 @@ def require_api_key(
     `Settings.effective_auth_token` (which prefers
     ``CODEX_PROXY_AUTH_TOKEN`` and falls back to ``ANTHROPIC_AUTH_TOKEN``).
     If both are empty, this is a no-op.
+
+    Localhost requests are allowed without a key because the proxy is
+    bound to ``127.0.0.1`` and the Codex CLI native binary does not always
+    send auth headers when ``requires_openai_auth = false``.
     """
+    if request.client and request.client.host in ("127.0.0.1", "::1", "localhost"):
+        return
     auth_token = settings.effective_auth_token
     if not auth_token:
         # No API key configured -> allow

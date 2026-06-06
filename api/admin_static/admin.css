@@ -457,3 +457,172 @@ textarea {
     flex: 1;
   }
 }
+
+.codex-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 2px;
+}
+
+.codex-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.panel-header svg {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.codex-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  font-size: 13px;
+}
+
+.codex-status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.codex-status-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.codex-status-value {
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  font-size: 12px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.codex-launch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.codex-launch-row:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.codex-launch-row:first-of-type {
+  padding-top: 0;
+}
+
+.codex-launch-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.codex-launch-info strong {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.codex-launch-info span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.codex-launch-info code {
+  font-size: 11px;
+  background: var(--input);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  min-width: 110px;
+}
+
+.btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--muted);
+}
+
+.codex-restore-desc {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0 0 14px 0;
+}
+
+.codex-restore-desc code {
+  font-size: 11px;
+  background: var(--input);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.codex-result {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: pre-wrap;
+  line-height: 1.55;
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+}

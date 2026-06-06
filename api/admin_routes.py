@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import inspect
 import ipaddress
+import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -13,6 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from cli.process_registry import register_pid
 from config.settings import Settings
 from config.settings import get_settings as get_cached_settings
 from providers.registry import ProviderRegistry
@@ -24,7 +29,7 @@ from .admin_config import (
     validate_updates,
     write_managed_env,
 )
-from .admin_urls import local_admin_url
+from .admin_urls import local_admin_url, local_proxy_root_url
 
 router = APIRouter()
 
@@ -211,6 +216,116 @@ async def refresh_models(request: Request):
     }
 
 
+@router.get("/admin/api/codex/status")
+async def codex_status(request: Request):
+    """Return the current Codex integration state for the admin UI."""
+    require_loopback_admin(request)
+    from cli.entrypoints import (
+        _codex_config_backup_path,
+        _codex_config_path_alt,
+    )
+
+    config_path = _codex_config_path_alt()
+    backup_path = _codex_config_backup_path(config_path)
+    legacy_backup = config_path.with_name(f"{config_path.name}.backup_pre_cdx")
+    proxy_url = local_proxy_root_url(get_cached_settings())
+    return {
+        "proxy_url": proxy_url,
+        "config_path": str(config_path),
+        "config_exists": config_path.is_file(),
+        "backup_path": str(backup_path),
+        "backup_exists": backup_path.is_file(),
+        "legacy_backup_exists": legacy_backup.is_file(),
+        "codex_cli_available": shutil.which("codex") is not None,
+        "codex_app_installed": _codex_app_install_path() is not None,
+        "codex_app_path": _codex_app_install_path(),
+    }
+
+
+@router.post("/admin/api/codex/launch-cli")
+async def codex_launch_cli(request: Request):
+    """Configure proxy, then spawn ``codex`` interactive TUI in a new console."""
+    require_loopback_admin(request)
+    codex_path = shutil.which("codex")
+    if codex_path is None:
+        raise HTTPException(status_code=404, detail="Codex CLI not found on PATH")
+    flags = await _flags_from_launch_request(request, default_flags=())
+    try:
+        from cli.entrypoints import _configure_codex_for_api
+
+        config_info = _configure_codex_for_api(skip_preflight=True)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    env = {
+        **os.environ,
+        "OPENAI_BASE_URL": config_info["base_url"],
+        "OPENAI_API_KEY": config_info["api_key"],
+    }
+    settings = get_cached_settings()
+    proxy_url = local_proxy_root_url(settings)
+    try:
+        process = _spawn_with_new_console(
+            [codex_path, *flags],
+            env=env,
+        )
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to launch: {exc}") from exc
+    if process.pid:
+        register_pid(process.pid)
+    return {
+        "pid": process.pid,
+        "command": [codex_path, *flags],
+        "proxy_url": proxy_url,
+    }
+
+
+@router.post("/admin/api/codex/launch-app")
+async def codex_launch_app(request: Request):
+    """Configure proxy in config.toml, then spawn the Codex Desktop App."""
+    require_loopback_admin(request)
+    app_path = _codex_app_install_path()
+    if app_path is None:
+        raise HTTPException(status_code=404, detail="Codex Desktop App not installed")
+    try:
+        from cli.entrypoints import _configure_codex_for_api
+
+        _configure_codex_for_api(skip_preflight=True)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    settings = get_cached_settings()
+    proxy_url = local_proxy_root_url(settings)
+    try:
+        if "WindowsApps" in app_path:
+            aumid = _store_codex_aumid()
+            if aumid is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Store app detected but AUMID not found",
+                )
+            process = _spawn_detached(["explorer.exe", f"shell:AppsFolder\\{aumid}"])
+        else:
+            process = _spawn_detached([str(app_path)])
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to launch: {exc}") from exc
+    if process.pid:
+        register_pid(process.pid)
+    return {
+        "pid": process.pid,
+        "command": [str(app_path)],
+        "proxy_url": proxy_url,
+    }
+
+
+@router.post("/admin/api/codex/restore-default")
+async def codex_restore_default(request: Request):
+    """Restore the user's pre-CodexProxy ``config.toml`` and ``auth.json``."""
+    require_loopback_admin(request)
+    from cli.entrypoints import restore_codex_defaults
+
+    result = restore_codex_defaults()
+    return result
+
+
 def _filtered_values(values: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if key in FIELD_BY_KEY}
 
@@ -251,6 +366,162 @@ def _local_provider_url(provider_id: str, values: dict[str, str]) -> str:
     if provider_id == "ollama":
         return values.get("OLLAMA_BASE_URL", "")
     return ""
+
+
+def _codex_app_install_path() -> str | None:
+    """Return the path to the Codex Desktop App on Windows, or None."""
+    if sys.platform != "win32":
+        return shutil.which("codex-desktop") or shutil.which("Codex")
+    candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Codex" / "Codex.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Codex" / "Codex.exe",
+    ]
+    programs = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+    candidates.append(Path(programs) / "Codex" / "Codex.exe")
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    store_path = _find_store_codex_exe()
+    if store_path is not None:
+        return store_path
+    fallback = shutil.which("Codex")
+    if fallback and fallback.lower().endswith(".exe"):
+        return fallback
+    return None
+
+
+_store_codex_cache: dict[str, str | None] = {}
+
+
+def _find_store_codex_exe() -> str | None:
+    """Detect Windows Store (AppX) Codex installation and return the .exe path."""
+    cached = _store_codex_cache.get("exe")
+    if cached is not None:
+        return cached if cached else None
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "$pkg = Get-AppxPackage -Name '*Codex*';"
+                "if ($pkg) { $pkg.InstallLocation }",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        install = result.stdout.strip()
+        if install:
+            exe = Path(install) / "app" / "Codex.exe"
+            if exe.is_file():
+                path = str(exe)
+                _store_codex_cache["exe"] = path
+                return path
+    except Exception:
+        pass
+    _store_codex_cache["exe"] = ""
+    return None
+
+
+def _store_codex_aumid() -> str | None:
+    """Return the AUMID for the Windows Store Codex app, or None."""
+    cached = _store_codex_cache.get("aumid")
+    if cached is not None:
+        return cached if cached else None
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "$pkg = Get-AppxPackage -Name '*Codex*';"
+                "if ($pkg) { $pkg.PackageFamilyName }",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        family = result.stdout.strip()
+        if family:
+            aumid = f"{family}!App"
+            _store_codex_cache["aumid"] = aumid
+            return aumid
+    except Exception:
+        pass
+    _store_codex_cache["aumid"] = ""
+    return None
+
+
+def _spawn_with_new_console(
+    args: list[str], env: dict[str, str] | None = None
+) -> subprocess.Popen[bytes]:
+    """Spawn a console application in a new console window (Windows-aware)."""
+    if sys.platform == "win32":
+        creationflags = (
+            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NEW_CONSOLE
+        )
+        return subprocess.Popen(
+            args,
+            close_fds=True,
+            creationflags=creationflags,
+            env=env,
+        )
+    return subprocess.Popen(
+        args,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        start_new_session=True,
+        env=env,
+    )
+
+
+def _spawn_detached(
+    args: list[str], env: dict[str, str] | None = None
+) -> subprocess.Popen[bytes]:
+    """Spawn a process detached from the current console (Windows-aware)."""
+    if sys.platform == "win32":
+        creationflags = (
+            subprocess.CREATE_NEW_PROCESS_GROUP
+            | subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_BREAKAWAY_FROM_JOB
+        )
+        return subprocess.Popen(
+            args,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=creationflags,
+            env=env,
+        )
+    return subprocess.Popen(
+        args,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        start_new_session=True,
+        env=env,
+    )
+
+
+async def _flags_from_launch_request(
+    request: Request, *, default_flags: tuple[str, ...]
+) -> list[str]:
+    """Extract optional flags from the JSON body, falling back to ``default_flags``."""
+    try:
+        body = await request.json()
+    except Exception:
+        return list(default_flags)
+    if not isinstance(body, dict):
+        return list(default_flags)
+    flags = body.get("flags")
+    if isinstance(flags, list) and all(isinstance(flag, str) for flag in flags):
+        return flags
+    return list(default_flags)
 
 
 async def _check_local_provider(

@@ -29,6 +29,13 @@ const VIEW_GROUPS = [
     sections: ["messaging", "voice"],
     containerId: "messagingSections",
   },
+  {
+    id: "codex",
+    label: "Codex",
+    title: "Codex Launchers",
+    sections: [],
+    containerId: null,
+  },
 ];
 
 const byId = (id) => document.getElementById(id);
@@ -108,8 +115,170 @@ async function load() {
   byId("configPath").textContent = config.paths.managed;
   await validate(false);
   await refreshLocalStatus();
+  await refreshCodexStatus();
+  wireCodexLaunchers();
   updateDirtyState();
   showMessage("");
+}
+
+async function refreshCodexStatus() {
+  const statusEl = byId("codexStatus");
+  const resultEl = byId("codexResult");
+  if (!statusEl) return;
+  statusEl.textContent = "Checking Codex status...";
+  try {
+    const status = await api("/admin/api/codex/status");
+    renderCodexStatus(statusEl, status);
+    updateCodexButtons(status);
+    resultEl.textContent = "";
+  } catch (exc) {
+    statusEl.textContent = `Failed to read Codex status: ${exc.message}`;
+  }
+}
+
+function renderCodexStatus(target, status) {
+  const items = [
+    { label: "Proxy URL", value: status.proxy_url },
+    {
+      label: "Config file",
+      value: status.config_exists ? status.config_path : "not found",
+    },
+    {
+      label: "Config managed",
+      value: status.config_exists
+        ? status.config_path
+            .split(/[/\\]/)
+            .pop()
+            .includes("codexproxy")
+          ? "by CodexProxy"
+          : "by user"
+        : "N/A",
+    },
+    {
+      label: "Backup",
+      value: status.backup_exists
+        ? "codexproxy-backup"
+        : status.legacy_backup_exists
+          ? "legacy backup_pre_cdx"
+          : "none",
+    },
+    { label: "Codex CLI", value: status.codex_cli_available ? "available" : "not found" },
+    {
+      label: "Codex App",
+      value: status.codex_app_installed
+        ? status.codex_app_path.split(/[/\\]/).pop()
+        : "not installed",
+    },
+  ];
+  target.innerHTML = items
+    .map(
+      (item) =>
+        `<div class="codex-status-item"><span class="codex-status-label">${item.label}</span><span class="codex-status-value">${item.value}</span></div>`
+    )
+    .join("");
+}
+
+function updateCodexButtons(status) {
+  const cliBtn = byId("codexLaunchCliButton");
+  const appBtn = byId("codexLaunchAppButton");
+  const restoreBtn = byId("codexRestoreButton");
+  if (cliBtn) {
+    cliBtn.disabled = !status.codex_cli_available;
+    cliBtn.title = status.codex_cli_available
+      ? "Spawn a new console window running 'codex exec' through this proxy"
+      : "Codex CLI not found on PATH";
+  }
+  if (appBtn) {
+    appBtn.disabled = !status.codex_app_installed;
+    appBtn.title = status.codex_app_installed
+      ? "Open the Codex Desktop App, routing it through this proxy"
+      : "Codex Desktop App not installed";
+  }
+  if (restoreBtn) {
+    const hasBackup = status.backup_exists || status.legacy_backup_exists;
+    restoreBtn.disabled = !hasBackup;
+    restoreBtn.title = hasBackup
+      ? "Restore the pre-CodexProxy config.toml and auth.json backups, and clear the proxy env vars"
+      : "No pre-CodexProxy backup found";
+  }
+}
+
+function wireCodexLaunchers() {
+  if (state._codexWired) return;
+  state._codexWired = true;
+  const cliBtn = byId("codexLaunchCliButton");
+  const appBtn = byId("codexLaunchAppButton");
+  const restoreBtn = byId("codexRestoreButton");
+  if (cliBtn) {
+    cliBtn.addEventListener("click", async () => {
+      const resultEl = byId("codexResult");
+      resultEl.removeAttribute("hidden");
+      resultEl.textContent = "Configuring proxy and launching CLI...";
+      try {
+        const data = await api("/admin/api/codex/launch-cli", {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        resultEl.textContent = `CLI launched (pid ${data.pid}).\nProxy: ${data.proxy_url}\nCommand: ${data.command.join(" ")}`;
+      } catch (exc) {
+        resultEl.textContent = `Error: ${exc.message}`;
+      }
+    });
+  }
+  if (appBtn) {
+    appBtn.addEventListener("click", async () => {
+      const resultEl = byId("codexResult");
+      resultEl.removeAttribute("hidden");
+      resultEl.textContent = "Configuring proxy and launching Desktop App...";
+      try {
+        const data = await api("/admin/api/codex/launch-app", {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        resultEl.textContent = `App launched (pid ${data.pid}).\nProxy: ${data.proxy_url}\nCommand: ${data.command.join(" ")}`;
+      } catch (exc) {
+        resultEl.textContent = `Error: ${exc.message}`;
+      }
+    });
+  }
+  if (restoreBtn) {
+    restoreBtn.addEventListener("click", async () => {
+      const resultEl = byId("codexResult");
+      if (
+        !window.confirm(
+          "Restore config.toml and auth.json from backup? This disconnects Codex from this proxy."
+        )
+      ) {
+        return;
+      }
+      resultEl.removeAttribute("hidden");
+      resultEl.textContent = "Restoring...";
+      try {
+        const data = await api("/admin/api/codex/restore-default", {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        resultEl.textContent = formatRestoreResult(data);
+        await refreshCodexStatus();
+      } catch (exc) {
+        resultEl.textContent = `Restore failed: ${exc.message}`;
+      }
+    });
+  }
+}
+
+function formatRestoreResult(data) {
+  const lines = [];
+  if (data.restored && data.restored.length) {
+    lines.push(`Restored: ${data.restored.join(", ")}`);
+  }
+  if (data.skipped && data.skipped.length) {
+    lines.push(`Skipped: ${data.skipped.join("; ")}`);
+  }
+  if (data.cleared_env && data.cleared_env.length) {
+    lines.push(`Cleared env vars: ${data.cleared_env.join(", ")}`);
+  }
+  return lines.join("\n") || "Nothing to do.";
 }
 
 function renderNav() {
@@ -207,7 +376,9 @@ function updateProviderCard(providerId, status, label, metaText) {
 
 function renderSections(sections, fields) {
   VIEW_GROUPS.forEach((view) => {
-    byId(view.containerId).innerHTML = "";
+    const container = byId(view.containerId);
+    if (!container) return;
+    container.innerHTML = "";
   });
 
   const sectionById = new Map(sections.map((section) => [section.id, section]));

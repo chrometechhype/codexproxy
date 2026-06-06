@@ -67,16 +67,23 @@ The launcher is **idempotent**: re-running `cdx-codex` replaces only the `codexp
 
 `CODEX_HOME` overrides the Codex config directory. The launcher also respects `OPENAI_BASE_URL`/`OPENAI_API_KEY` from the parent env so users can pre-pin a different target if needed.
 
+### Top-level `model` and `model_provider` (Codex Desktop App)
+
+`cdx-codex` also rewrites the **top-level** `model` and `model_provider` keys in `~/.codex/config.toml` (the prefix before the first `[section]` header). This is what the Codex Desktop App (`codex app`) reads as the conversation default. Without the rewrite, a stale `model = "proxy-model"` would cause the desktop app to request a model the proxy does not advertise.
+
+For users who run only the Codex Desktop App and never `codex exec`, the dedicated entry point `cdx-codex-config` writes the same config and exits without spawning a child process. The desktop app-server reads `config.toml` on every conversation, so the change takes effect on the next turn without a restart in most cases.
+
 ### Codex CLI quirks
 
 - Codex CLI 0.118+ ignores the `OPENAI_BASE_URL` environment variable. The launcher must write the URL into `~/.codex/config.toml` (see [openai/codex#16719](https://github.com/openai/codex/issues/16719)).
 - The Codex CLI's internal `codex_apps` MCP server hits `/v1/responses`; it inherits the auth token from `~/.codex/config.toml`.
+- The Codex Desktop App's internal `app-server` (a bundled `codex.exe` started over stdio JSON-RPC) re-reads `~/.codex/config.toml` on every conversation, so `cdx-codex-config` updates are visible without restarting the desktop app.
 
 ## Testing
 
-- 14 new unit tests in `tests/cli/test_cdx_codex.py` cover the config writer, the launcher, and the proxy-unreachable error path.
-- 2 new live smoke tests in `smoke/product/test_cdx_codex_cli_product_live.py` boot the proxy and assert that the config.toml written by the launcher is parseable and points at the right base URL.
-- 39 new tests in `tests/core/responses/` and `tests/api/test_responses_routes.py` cover the SSE encoder, the adapter, the store, and the route surface.
+- Unit tests in `tests/cli/test_cdx_codex.py` cover the config writer, the top-level `model` / `model_provider` rewriter, the `cdx-codex` launcher, the `cdx-codex-config` entry point, and the proxy-unreachable error path.
+- Live smoke tests in `smoke/product/test_cdx_codex_cli_product_live.py` boot the proxy and assert that the `config.toml` written by both `cdx-codex` and `cdx-codex-config` is parseable, points at the right base URL, and replaces the user's stale top-level `model` while preserving unrelated sections.
+- 39 tests in `tests/core/responses/` and `tests/api/test_responses_routes.py` cover the SSE encoder, the adapter, the store, and the route surface.
 
 ## Future work
 

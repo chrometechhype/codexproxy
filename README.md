@@ -308,6 +308,25 @@ Keep `cdx-server` running while you work. `cdx-codex` writes `~/.codex/config.to
 
 The Codex CLI's `OPENAI_BASE_URL` environment variable is ignored in Codex CLI 0.118+ (see [openai/codex#16719](https://github.com/openai/codex/issues/16719)). The launcher therefore writes the URL into `config.toml`, not the environment.
 
+### 2. Codex Desktop App (`codex app`)
+
+The Codex Desktop app reads the same `~/.codex/config.toml` as the CLI. To point it at CodexProxy without launching `codex exec` first, run:
+
+```bash
+cdx-codex-config
+```
+
+This command writes (or refreshes) `~/.codex/config.toml` with:
+
+- the `codexproxy` model provider pointing at `http://127.0.0.1:8082/v1`,
+- `wire_api = "responses"` so the app uses the Responses API,
+- the proxy's `CODEX_PROXY_AUTH_TOKEN` (default `freecc`) as the `api_key`,
+- the configured `MODEL` (with the `provider/` prefix stripped) as the top-level `model` so the app's default model picker is a real one.
+
+Launch (or restart) the Codex Desktop app after running this command. The app-server reads `config.toml` dynamically, so the change takes effect on the next conversation start.
+
+`cdx-codex-config` is idempotent: it preserves your existing `[model_providers.*]`, `[plugins.*]`, `[mcp_servers.*]`, `[projects.*]`, `[features]`, `[windows]`, and any other section, and updates only the `codexproxy` provider block plus the top-level `model` / `model_provider` keys.
+
 ### 2. Direct Responses Clients
 
 Any client that speaks the OpenAI Responses API can target the proxy directly. Set the base URL to `http://127.0.0.1:8082/v1` and the API key to the value of `CODEX_PROXY_AUTH_TOKEN` (default `freecc`):
@@ -461,7 +480,7 @@ codexproxy/
 │   └── responses/             # Responses Pydantic models, SSE encoder, store, adapter
 ├── providers/             # Provider transports, registry, rate limiting
 ├── messaging/             # Discord/Telegram adapters, sessions, voice
-├── cli/                   # Package entry points (cdx-server, cdx-codex, cdx-init)
+├── cli/                   # Package entry points (cdx-server, cdx-codex, cdx-codex-config, cdx-init)
 ├── config/                # Settings, provider catalog, logging
 └── tests/                 # Unit and contract tests
 ```
@@ -494,6 +513,7 @@ Run them in that order before pushing. CI enforces the same checks.
 - `cdx-server`: starts the proxy with configured host and port.
 - `cdx-init`: optional advanced scaffold for `~/.codexproxy/.env`; prefer the **Admin UI** for normal configuration.
 - `cdx-codex`: writes `~/.codex/config.toml` with `wire_api = "responses"` and the proxy URL, then launches the real `codex exec` command.
+- `cdx-codex-config`: writes the same config without launching `codex exec`. Use this for the Codex Desktop app, which you start separately.
 - `cdx-claude`: legacy launcher that spawns Claude Code against the same proxy (deprecation shim; will be removed in a later release).
 - `codexproxy`: compatibility alias for `cdx-server`.
 
