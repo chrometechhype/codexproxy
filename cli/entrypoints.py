@@ -106,7 +106,7 @@ def _schedule_open_admin_browser(settings: Settings) -> None:
             time.sleep(0.15)
 
     threading.Thread(
-        target=open_when_ready, name="fcc-open-admin-browser", daemon=True
+        target=open_when_ready, name="cdx-open-admin-browser", daemon=True
     ).start()
 
 
@@ -172,7 +172,7 @@ def _migrate_legacy_env_if_missing() -> Path | None:
     if env_file.exists():
         return None
 
-    # TODO: Remove after the ~/.fcc/.env migration has had a release cycle.
+    # TODO: Remove after the ~/.codexproxy/.env migration has had a release cycle.
     for legacy_env in legacy_env_paths():
         if not legacy_env.is_file():
             continue
@@ -283,4 +283,3 @@ def _update_top_level_codex_settings(
 ) -> str:
     """Update top-level ``model`` and ``model_provider`` in a Codex config file.
 
-{
