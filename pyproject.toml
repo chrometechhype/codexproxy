@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codexproxy"
-version = "1.1.2"
+version = "1.2.0"
 description = "Middleware between OpenAI Codex CLI (Responses API) and 17 provider backends"
 readme = "README.md"
 requires-python = ">=3.14.0"
