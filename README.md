@@ -19,20 +19,16 @@ Use the OpenAI Codex CLI and any OpenAI Responses client through your own provid
 - Optional Discord or Telegram bot wrapper for remote sessions.
 
 ## Quick Start
-
-### 1. Install
-
-```powershell
-# Windows
-irm "https://raw.githubusercontent.com/chrometechhype/codexproxy/main/scripts/install.ps1?raw=1" | iex
-```
-
-```bash
-# macOS/Linux
-curl -fsSL "https://raw.githubusercontent.com/chrometechhype/codexproxy/main/scripts/install.sh?raw=1" | sh
-```
-
-### 2. Start The Proxy
+ 
+ ### 1. Install
+ 
+ **Note: This project is currently only supported on Windows.**
+ 
+ ```powershell
+ irm "https://raw.githubusercontent.com/chrometechhype/codexproxy/main/scripts/install.ps1?raw=1" | iex
+ ```
+ 
+ ### 2. Start The Proxy
 
 ```bash
 cdx-server
