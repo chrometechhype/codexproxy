@@ -51,7 +51,7 @@ def _load_env_template() -> str:
 
 
 def serve() -> None:
-    """Start the FastAPI server (registered as `fcc-server` script)."""
+    """Start the FastAPI server (registered as `cdx-server` script)."""
     opened_admin_browser = False
     try:
         try:
@@ -106,7 +106,7 @@ def _schedule_open_admin_browser(settings: Settings) -> None:
             time.sleep(0.15)
 
     threading.Thread(
-        target=open_when_ready, name="fcc-open-admin-browser", daemon=True
+        target=open_when_ready, name="cdx-open-admin-browser", daemon=True
     ).start()
 
 
@@ -172,7 +172,7 @@ def _migrate_legacy_env_if_missing() -> Path | None:
     if env_file.exists():
         return None
 
-    # TODO: Remove after the ~/.fcc/.env migration has had a release cycle.
+    # TODO: Remove after the ~/.codexproxy/.env migration has had a release cycle.
     for legacy_env in legacy_env_paths():
         if not legacy_env.is_file():
             continue
@@ -378,7 +378,7 @@ def _write_codex_config(
     On the first call against a config that does not yet carry a managed
     CodexProxy block, the existing file is copied to
     ``<config_path>.codexproxy-backup`` so the user can later restore their
-    pre-CodexProxy setup via ``cdx-codex-restore``. The backup is only taken
+    pre-CodexProxy setup via ``cdx-restore``. The backup is only taken
     once — subsequent runs leave it untouched.
     """
     config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -663,6 +663,180 @@ def configure_codex() -> None:
     print(
         "Launch (or restart) the Codex Desktop app to start using this proxy.",
     )
+
+
+def launch_codex_app(argv: Sequence[str] | None = None) -> None:
+    """Launch the OpenAI Codex Desktop App through this proxy.
+
+    Writes ``~/.codex/config.toml`` with ``wire_api = "responses"``,
+    ``openai_base_url`` pointing at the running proxy, and the configured
+    auth token as ``OPENAI_API_KEY``, then exec's the ``codex app`` command.
+    """
+
+    settings = get_settings()
+    proxy_root_url = local_proxy_root_url(settings)
+    if error := _preflight_proxy(proxy_root_url):
+        print(
+            f"CodexProxy is not reachable at {proxy_root_url}: {error}",
+            file=sys.stderr,
+        )
+        print("Start it in another terminal with: cdx-server", file=sys.stderr)
+        raise SystemExit(1)
+
+    token = settings.effective_auth_token or "freecc"
+    config_path = _codex_config_path_alt()
+    _write_codex_config(
+        config_path,
+        base_url=f"{proxy_root_url.rstrip('/')}/v1",
+        api_key=token,
+        model=_default_codex_model(settings),
+    )
+    print(f"Codex Desktop App config written to {config_path}", file=sys.stderr)
+
+    args = list(sys.argv[1:] if argv is None else argv)
+    codex_command = shutil.which(settings.codex_cli_bin)
+    if codex_command is None:
+        print(
+            f"Could not find Codex command: {settings.codex_cli_bin}",
+            file=sys.stderr,
+        )
+        print(
+            "Install Codex from https://github.com/openai/codex",
+            file=sys.stderr,
+        )
+        raise SystemExit(127)
+
+    command = [codex_command, "app", *args]
+    env = _codex_child_env(settings, os.environ)
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        process = subprocess.Popen(command, env=env)
+        if process.pid:
+            register_pid(process.pid)
+        return_code = process.wait()
+    except FileNotFoundError:
+        print(
+            f"Could not find Codex command: {settings.codex_cli_bin}",
+            file=sys.stderr,
+        )
+        print(
+            "Install Codex from https://github.com/openai/codex",
+            file=sys.stderr,
+        )
+        raise SystemExit(127) from None
+    except KeyboardInterrupt:
+        if process is not None and process.pid:
+            kill_pid_tree_best_effort(process.pid)
+            process.wait()
+        raise
+    finally:
+        if process is not None and process.pid:
+            unregister_pid(process.pid)
+
+    raise SystemExit(return_code)
+
+
+def delete_all() -> None:
+    """Completely remove all CodexProxy files and configuration.
+
+    Deletes:
+    - ~/.codexproxy/ (entire config directory)
+    - ~/.codex/config.toml.codexproxy-backup (if exists)
+    - ~/.codex/auth.json.codexproxy-backup (if exists)
+    - Clears environment variables: OPENAI_BASE_URL, OPENAI_API_KEY (Windows only)
+
+    This is a destructive operation and cannot be undone.
+    """
+
+    config_dir = config_dir_path()
+    config_path = _codex_config_path_alt()
+    backup_path = _codex_config_backup_path(config_path)
+    auth_path = _codex_auth_json_path()
+    auth_backup = _codex_auth_json_backup_path(auth_path)
+
+    deleted: list[str] = []
+    failed: list[str] = []
+    cleared_env: list[str] = []
+
+    # Delete ~/.codexproxy/ directory
+    if config_dir.exists():
+        try:
+            shutil.rmtree(config_dir)
+            deleted.append(f"directory: {config_dir}")
+        except OSError as exc:
+            failed.append(f"directory: {config_dir} ({exc.__class__.__name__})")
+
+    # Delete config backup
+    if backup_path.exists():
+        try:
+            backup_path.unlink()
+            deleted.append(f"config backup: {backup_path}")
+        except OSError as exc:
+            failed.append(f"config backup: {backup_path} ({exc.__class__.__name__})")
+
+    # Delete auth backup
+    if auth_backup.exists():
+        try:
+            auth_backup.unlink()
+            deleted.append(f"auth backup: {auth_backup}")
+        except OSError as exc:
+            failed.append(f"auth backup: {auth_backup} ({exc.__class__.__name__})")
+
+    # Clear Windows environment variables
+    cleared_env.extend(
+        var
+        for var in ("OPENAI_BASE_URL", "OPENAI_API_KEY")
+        if _clear_user_env_var(var)
+    )
+
+    # Print summary
+    print("CodexProxy deletion summary:")
+    if deleted:
+        print("\nDeleted:")
+        for item in deleted:
+            print(f"  ✓ {item}")
+    if cleared_env:
+        print("\nCleared environment variables:")
+        for var in cleared_env:
+            print(f"  ✓ {var}")
+    if failed:
+        print("\nFailed to delete:")
+        for item in failed:
+            print(f"  ✗ {item}")
+
+    if not deleted and not cleared_env:
+        print("  (nothing to delete)")
+
+    if failed:
+        raise SystemExit(1)
+
+
+def restore() -> None:
+    """Restore the user's pre-CodexProxy configuration (registered as `cdx-restore`).
+
+    Restores:
+    - ~/.codex/config.toml from backup
+    - ~/.codex/auth.json from backup
+    - Clears OPENAI_BASE_URL and OPENAI_API_KEY (Windows only)
+
+    This reverses the effects of ``cdx-codex`` and ``cdx-codex-app``.
+    """
+
+    result = restore_codex_defaults()
+
+    print("CodexProxy restoration summary:")
+    if result["restored"]:
+        print("\nRestored:")
+        for item in result["restored"]:
+            print(f"  ✓ {item}")
+    if result["cleared_env"]:
+        print("\nCleared environment variables:")
+        for var in result["cleared_env"]:
+            print(f"  ✓ {var}")
+    if result["skipped"]:
+        print("\nSkipped (not found):")
+        for item in result["skipped"]:
+            print(f"  ℹ {item}")
 
 
 def launch_claude(argv: Sequence[str] | None = None) -> None:
