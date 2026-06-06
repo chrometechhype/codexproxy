@@ -31,6 +31,9 @@ codexproxy = "cli.entrypoints:serve"
 cdx-init = "cli.entrypoints:init"
 cdx-codex = "cli.entrypoints:launch_codex"
 cdx-codex-config = "cli.entrypoints:configure_codex"
+cdx-codex-app = "cli.entrypoints:launch_codex_app"
+cdx-restore = "cli.entrypoints:restore"
+cdx-delete = "cli.entrypoints:delete_all"
 
 [project.optional-dependencies]
 voice = [
@@ -117,7 +120,7 @@ markers = [
     "clients: client compatibility checks",
     "voice: voice transcription checks",
     "contract: deterministic feature contract checks",
-    "smoke_target(name): route a smoke test behind FCC_SMOKE_TARGETS",
+    "smoke_target(name): route a smoke test behind CODEX_PROXY_SMOKE_TARGETS",
     "xdist_group(name): group smoke provider items under pytest-xdist --dist=loadgroup",
 ]
 
