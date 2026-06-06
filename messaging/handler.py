@@ -1,8 +1,8 @@
 """
-Claude Message Handler
+Codex Message Handler
 
-Platform-agnostic Claude interaction logic.
-Handles the core workflow of processing user messages via Claude CLI.
+Platform-agnostic Codex interaction logic.
+Handles the core workflow of processing user messages via the Codex CLI.
 Uses tree-based queuing for message ordering.
 """
 
@@ -36,9 +36,9 @@ from .trees.queue_manager import (
 from .ui_updates import ThrottledTranscriptEditor
 
 
-class ClaudeMessageHandler:
+class CodexMessageHandler:
     """
-    Platform-agnostic handler for Claude interactions.
+    Platform-agnostic handler for Codex interactions.
 
     Uses a tree-based message queue where:
     - New messages create a tree root
@@ -313,7 +313,7 @@ class ClaudeMessageHandler:
         node_id: str,
         node: MessageNode,
     ) -> None:
-        """Core task processor - handles a single Claude CLI interaction."""
+        """Core task processor - handles a single Codex CLI interaction."""
         incoming = node.incoming
         status_msg_id = node.status_message_id
         chat_id = incoming.chat_id
@@ -348,8 +348,8 @@ class ClaudeMessageHandler:
             parent_session_id = tree.get_parent_session_id(node_id)
             if parent_session_id:
                 trace_event(
-                    stage="claude_cli",
-                    event="claude_cli.fork.from_parent_session",
+                    stage="codex_cli",
+                    event="codex_cli.fork.from_parent_session",
                     source=platform_nm,
                     chat_id=chat_id,
                     node_id=node_id,
@@ -387,12 +387,12 @@ class ClaudeMessageHandler:
                     captured_session_id = session_or_temp_id
 
                 sess_evt = (
-                    "claude_cli.session.pending_created"
+                    "codex_cli.session.pending_created"
                     if is_new
-                    else "claude_cli.session.reused"
+                    else "codex_cli.session.reused"
                 )
                 trace_event(
-                    stage="claude_cli",
+                    stage="codex_cli",
                     event=sess_evt,
                     source=platform_nm,
                     chat_id=chat_id,
@@ -403,8 +403,8 @@ class ClaudeMessageHandler:
                     fork_requested=bool(parent_session_id),
                 )
                 trace_event(
-                    stage="claude_cli",
-                    event="claude_cli.request.sent",
+                    stage="codex_cli",
+                    event="codex_cli.request.sent",
                     source=platform_nm,
                     chat_id=chat_id,
                     node_id=node_id,
@@ -426,8 +426,8 @@ class ClaudeMessageHandler:
                         error_message=error_message,
                     )
                 trace_event(
-                    stage="claude_cli",
-                    event="claude_cli.session.limit_reached",
+                    stage="codex_cli",
+                    event="codex_cli.session.limit_reached",
                     source=platform_nm,
                     chat_id=chat_id,
                     node_id=node_id,
@@ -483,9 +483,23 @@ class ClaudeMessageHandler:
                         log_messaging_error_details=self._log_messaging_error_details,
                     )
 
+        except FileNotFoundError as e:
+            # Clearer user-facing error when the underlying CLI binary is missing
+            err_msg = (
+                "Codex/CLI binary not found. Install the Codex CLI (npm i -g @openai/codex) "
+                "or ensure the configured binary is on PATH (set CODEX_CLI_BIN if needed)."
+            )
+            logger.error("CLI binary not found: {}", e)
+            transcript.apply({"type": "error", "message": err_msg})
+            await update_ui(self.format_status("❌", "CLI not found", err_msg), force=True)
+            if tree:
+                await self._propagate_error_to_children(
+                    node_id, err_msg, "CLI binary missing"
+                )
+            return
         except asyncio.CancelledError:
             trace_event(
-                stage="claude_cli",
+                stage="codex_cli",
                 event="turn.processor.cancelled",
                 source=platform_nm,
                 chat_id=chat_id,
@@ -510,7 +524,7 @@ class ClaudeMessageHandler:
                 )
         except Exception as e:
             trace_event(
-                stage="claude_cli",
+                stage="codex_cli",
                 event="turn.processor.exception",
                 source=platform_nm,
                 chat_id=chat_id,
@@ -537,7 +551,7 @@ class ClaudeMessageHandler:
                 source=platform_nm,
                 chat_id=chat_id,
                 node_id=node_id,
-                claude_session_id=captured_session_id or temp_session_id,
+                codex_session_id=captured_session_id or temp_session_id,
             )
             # Free the session-manager slot. Session IDs are persisted in the tree and
             # can be resumed later by ID; we don't need to keep a CLISession instance
@@ -593,7 +607,7 @@ class ClaudeMessageHandler:
             return self.format_status("🔄", "Continuing conversation...")
 
         # New conversation
-        return self.format_status("⏳", "Launching new Claude CLI instance...")
+        return self.format_status("⏳", "Launching new Codex CLI instance...")
 
     async def stop_all_tasks(self) -> int:
         """
@@ -674,3 +688,7 @@ class ClaudeMessageHandler:
                 trees_to_save[tree.root_id] = tree
         for root_id, tree in trees_to_save.items():
             self.session_store.save_tree(root_id, tree.to_dict())
+
+
+# Backwards compatibility: some modules still import ClaudeMessageHandler
+ClaudeMessageHandler = CodexMessageHandler
