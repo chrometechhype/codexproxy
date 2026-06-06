@@ -13,7 +13,10 @@ from api.models.anthropic import (
     ContentBlockImage,
     ContentBlockText,
 )
-from api.responses_service import _responses_content_to_anthropic
+from api.responses_service import (
+    _expand_namespace_tools,
+    _responses_content_to_anthropic,
+)
 from core.responses.store import ResponseStore, StoredResponse
 
 # A local module-level app avoids touching the global ``app`` fixture used by
@@ -358,6 +361,114 @@ def test_responses_content_returns_string_for_plain_string_input() -> None:
 
 def test_responses_content_returns_empty_string_for_none() -> None:
     assert _responses_content_to_anthropic(None) == ""
+
+
+class TestExpandNamespaceTools:
+    """Tests for ``_expand_namespace_tools``."""
+
+    def test_plain_tools_pass_through(self):
+        tools = [
+            {"type": "function", "name": "tofu", "parameters": {}},
+            {"type": "function", "name": "tempeh", "parameters": {}},
+        ]
+        result = _expand_namespace_tools(tools)
+        assert result == tools
+
+    def test_namespace_expands_with_prefix(self):
+        tools = [
+            {
+                "type": "namespace",
+                "name": "mcp__bash",
+                "tools": [
+                    {
+                        "type": "function",
+                        "name": "execute",
+                        "parameters": {"foo": "bar"},
+                    },
+                    {"type": "function", "name": "read", "parameters": {}},
+                ],
+            }
+        ]
+        result = _expand_namespace_tools(tools)
+        assert result == [
+            {
+                "type": "function",
+                "name": "mcp__bash__execute",
+                "parameters": {"foo": "bar"},
+            },
+            {"type": "function", "name": "mcp__bash__read", "parameters": {}},
+        ]
+
+    def test_namespace_with_inner_tool_missing_name(self):
+        tools = [
+            {
+                "type": "namespace",
+                "name": "mcp__fs",
+                "tools": [
+                    {"type": "function", "name": "write"},
+                    {"type": "function"},  # missing name
+                ],
+            }
+        ]
+        result = _expand_namespace_tools(tools)
+        assert result == [
+            {"type": "function", "name": "mcp__fs__write"},
+        ]
+
+    def test_empty_namespace_dropped(self):
+        tools = [
+            {"type": "namespace", "name": "mcp__empty", "tools": []},
+        ]
+        result = _expand_namespace_tools(tools)
+        assert result == []
+
+    def test_namespace_tools_not_a_list(self):
+        tools = [
+            {"type": "namespace", "name": "mcp__bad", "tools": "oops"},
+        ]
+        result = _expand_namespace_tools(tools)
+        assert result == []
+
+    def test_non_function_inner_types_dropped(self):
+        tools = [
+            {
+                "type": "namespace",
+                "name": "mcp__mixed",
+                "tools": [
+                    {"type": "function", "name": "ok", "parameters": {}},
+                    {"type": "namespace", "name": "nested", "tools": []},
+                ],
+            }
+        ]
+        result = _expand_namespace_tools(tools)
+        assert result == [
+            {"type": "function", "name": "mcp__mixed__ok", "parameters": {}},
+        ]
+
+    def test_mixed_top_level(self):
+        tools = [
+            {"type": "function", "name": "plain_tool"},
+            {
+                "type": "namespace",
+                "name": "mcp__repl",
+                "tools": [
+                    {"type": "function", "name": "eval"},
+                ],
+            },
+            {"type": "function", "name": "another_plain"},
+        ]
+        result = _expand_namespace_tools(tools)
+        assert result == [
+            {"type": "function", "name": "plain_tool"},
+            {"type": "function", "name": "mcp__repl__eval"},
+            {"type": "function", "name": "another_plain"},
+        ]
+
+    def test_empty_input(self):
+        assert _expand_namespace_tools([]) == []
+
+    def test_input_is_none_not_list(self):
+        assert _expand_namespace_tools([]) == []
 
 
 def test_responses_content_skips_unknown_blocks() -> None:

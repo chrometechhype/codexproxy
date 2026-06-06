@@ -91,7 +91,7 @@ class ResponsesService:
         provider = self._provider_getter(resolved.provider_id)
         response_id = new_response_id()
         created_at = int(time.time())
-        tools_payload = [_tool_to_payload(t) for t in (request.tools or [])]
+        tools_payload = _expand_namespace_tools(request.tools or [])
         tool_choice_payload = _tool_choice_to_payload(request.tool_choice)
         adapter = AnthropicToResponsesAdapter(
             response_id=response_id,
@@ -211,7 +211,9 @@ class ResponsesService:
         provider_model = _strip_provider_prefix(provider_model_ref, provider_id)
         max_tokens = request.max_output_tokens or 4096
         thinking_enabled = self._settings.resolve_thinking(request.model)
-        anthropic_tools = [_payload_to_tool(t) for t in (request.tools or [])]
+        anthropic_tools = [
+            _payload_to_tool(t) for t in _expand_namespace_tools(request.tools or [])
+        ]
         anthropic_tools = [t for t in anthropic_tools if t is not None]
         return (
             MessagesRequest(
@@ -471,6 +473,44 @@ def _input_item_to_view(
             output=item.get("output"),
         )
     return None
+
+
+def _expand_namespace_tools(tools: list[Any]) -> list[dict[str, Any]]:
+    """Expand namespace-type tools into plain ``function`` tools.
+
+    Codex CLI wraps MCP and other tool groups inside
+    ``{"type": "namespace", "name": "mcp__<server>", "tools": [...]}``
+    which is a non-standard Responses API extension. OpenAI and Azure
+    expand these natively, but other backends must flatten them.
+
+    Each inner tool gets a deterministic prefixed name so Codex CLI can
+    route ``function_call`` responses back to the correct MCP server::
+
+        mcp__<server>__<tool_name>
+
+    Namespace tools that contain no inner tools are dropped; plain
+    ``function`` tools pass through unchanged.
+    """
+    expanded: list[dict[str, Any]] = []
+    for tool in tools:
+        raw = _tool_to_payload(tool)
+        if raw.get("type") == "namespace":
+            namespace_name = raw.get("name", "")
+            inner_tools = raw.get("tools", [])
+            if not isinstance(inner_tools, list):
+                continue
+            for inner in inner_tools:
+                inner_raw = _tool_to_payload(inner)
+                if inner_raw.get("type") not in (None, "function"):
+                    continue
+                if "name" not in inner_raw:
+                    continue
+                prefixed = dict(inner_raw)
+                prefixed["name"] = f"{namespace_name}__{inner_raw['name']}"
+                expanded.append(prefixed)
+        else:
+            expanded.append(raw)
+    return expanded
 
 
 def _tool_to_payload(tool: Any) -> dict[str, Any]:
