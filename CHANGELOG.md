@@ -23,6 +23,14 @@ Codex Desktop App (`codex app`) now routes through CodexProxy alongside
 - 2 new live smoke tests in `smoke/product/test_cdx_codex_cli_product_live.py`
   verifying that both `cdx-codex` and `cdx-codex-config` rewrite the stale
   top-level `model` while preserving unrelated sections.
+- New CLI entry points and scripts: `cdx-codex-app` (writes Codex config and
+  launches the Codex Desktop App), `cdx-restore` (restore pre-CodexProxy
+  `~/.codex/config.toml` and `auth.json` from backups and clear overriding
+  OPENAI env vars on Windows), and `cdx-delete` (destructive cleanup that
+  removes the `~/.codexproxy/` config directory, removes codexproxy-created
+  backups, and clears `OPENAI_BASE_URL` / `OPENAI_API_KEY` from the user
+  environment when possible). The README and `pyproject.toml` were updated
+  to register and document these commands.
 
 ### Fixed
 - `_responses_input_to_messages` in `api/responses_service.py` now translates
@@ -66,8 +74,7 @@ through the proxy, all 17 providers are reachable, and the legacy
 
 ### Changed
 - Rebrand complete: package is `codexproxy`, scripts are `cdx-server`,
-  `cdx-init`, `cdx-codex`, user config dir is `~/.codexproxy/`, auth env var
-  is `CODEX_PROXY_AUTH_TOKEN`.
+  `cdx-init`, `cdx-codex` (Phase 1 stub).
 - All 17 provider backends reused unchanged (Anthropic Messages transports
   reach the Responses adapter without provider-specific plumbing).
 - README rewritten around `codex exec` and the OpenAI Responses API.
