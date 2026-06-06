@@ -24,7 +24,7 @@ def _smoke_config(tmp_path: Path) -> SmokeConfig:
         targets=DEFAULT_TARGETS,
         provider_matrix=frozenset(),
         timeout_s=45.0,
-        prompt="Reply with exactly: FCC_SMOKE_PONG",
+        prompt="Reply with exactly: CODEX_PROXY_SMOKE_PONG",
         claude_bin="claude",
         worker_id="test-worker",
         settings=Settings.model_construct(anthropic_auth_token=""),
@@ -404,8 +404,7 @@ def test_nvidia_nim_cli_success_beats_verbose_timeout_words(tmp_path: Path) -> N
         marker="FCC_NIM_THINK",
         run=run,
         log_delta=(
-            "API_REQUEST: request_id=req_1 model=z-ai/glm-5.1 messages=1 "
-            "read_timeout_s=300"
+            "API_REQUEST: request_id=req_1 model=z-ai/glm-5.1 messages=1 read_timeout_s=300"
         ),
         log_path=tmp_path / "server.log",
     )

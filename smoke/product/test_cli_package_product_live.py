@@ -10,7 +10,7 @@ import pytest
 
 from cli.manager import CLISessionManager
 from cli.session import CLISession
-from smoke.lib.child_process import cmd_fcc_init
+from smoke.lib.child_process import cmd_cdx_init
 from smoke.lib.config import SmokeConfig
 
 pytestmark = [pytest.mark.live, pytest.mark.smoke_target("cli")]
@@ -21,7 +21,7 @@ def test_entrypoint_init_e2e(smoke_config: SmokeConfig, tmp_path: Path) -> None:
     env["HOME"] = str(tmp_path)
     env["USERPROFILE"] = str(tmp_path)
     result = subprocess.run(
-        cmd_fcc_init(),
+        cmd_cdx_init(),
         cwd=smoke_config.root,
         env=env,
         capture_output=True,

@@ -52,8 +52,7 @@ def transcribe_audio_file(
         import riva.client
     except ImportError as e:
         raise ImportError(
-            "NVIDIA NIM transcription requires the voice extra. "
-            "Install with: uv sync --extra voice"
+            "NVIDIA NIM transcription requires the voice extra. Install with: uv sync --extra voice"
         ) from e
 
     model_config = _NIM_ASR_MODEL_MAP.get(model)

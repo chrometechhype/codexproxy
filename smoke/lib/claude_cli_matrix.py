@@ -48,10 +48,7 @@ _MISSING_ENV_MARKERS = (
     "permission denied",
 )
 _EMPTY_MCP_CONFIG = '{"mcpServers":{}}'
-_SUBAGENT_SYSTEM_PROMPT = (
-    "You are a deterministic smoke-test coordinator. Use Agent when asked to "
-    "use a subagent."
-)
+_SUBAGENT_SYSTEM_PROMPT = "You are a deterministic smoke-test coordinator. Use Agent when asked to use a subagent."
 
 
 @dataclass(frozen=True, slots=True)
@@ -538,8 +535,7 @@ def _subagent_task(
             "smoke_reader": {
                 "description": "Reads one requested file and returns its token.",
                 "prompt": (
-                    "Read the requested file with Read and return only the token "
-                    "inside it."
+                    "Read the requested file with Read and return only the token inside it."
                 ),
                 "tools": ["Read"],
                 "permissionMode": "bypassPermissions",

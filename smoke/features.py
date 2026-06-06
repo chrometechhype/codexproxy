@@ -80,7 +80,7 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
         ("api", "cli", "clients", "nvidia_nim_cli", "openrouter_free_cli"),
         (
             "configured provider",
-            "FCC_SMOKE_CLAUDE_BIN for real Claude CLI",
+            "CODEX_PROXY_SMOKE_CLAUDE_BIN for real Claude CLI",
             "NVIDIA_NIM_API_KEY",
             "OPENROUTER_API_KEY",
         ),
@@ -94,7 +94,10 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
         ("test_configured_provider_models_stream_successfully",),
         ("test_provider_matrix_presence_e2e", "test_provider_text_multiturn_e2e"),
         ("providers",),
-        ("configured provider credentials/endpoints", "optional FCC_SMOKE_MODEL_*"),
+        (
+            "configured provider credentials/endpoints",
+            "optional CODEX_PROXY_SMOKE_MODEL_*",
+        ),
         "selected providers missing credentials are failing missing_env",
     ),
     FeatureCoverage(
@@ -278,7 +281,7 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
             "test_voice_nim_backend_e2e",
         ),
         ("messaging", "voice"),
-        ("VOICE_NOTE_ENABLED", "FCC_SMOKE_RUN_VOICE", "WHISPER_DEVICE"),
+        ("VOICE_NOTE_ENABLED", "CODEX_PROXY_SMOKE_RUN_VOICE", "WHISPER_DEVICE"),
         "fake cancellation is required; backend transcription is opt-in",
     ),
     FeatureCoverage(
@@ -376,8 +379,8 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
         "public_surface",
         ("tests/cli/test_entrypoints.py",),
         (
-            "test_fcc_init_scaffolds_user_config",
-            "test_free_claude_code_entrypoint_starts_server",
+            "test_cdx_init_scaffolds_user_config",
+            "test_cdx_server_entrypoint_starts_server",
         ),
         ("test_entrypoint_init_e2e", "test_entrypoint_server_e2e"),
         ("cli",),
@@ -398,7 +401,7 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
         ),
         ("cli", "nvidia_nim_cli", "openrouter_free_cli"),
         (
-            "FCC_SMOKE_CLAUDE_BIN",
+            "CODEX_PROXY_SMOKE_CLAUDE_BIN",
             "configured provider",
             "NVIDIA_NIM_API_KEY",
             "OPENROUTER_API_KEY",

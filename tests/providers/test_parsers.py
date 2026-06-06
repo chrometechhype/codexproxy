@@ -96,10 +96,7 @@ def test_heuristic_tool_parser_strips_control_tokens_split_across_chunks():
 
 def test_heuristic_tool_parser_strips_control_tokens_inside_tool_text():
     p = HeuristicToolParser()
-    text = (
-        "Before <|tool_calls_section_end|> ● <function=Grep>"
-        "<parameter=pattern>hi</parameter> After"
-    )
+    text = "Before <|tool_calls_section_end|> ● <function=Grep><parameter=pattern>hi</parameter> After"
     filtered, tools = p.feed(text)
     tools.extend(p.flush())
 

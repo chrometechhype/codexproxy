@@ -231,7 +231,10 @@ class ClientProtocolDriver:
                         {"type": "text", "text": "Hello."},
                     ],
                 },
-                {"role": "user", "content": "Reply with exactly FCC_SMOKE_CLIENT"},
+                {
+                    "role": "user",
+                    "content": "Reply with exactly CODEX_PROXY_SMOKE_CLIENT",
+                },
             ],
             "thinking": {"type": "adaptive", "budget_tokens": 1024},
         }
@@ -250,7 +253,7 @@ class ClientProtocolDriver:
                             "type": "tool_use",
                             "id": "toolu_client_smoke",
                             "name": "echo_smoke",
-                            "input": {"value": "FCC_SMOKE_CLIENT"},
+                            "input": {"value": "CODEX_PROXY_SMOKE_CLIENT"},
                         }
                     ],
                 },
@@ -260,7 +263,7 @@ class ClientProtocolDriver:
                         {
                             "type": "tool_result",
                             "tool_use_id": "toolu_client_smoke",
-                            "content": "FCC_SMOKE_CLIENT",
+                            "content": "CODEX_PROXY_SMOKE_CLIENT",
                         }
                     ],
                 },

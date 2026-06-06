@@ -4,7 +4,7 @@ This document tracks the migration from the Anthropic Messages API (`/v1/message
 
 ## Why
 
-`free-claude-code` originally proxied Claude Code traffic through the Anthropic Messages API. The rebrand to `codexproxy` targets the OpenAI Responses API consumed by the Codex CLI (`codex exec`).
+`codexproxy` originally forked from a project that proxied Claude Code traffic through the Anthropic Messages API. The rebrand to `codexproxy` targets the OpenAI Responses API consumed by the Codex CLI (`codex exec`).
 
 ## Wire surface
 

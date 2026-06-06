@@ -65,7 +65,6 @@ def collect_message_stream(
         if response.status_code != 200:
             body = response.read().decode("utf-8", errors="replace")
             raise AssertionError(
-                f"stream request failed: HTTP {response.status_code} "
-                f"{redacted(body[:1000])}"
+                f"stream request failed: HTTP {response.status_code} {redacted(body[:1000])}"
             )
         return parse_sse_lines(response.iter_lines())

@@ -184,8 +184,7 @@ def _run_provider_scenario(
     except Exception as exc:
         skip_if_upstream_unavailable_exception(exc)
         raise AssertionError(
-            f"{provider_model.source}={provider_model.full_model}: "
-            f"{type(exc).__name__}: {exc}"
+            f"{provider_model.source}={provider_model.full_model}: {type(exc).__name__}: {exc}"
         ) from exc
 
 

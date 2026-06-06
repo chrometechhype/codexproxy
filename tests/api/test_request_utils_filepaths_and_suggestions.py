@@ -67,17 +67,12 @@ class TestFilepathExtractionDetection:
 
     def test_detects_filepath_extraction_via_system_block(self):
         """Command: + Output: in user, no filepaths in user; system has extract instructions."""
-        msg = _mk_msg("user", "Command: ls\nOutput: avazu-ctr\nfree-claude-code")
-        req = _mk_req(
-            [msg],
-            tools=None,
-            system="Extract any file paths that this command reads or modifies.",
-        )
+        msg = _mk_msg("user", "Command: ls\nOutput: avazu-ctr\ncodexproxy")
+        req = _mk_req([msg], tools=None, system="extract any file paths")
         ok, cmd, out = is_filepath_extraction_request(req)
         assert ok is True
         assert cmd == "ls"
-        assert "avazu-ctr" in out
-        assert "free-claude-code" in out
+        assert "codexproxy" in out
 
     def test_extracts_command_and_output_and_cleans_output(self):
         msg = _mk_msg(

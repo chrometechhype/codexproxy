@@ -4,7 +4,7 @@ from pathlib import Path
 
 CODEXPROXY_CONFIG_DIRNAME = ".codexproxy"
 CODEXPROXY_ENV_FILENAME = ".env"
-LEGACY_REPO_DIRNAME = "free-claude-code"
+LEGACY_PREDECESSOR_DIRNAME = "free-claude-code"
 LEGACY_FCC_DIRNAME = ".fcc"
 LEGACY_XDG_CONFIG_DIRNAME = ".config"
 CODEX_WORKSPACE_DIRNAME = "agent_workspace"
@@ -27,17 +27,16 @@ def managed_env_path() -> Path:
 def legacy_env_paths() -> tuple[Path, ...]:
     """Return legacy user env paths that can be migrated to ~/.codexproxy/.env.
 
-    Accepts the old Free Claude Code locations so existing users keep their
-    configured keys on first launch.
+    Accepts the predecessor project's locations for migration.
     """
 
     home = Path.home()
     return (
-        home / LEGACY_REPO_DIRNAME / CODEXPROXY_ENV_FILENAME,
+        home / LEGACY_PREDECESSOR_DIRNAME / CODEXPROXY_ENV_FILENAME,
         home / LEGACY_FCC_DIRNAME / CODEXPROXY_ENV_FILENAME,
         home
         / LEGACY_XDG_CONFIG_DIRNAME
-        / LEGACY_REPO_DIRNAME
+        / LEGACY_PREDECESSOR_DIRNAME
         / CODEXPROXY_ENV_FILENAME,
         home / LEGACY_XDG_CONFIG_DIRNAME / LEGACY_FCC_DIRNAME / CODEXPROXY_ENV_FILENAME,
     )

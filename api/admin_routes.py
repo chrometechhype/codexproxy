@@ -404,8 +404,7 @@ def _find_store_codex_exe() -> str | None:
                 "powershell",
                 "-NoProfile",
                 "-Command",
-                "$pkg = Get-AppxPackage -Name '*Codex*';"
-                "if ($pkg) { $pkg.InstallLocation }",
+                "$pkg = Get-AppxPackage -Name '*Codex*';if ($pkg) { $pkg.InstallLocation }",
             ],
             capture_output=True,
             text=True,
@@ -435,8 +434,7 @@ def _store_codex_aumid() -> str | None:
                 "powershell",
                 "-NoProfile",
                 "-Command",
-                "$pkg = Get-AppxPackage -Name '*Codex*';"
-                "if ($pkg) { $pkg.PackageFamilyName }",
+                "$pkg = Get-AppxPackage -Name '*Codex*';if ($pkg) { $pkg.PackageFamilyName }",
             ],
             capture_output=True,
             text=True,

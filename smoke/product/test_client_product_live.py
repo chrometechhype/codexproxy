@@ -78,7 +78,7 @@ def test_claude_cli_adaptive_thinking_e2e(
             server=server,
             config=smoke_config,
             cwd=tmp_path,
-            prompt="think hard, then reply with exactly FCC_SMOKE_CLI",
+            prompt="think hard, then reply with exactly CODEX_PROXY_SMOKE_CLI",
         )
         server_log = server.log_path.read_text(encoding="utf-8", errors="replace")
 
@@ -87,7 +87,7 @@ def test_claude_cli_adaptive_thinking_e2e(
     assert " 422 " not in server_log
     assert 'HTTP/1.1" 422' not in server_log
     assert "400 Bad Request" not in result.stdout
-    assert "FCC_SMOKE_CLI" in result.stdout
+    assert "CODEX_PROXY_SMOKE_CLI" in result.stdout
 
 
 @pytest.mark.smoke_target("cli")

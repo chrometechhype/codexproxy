@@ -299,7 +299,7 @@ def test_admin_apply_preserves_hidden_diagnostics_and_smoke_values(
             [
                 "MODEL=nvidia_nim/old-model",
                 "LOG_RAW_API_PAYLOADS=true",
-                "FCC_SMOKE_MODEL_ZAI=zai/smoke-model",
+                "CODEX_PROXY_SMOKE_MODEL_ZAI=zai/smoke-model",
                 "",
             ]
         ),
@@ -318,7 +318,7 @@ def test_admin_apply_preserves_hidden_diagnostics_and_smoke_values(
     text = env_file.read_text("utf-8")
     assert "MODEL=open_router/test-model" in text
     assert "LOG_RAW_API_PAYLOADS=true" in text
-    assert "FCC_SMOKE_MODEL_ZAI=zai/smoke-model" in text
+    assert "CODEX_PROXY_SMOKE_MODEL_ZAI=zai/smoke-model" in text
 
 
 def test_admin_apply_omits_stale_zai_base_url(monkeypatch, tmp_path):
@@ -515,7 +515,7 @@ def test_admin_launch_url_uses_loopback_for_wildcard_host():
 
 
 # ---------------------------------------------------------------------------
-# /admin/api/codex/* — Codex CLI / App launchers + restore defaults
+# /admin/api/codex/* вЂ” Codex CLI / App launchers + restore defaults
 # ---------------------------------------------------------------------------
 
 

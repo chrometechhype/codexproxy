@@ -398,8 +398,8 @@ CAPABILITY_CONTRACTS: tuple[CapabilityContract, ...] = (
         "process cleanup in finally",
         ("tests/cli/test_entrypoints.py",),
         (
-            "test_fcc_init_scaffolds_user_config",
-            "test_free_claude_code_entrypoint_starts_server",
+            "test_cdx_init_scaffolds_user_config",
+            "test_cdx_server_entrypoint_starts_server",
         ),
     ),
     CapabilityContract(

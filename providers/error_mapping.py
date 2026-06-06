@@ -195,8 +195,7 @@ def format_provider_error_message(
 
     if detail.status_code == 405:
         lines = [
-            f"Upstream provider {provider_name} rejected the request method "
-            "or endpoint (HTTP 405)."
+            f"Upstream provider {provider_name} rejected the request method or endpoint (HTTP 405)."
         ]
     elif detail.status_code is not None:
         lines = [
@@ -247,10 +246,7 @@ def user_visible_message_for_mapped_provider_error(
             request_id=request_id,
         )
     if getattr(mapped, "status_code", None) == 405:
-        return (
-            f"Upstream provider {provider_name} rejected the request method "
-            "or endpoint (HTTP 405)."
-        )
+        return f"Upstream provider {provider_name} rejected the request method or endpoint (HTTP 405)."
     return get_user_facing_error_message(mapped, read_timeout_s=read_timeout_s)
 
 

@@ -82,11 +82,7 @@ def _make_settings(**overrides):
 
 def test_importing_registry_does_not_eager_load_other_adapters() -> None:
     """Registry metadata must not import every provider adapter up front."""
-    code = (
-        "import sys\n"
-        "import providers.registry\n"
-        "assert 'providers.open_router' not in sys.modules\n"
-    )
+    code = "import sys\nimport providers.registry\nassert 'providers.open_router' not in sys.modules\n"
     proc = subprocess.run(
         [sys.executable, "-c", code],
         check=False,
