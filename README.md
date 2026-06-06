@@ -13,22 +13,22 @@ Use the OpenAI Codex CLI and any OpenAI Responses client through your own provid
 ## What You Get
 
 - Drop-in proxy for the OpenAI Responses API consumed by the Codex CLI/Desktop App.
-- 17 provider backends: NVIDIA NIM, OpenRouter, Google AI Studio (Gemini), DeepSeek, Mistral La Plateforme, Mistral Codestral, OpenCode Zen, OpenCode Go, Wafer, Kimi, Cerebras Inference, Groq, Fireworks AI, Z.ai, LM Studio, llama.cpp, and Ollama.
+- 17 provider backends: NVIDIA NIM, OpenRouter, Google AI Studio (Gemini), DeepSeek, Mistral La Plateforme, Mistral Codestral, OpenCode Zen, OpenCode Go, Wafer, Kimi, Cerebras Inference, Groq, Fireworks, Z.ai, LM Studio, Llama.cpp, Ollama.
 - Local **Admin UI** at `/admin` with Codex launcher buttons.
 - Streaming, tool use, thinking/reasoning block handling.
 - Optional Discord or Telegram bot wrapper for remote sessions.
 
 ## Quick Start
- 
- ### 1. Install
- 
- **Note: This project is currently only supported on Windows.**
- 
- ```powershell
- irm "https://raw.githubusercontent.com/chrometechhype/codexproxy/main/scripts/install.ps1?raw=1" | iex
- ```
- 
- ### 2. Start The Proxy
+  
+  ### 1. Install
+  
+  **Note: This project is currently only supported on Windows.**
+  
+  ```powershell
+  irm "https://raw.githubusercontent.com/chrometechhype/codexproxy/main/scripts/install.ps1?raw=1" | iex
+  ```
+  
+  ### 2. Start The Proxy
 
 ```bash
 cdx-server
@@ -58,7 +58,10 @@ Set `MODEL` to a provider-prefixed slug. Examples:
 |---------|---------|
 | `cdx-server` | Start the proxy |
 | `cdx-codex` | Write config + launch CLI |
+| `cdx-codex-app` | Write config + launch Desktop App |
 | `cdx-codex-config` | Write config only (for Desktop App) |
+| `cdx-restore` | Restore pre-CodexProxy configuration |
+| `cdx-delete` | Complete removal of all CodexProxy files |
 | `cdx-init` | Optional scaffold for advanced setup |
 
 ## Development
