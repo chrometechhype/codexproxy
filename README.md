@@ -90,11 +90,17 @@ Yes. CodexProxy is a standard OpenAI Responses API server. Any HTTP client that 
 
 ### How do I change the port?
 
-Set the `CODEX_PROXY_PORT` environment variable before starting the server:
+Set `CODEX_PROXY_PORT` before starting:
 
 ```powershell
 $env:CODEX_PROXY_PORT = "9090"
 cdx-server
+```
+
+Or pass it inline:
+
+```powershell
+$env:CODEX_PROXY_PORT = "9090"; cdx-server
 ```
 
 ### Do I need an API key?

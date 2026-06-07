@@ -279,8 +279,8 @@ class Settings(BaseSettings):
     )
 
     # ==================== Server ====================
-    host: str = "0.0.0.0"
-    port: int = 8083
+    host: str = Field(default="0.0.0.0", validation_alias="CODEX_PROXY_HOST")
+    port: int = Field(default=8083, validation_alias="CODEX_PROXY_PORT")
     # Optional server API key to protect endpoints (Codex/Responses-style).
     # Set via env `CODEX_PROXY_AUTH_TOKEN`. When empty, no auth is required.
     codex_proxy_auth_token: str = Field(
