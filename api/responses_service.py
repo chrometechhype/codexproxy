@@ -249,10 +249,21 @@ class ResponsesService:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+    def _effective_system_prompt(self) -> str | None:
+        """Return the proxy-level base system prompt based on settings."""
+        mode = self._settings.system_prompt_mode
+        if mode == "none":
+            return None
+        if mode == "custom":
+            custom = self._settings.system_prompt_custom
+            return custom if custom else None
+        return CODEX_SYSTEM_PROMPT
+
     def _build_messages_request(
         self, request: ResponsesCreateRequest
     ) -> tuple[MessagesRequest, _Resolved]:
-        messages, system = _responses_input_to_messages(request)
+        base_prompt = self._effective_system_prompt()
+        messages, system = _responses_input_to_messages(request, base_prompt)
         provider_model_ref = self._resolve_provider_model_ref(request.model)
         provider_id = _parse_provider_id(provider_model_ref)
         provider_model = _strip_provider_prefix(provider_model_ref, provider_id)
@@ -313,10 +324,38 @@ def _strip_provider_prefix(model_ref: str, provider_id: str) -> str:
     return Settings.parse_model_name(model_ref)
 
 
+# Identity and behavioral guidelines for the assistant.
+CODEX_SYSTEM_PROMPT = (
+    "You are Codex, a coding agent running through CodexProxy — a provider-agnostic "
+    "proxy that routes your requests to the model the user configured (could be "
+    "NVIDIA NIM, OpenRouter, Gemini, DeepSeek, or any of 17 supported backends). "
+    "You and the user share a workspace, and your job is to help them get their "
+    "task done efficiently and correctly.\n\n"
+    "## Core rules\n"
+    "- Read the codebase first before making assumptions.\n"
+    "- Prefer existing patterns, frameworks, and APIs in the project.\n"
+    "- Keep changes scoped to what's needed; avoid unrelated refactors.\n"
+    "- Write concise, correct code. No unnecessary comments.\n"
+    "- When the user leaves implementation details open, choose conservatively.\n"
+    "- After making changes, verify they work correctly.\n"
+    "- Be concise in responses. Answer directly.\n"
+)
+
+
 def _responses_input_to_messages(
     request: ResponsesCreateRequest,
+    base_prompt: str | None = None,
 ) -> tuple[list[Message], str | list[SystemContent] | None]:
-    """Translate the Responses ``input`` field into Anthropic messages."""
+    """Translate the Responses ``input`` field into Anthropic messages.
+
+    Parameters
+    ----------
+    request:
+        The incoming Responses API request.
+    base_prompt:
+        Optional proxy-level system prompt prepended to the per-request
+        ``instructions``.  Pass ``None`` to suppress it entirely.
+    """
     items = _normalise_input_items(request.input, request.instructions)
     messages: list[Message] = []
     system_parts: list[str] = []
@@ -380,11 +419,11 @@ def _responses_input_to_messages(
             )
     if request.instructions and not system_parts:
         system_parts.append(request.instructions)
-    system: str | list[SystemContent] | None = (
-        (f"{CODEX_SYSTEM_PROMPT}\n\n" + "\n\n".join(system_parts))
-        if system_parts or CODEX_SYSTEM_PROMPT
-        else None
-    )
+    all_parts: list[str] = []
+    if base_prompt:
+        all_parts.append(base_prompt)
+    all_parts.extend(system_parts)
+    system = "\n\n".join(all_parts) if all_parts else None
     if not messages:
         messages.append(Message(role="user", content=""))
     return messages, system
@@ -562,24 +601,6 @@ def _expand_namespace_tools(tools: list[Any]) -> list[dict[str, Any]]:
         else:
             expanded.append(raw)
     return expanded
-
-
-# Identity and behavioral guidelines for the assistant.
-CODEX_SYSTEM_PROMPT = (
-    "You are Codex, a coding agent running through CodexProxy — a provider-agnostic "
-    "proxy that routes your requests to the model the user configured (could be "
-    "NVIDIA NIM, OpenRouter, Gemini, DeepSeek, or any of 17 supported backends). "
-    "You and the user share a workspace, and your job is to help them get their "
-    "task done efficiently and correctly.\n\n"
-    "## Core rules\n"
-    "- Read the codebase first before making assumptions.\n"
-    "- Prefer existing patterns, frameworks, and APIs in the project.\n"
-    "- Keep changes scoped to what's needed; avoid unrelated refactors.\n"
-    "- Write concise, correct code. No unnecessary comments.\n"
-    "- When the user leaves implementation details open, choose conservatively.\n"
-    "- After making changes, verify they work correctly.\n"
-    "- Be concise in responses. Answer directly.\n"
-)
 
 
 def _tool_to_payload(tool: Any) -> dict[str, Any]:

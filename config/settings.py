@@ -311,6 +311,19 @@ class Settings(BaseSettings):
         default=True, validation_alias="CODEX_PROXY_USE_PREVIOUS_RESPONSE_ID"
     )
 
+    # ==================== System Prompt ====================
+    # Controls the default system prompt sent to the provider.
+    # "default" — use the built-in CodexProxy prompt
+    # "custom" — use SYSTEM_PROMPT_CUSTOM
+    # "none"   — no proxy-level system prompt (only per-request instructions)
+    system_prompt_mode: str = Field(
+        default="default", validation_alias="SYSTEM_PROMPT_MODE"
+    )
+    # Custom system prompt text (only used when SYSTEM_PROMPT_MODE="custom").
+    system_prompt_custom: str = Field(
+        default="", validation_alias="SYSTEM_PROMPT_CUSTOM"
+    )
+
     # Handle empty strings for optional string fields
     @field_validator(
         "telegram_bot_token",

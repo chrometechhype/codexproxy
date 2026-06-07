@@ -82,6 +82,11 @@ SECTIONS: tuple[ConfigSectionSpec, ...] = (
         "Enable thinking on Codex Responses requests.",
     ),
     ConfigSectionSpec(
+        "prompt",
+        "System Prompt",
+        "Default assistant instructions sent with every request.",
+    ),
+    ConfigSectionSpec(
         "runtime",
         "Runtime",
         "Server API token, rate limits, timeouts, and process settings.",
@@ -422,6 +427,25 @@ FIELDS: tuple[ConfigFieldSpec, ...] = (
         "boolean",
         settings_attr="enable_model_thinking",
         default="true",
+    ),
+    ConfigFieldSpec(
+        "SYSTEM_PROMPT_MODE",
+        "System Prompt Mode",
+        "prompt",
+        "select",
+        settings_attr="system_prompt_mode",
+        default="default",
+        options=("default", "custom", "none"),
+        description="default = built-in prompt, custom = your own text, none = no proxy-level prompt",
+    ),
+    ConfigFieldSpec(
+        "SYSTEM_PROMPT_CUSTOM",
+        "Custom System Prompt",
+        "prompt",
+        "textarea",
+        settings_attr="system_prompt_custom",
+        default="",
+        description="Only used when System Prompt Mode is 'custom'.",
     ),
     ConfigFieldSpec(
         "CODEX_PROXY_AUTH_TOKEN",
