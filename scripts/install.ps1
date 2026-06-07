@@ -355,30 +355,6 @@ function Install-CodexProxy {
     }
 }
 
-function Invoke-MigrateConfig {
-    $codexproxyDir = Join-Path $HOME ".codexproxy"
-    $envFile = Join-Path $codexproxyDir ".env"
-    if (-not (Test-Path $envFile)) { return }
-
-    $content = Get-Content $envFile -Raw -ErrorAction SilentlyContinue
-    if (-not $content) { return }
-
-    $changed = $false
-    if ($content -match '(?m)^CODEX_PROXY_PORT=8082\s*$') {
-        $content = $content -replace '(?m)^CODEX_PROXY_PORT=8082\s*$', '# CODEX_PROXY_PORT=8083 (default, removed override)'
-        $changed = $true
-    }
-    if ($content -match '(?m)^PORT=8082\s*$') {
-        $content = $content -replace '(?m)^PORT=8082\s*$', '# PORT=8083 (default, removed override)'
-        $changed = $true
-    }
-
-    if ($changed) {
-        [System.IO.File]::WriteAllText($envFile, $content, [System.Text.UTF8Encoding]::new($false))
-        Write-Host "Migrated $envFile : removed stale port override (8082 -> 8083 default)"
-    }
-}
-
 if ($Help) {
     Show-Usage
     return
@@ -404,9 +380,6 @@ Invoke-InstallCommand -FilePath "uv" -Arguments @("python", "install", $PythonVe
 
 Write-Step "Installing or updating CodexProxy"
 Install-CodexProxy
-
-Write-Step "Migrating old configuration"
-Invoke-MigrateConfig
 
 Write-Host ""
 Write-Host "CodexProxy is installed. Start the proxy with: cdx-server"

@@ -214,31 +214,3 @@ def test_install_ps1_checks_uv_exit_code() -> None:
     assert "Invoke-InstallCommand -FilePath" in body
     assert '$LASTEXITCODE -ne 0' in body
     assert "throw" in body
-
-
-def test_install_ps1_includes_config_migration() -> None:
-    text = _script_text("install.ps1")
-
-    assert "function Invoke-MigrateConfig" in text
-    assert "CODEX_PROXY_PORT=8082" in text
-    assert "Migrated" in text
-
-
-def test_install_ps1_main_calls_migration() -> None:
-    text = _script_text("install.ps1")
-    assert 'Write-Step "Migrating old configuration"' in text
-    assert "Invoke-MigrateConfig" in text
-
-
-def test_install_sh_includes_config_migration() -> None:
-    text = _script_text("install.sh")
-
-    assert "migrate_config()" in text
-    assert "CODEX_PROXY_PORT=8082" in text
-    assert "Migrated" in text
-
-
-def test_install_sh_main_calls_migration() -> None:
-    text = _script_text("install.sh")
-    assert 'step "Migrating old configuration"' in text
-    assert "migrate_config" in text

@@ -313,24 +313,7 @@ install_codexproxy() {
     fi
 }
 
-migrate_config() {
-    env_file="${HOME}/.codexproxy/.env"
-    [ -f "$env_file" ] || return 0
 
-    # Remove stale CODEX_PROXY_PORT=8082 from old installations
-    if grep -q '^CODEX_PROXY_PORT=8082\b' "$env_file" 2>/dev/null; then
-        if command -v sed >/dev/null 2>&1; then
-            sed -i 's/^CODEX_PROXY_PORT=8082/# CODEX_PROXY_PORT=8083 (default, removed override)/' "$env_file"
-            printf 'Migrated %s : removed stale port override (8082 -> 8083 default)\n' "$env_file"
-        fi
-    fi
-    if grep -q '^PORT=8082\b' "$env_file" 2>/dev/null; then
-        if command -v sed >/dev/null 2>&1; then
-            sed -i 's/^PORT=8082/# PORT=8083 (default, removed override)/' "$env_file"
-            printf 'Migrated %s : removed stale port override (8082 -> 8083 default)\n' "$env_file"
-        fi
-    fi
-}
 
 parse_args "$@"
 validate_args
@@ -346,9 +329,6 @@ run uv python install "$PYTHON_VERSION"
 
 step "Installing or updating CodexProxy"
 install_codexproxy
-
-step "Migrating old configuration"
-migrate_config
 
 printf '\nCodexProxy is installed. Start the proxy with: cdx-server\n'
 printf 'Launch the Codex CLI through the proxy with: cdx-codex\n'
