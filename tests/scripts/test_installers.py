@@ -205,3 +205,40 @@ def test_install_ps1_post_install_message_references_cdx_commands() -> None:
     assert "cdx-server" in text
     assert "cdx-codex" in text
     assert "fcc-server" not in text
+
+
+def test_install_ps1_checks_uv_exit_code() -> None:
+    text = _script_text("install.ps1")
+    body = _braced_body(text, "function Install-CodexProxy")
+
+    assert "Invoke-InstallCommand -FilePath" in body
+    assert '$LASTEXITCODE -ne 0' in body
+    assert "throw" in body
+
+
+def test_install_ps1_includes_config_migration() -> None:
+    text = _script_text("install.ps1")
+
+    assert "function Invoke-MigrateConfig" in text
+    assert "CODEX_PROXY_PORT=8082" in text
+    assert "Migrated" in text
+
+
+def test_install_ps1_main_calls_migration() -> None:
+    text = _script_text("install.ps1")
+    assert 'Write-Step "Migrating old configuration"' in text
+    assert "Invoke-MigrateConfig" in text
+
+
+def test_install_sh_includes_config_migration() -> None:
+    text = _script_text("install.sh")
+
+    assert "migrate_config()" in text
+    assert "CODEX_PROXY_PORT=8082" in text
+    assert "Migrated" in text
+
+
+def test_install_sh_main_calls_migration() -> None:
+    text = _script_text("install.sh")
+    assert 'step "Migrating old configuration"' in text
+    assert "migrate_config" in text
