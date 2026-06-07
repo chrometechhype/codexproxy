@@ -157,12 +157,6 @@ class OpenAIChatTransport(BaseProvider):
     ) -> dict:
         """Build request body. Must be implemented by subclasses."""
 
-    def _handle_extra_reasoning(
-        self, delta: Any, sse: SSEBuilder, *, thinking_enabled: bool
-    ) -> Iterator[str]:
-        """Hook for provider-specific reasoning (e.g. OpenRouter reasoning_details)."""
-        return iter(())
-
     def _get_retry_request_body(self, error: Exception, body: dict) -> dict | None:
         """Return a modified request body for one retry, or None."""
         return None
@@ -702,15 +696,6 @@ class OpenAIChatTransport(BaseProvider):
                                 yield event
                             for event in hold_event(sse.emit_thinking_delta(reasoning)):
                                 yield event
-
-                        # Provider-specific extra reasoning (e.g. OpenRouter reasoning_details)
-                        for event in self._handle_extra_reasoning(
-                            delta,
-                            sse,
-                            thinking_enabled=thinking_enabled,
-                        ):
-                            for out_event in hold_event(event):
-                                yield out_event
 
                         # Handle text content
                         if delta.content:

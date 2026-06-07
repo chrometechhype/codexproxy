@@ -14,6 +14,8 @@ from core.responses.sse import (
     build_output_item_done,
     build_output_text_delta,
     build_output_text_done,
+    build_reasoning_summary_delta,
+    build_reasoning_summary_done,
     build_response_completed,
     build_response_created,
     build_response_in_progress,
@@ -21,6 +23,7 @@ from core.responses.sse import (
     new_call_id,
     new_function_call_id,
     new_output_item_id,
+    new_reasoning_id,
     new_response_id,
 )
 
@@ -51,6 +54,12 @@ def test_new_call_id_uses_call_prefix() -> None:
     cid = new_call_id()
     assert cid.startswith("call_")
     assert len(cid) == len("call_") + 32
+
+
+def test_new_reasoning_id_uses_rs_prefix() -> None:
+    rid = new_reasoning_id()
+    assert rid.startswith("rs_")
+    assert len(rid) == len("rs_") + 32
 
 
 def test_new_ids_are_unique() -> None:
@@ -167,6 +176,23 @@ def test_build_function_call_arguments_delta_and_done() -> None:
     )
     assert _data_of(delta)["delta"] == '{"x":'
     assert _data_of(done)["arguments"] == '{"x":1}'
+
+
+def test_build_reasoning_summary_delta() -> None:
+    chunk = build_reasoning_summary_delta(item_id="rs_1", delta="I think...")
+    payload = _data_of(chunk)
+    assert payload["type"] == "response.reasoning_summary.delta"
+    assert payload["item_id"] == "rs_1"
+    assert payload["delta"] == "I think..."
+
+
+def test_build_reasoning_summary_done() -> None:
+    summary = [{"type": "summary_text", "text": "I think..."}]
+    chunk = build_reasoning_summary_done(item_id="rs_1", summary=summary)
+    payload = _data_of(chunk)
+    assert payload["type"] == "response.reasoning_summary.done"
+    assert payload["item_id"] == "rs_1"
+    assert payload["summary"] == summary
 
 
 def test_build_output_item_done() -> None:
@@ -325,6 +351,93 @@ def test_feed_emits_full_text_lifecycle() -> None:
     assert text == "Hi"
 
 
+def test_feed_emits_thinking_then_text_lifecycle() -> None:
+    """Thinking block is emitted as a reasoning item, then text as a message."""
+    adapter = _adapter()
+    list(adapter.opening_events())
+    stream = "".join(
+        [
+            _sse(
+                "message_start",
+                {"message": {"usage": {"input_tokens": 1, "output_tokens": 0}}},
+            ),
+            _sse(
+                "content_block_start",
+                {"index": 0, "content_block": {"type": "thinking", "thinking": ""}},
+            ),
+            _sse(
+                "content_block_delta",
+                {
+                    "index": 0,
+                    "delta": {"type": "thinking_delta", "thinking": "I think..."},
+                },
+            ),
+            _sse("content_block_stop", {"index": 0}),
+            _sse(
+                "content_block_start",
+                {"index": 1, "content_block": {"type": "text", "text": ""}},
+            ),
+            _sse(
+                "content_block_delta",
+                {"index": 1, "delta": {"type": "text_delta", "text": "Answer"}},
+            ),
+            _sse("content_block_stop", {"index": 1}),
+            _sse("message_delta", {"usage": {"output_tokens": 10}}),
+            _sse("message_stop", {}),
+        ]
+    )
+    events = list(adapter.feed(stream)) + list(adapter.finalize())
+    types = [_evtype(e) for e in events]
+    assert "response.reasoning_summary.delta" in types
+    assert "response.reasoning_summary.done" in types
+    assert "response.output_text.delta" in types
+    assert "response.output_text.done" in types
+    assert types[-1] == "response.completed"
+    # Two output items: reasoning (index 0) and message (index 1)
+    reasoning_items = [it for it in adapter.output if it["type"] == "reasoning"]
+    message_items = [it for it in adapter.output if it["type"] == "message"]
+    assert len(reasoning_items) == 1
+    assert len(message_items) == 1
+    assert reasoning_items[0]["summary"][0]["text"] == "I think..."
+    assert message_items[0]["content"][0]["text"] == "Answer"
+
+
+def test_feed_thinking_only() -> None:
+    """Thinking-only output still produces reasoning item and a placeholder."""
+    adapter = _adapter()
+    list(adapter.opening_events())
+    stream = "".join(
+        [
+            _sse(
+                "message_start",
+                {"message": {"usage": {"input_tokens": 1, "output_tokens": 0}}},
+            ),
+            _sse(
+                "content_block_start",
+                {"index": 0, "content_block": {"type": "thinking", "thinking": ""}},
+            ),
+            _sse(
+                "content_block_delta",
+                {
+                    "index": 0,
+                    "delta": {"type": "thinking_delta", "thinking": "Only reasoning"},
+                },
+            ),
+            _sse("content_block_stop", {"index": 0}),
+            _sse("message_delta", {"usage": {"output_tokens": 5}}),
+            _sse("message_stop", {}),
+        ]
+    )
+    events = list(adapter.feed(stream)) + list(adapter.finalize())
+    types = [_evtype(e) for e in events]
+    assert "response.reasoning_summary.delta" in types
+    assert "response.reasoning_summary.done" in types
+    assert types[-1] == "response.completed"
+    reasoning_items = [it for it in adapter.output if it["type"] == "reasoning"]
+    assert len(reasoning_items) == 1
+    assert reasoning_items[0]["summary"][0]["text"] == "Only reasoning"
+
+
 def test_feed_emits_function_call_block() -> None:
     adapter = _adapter()
     list(adapter.opening_events())
@@ -444,6 +557,69 @@ def test_finalize_closes_unclosed_blocks() -> None:
     assert "response.content_part.done" in types
     assert "response.output_item.done" in types
     assert "response.completed" in types
+
+
+def test_finalize_closes_unclosed_reasoning_block() -> None:
+    adapter = _adapter()
+    list(adapter.opening_events())
+    stream = "".join(
+        [
+            _sse(
+                "message_start",
+                {"message": {"usage": {"input_tokens": 1, "output_tokens": 0}}},
+            ),
+            _sse(
+                "content_block_start",
+                {"index": 0, "content_block": {"type": "thinking", "thinking": ""}},
+            ),
+            _sse(
+                "content_block_delta",
+                {
+                    "index": 0,
+                    "delta": {"type": "thinking_delta", "thinking": "truncated reasoning"},
+                },
+            ),
+            # No content_block_stop — simulate truncation mid-thinking
+        ]
+    )
+    list(adapter.feed(stream))
+    events = list(adapter.finalize())
+    types = [_evtype(e) for e in events]
+    assert "response.reasoning_summary.done" in types
+    assert "response.output_item.done" in types
+    assert "response.completed" in types
+    reasoning_items = [it for it in adapter.output if it["type"] == "reasoning"]
+    assert len(reasoning_items) == 1
+    assert reasoning_items[0]["summary"][0]["text"] == "truncated reasoning"
+
+
+def test_output_includes_reasoning_items() -> None:
+    adapter = _adapter()
+    list(adapter.opening_events())
+    stream = "".join(
+        [
+            _sse(
+                "message_start",
+                {"message": {"usage": {"input_tokens": 1, "output_tokens": 0}}},
+            ),
+            _sse(
+                "content_block_start",
+                {"index": 0, "content_block": {"type": "thinking", "thinking": ""}},
+            ),
+            _sse(
+                "content_block_delta",
+                {
+                    "index": 0,
+                    "delta": {"type": "thinking_delta", "thinking": "r1"},
+                },
+            ),
+            _sse("content_block_stop", {"index": 0}),
+            _sse("message_stop", {}),
+        ]
+    )
+    list(adapter.feed(stream)) + list(adapter.finalize())
+    ids = {it["type"] for it in adapter.output}
+    assert "reasoning" in ids
 
 
 def test_feed_ignores_unknown_event_types() -> None:

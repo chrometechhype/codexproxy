@@ -50,7 +50,10 @@ async def _timeout_wrapper(
 
 
 # Providers that use ``/chat/completions`` + Anthropic-to-OpenAI conversion (not native Messages).
-_OPENAI_CHAT_UPSTREAM_IDS = frozenset({"nvidia_nim", "opencode", "opencode_go"})
+_OPENAI_CHAT_UPSTREAM_IDS = frozenset({
+    "nvidia_nim", "opencode", "opencode_go", "gemini", "mistral",
+    "mistral_codestral", "cerebras", "groq",
+})
 
 
 def anthropic_sse_streaming_response(

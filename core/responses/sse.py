@@ -50,6 +50,11 @@ def new_function_call_id() -> str:
     return f"fc_{uuid.uuid4().hex}"
 
 
+def new_reasoning_id() -> str:
+    """Generate a new reasoning item id (``rs_<uuid>``)."""
+    return f"rs_{uuid.uuid4().hex}"
+
+
 def new_call_id() -> str:
     """Call id used by ``function_call_output`` to link back to a call."""
     return f"call_{uuid.uuid4().hex}"
@@ -229,6 +234,36 @@ def build_function_call_arguments_delta(
     )
 
 
+def build_reasoning_summary_delta(
+    *,
+    item_id: str,
+    delta: str,
+) -> str:
+    return format_responses_sse(
+        "response.reasoning_summary.delta",
+        {
+            "type": "response.reasoning_summary.delta",
+            "item_id": item_id,
+            "delta": delta,
+        },
+    )
+
+
+def build_reasoning_summary_done(
+    *,
+    item_id: str,
+    summary: list[dict[str, Any]],
+) -> str:
+    return format_responses_sse(
+        "response.reasoning_summary.done",
+        {
+            "type": "response.reasoning_summary.done",
+            "item_id": item_id,
+            "summary": summary,
+        },
+    )
+
+
 def build_function_call_arguments_done(
     *,
     item_id: str,
@@ -363,6 +398,16 @@ class _PendingMessageState:
 
 
 @dataclass
+class _PendingReasoningState:
+    """Tracks a single Responses reasoning output item being assembled."""
+
+    item_id: str
+    output_index: int
+    text: str = ""
+    started: bool = False
+
+
+@dataclass
 class _PendingFunctionCallState:
     """Tracks a single Responses function call being assembled."""
 
@@ -415,8 +460,10 @@ class AnthropicToResponsesAdapter:
         self._buffer = ""
         self._open_message: _PendingMessageState | None = None
         self._open_function_call: _PendingFunctionCallState | None = None
+        self._open_reasoning: _PendingReasoningState | None = None
         self._closed_messages: list[dict[str, Any]] = []
         self._closed_function_calls: list[dict[str, Any]] = []
+        self._closed_reasoning: list[dict[str, Any]] = []
         self._completed = False
         self._completed_emitted = False
         self._usage_input_tokens = 0
@@ -468,6 +515,8 @@ class AnthropicToResponsesAdapter:
             yield from self._close_open_message()
         if self._open_function_call is not None:
             yield from self._close_open_function_call()
+        if self._open_reasoning is not None:
+            yield from self._close_open_reasoning()
         yield from self._emit_completed()
 
     # ------------------------------------------------------------------
@@ -482,6 +531,7 @@ class AnthropicToResponsesAdapter:
         items: list[dict[str, Any]] = []
         items.extend(self._closed_messages)
         items.extend(self._closed_function_calls)
+        items.extend(self._closed_reasoning)
         return items
 
     @property
@@ -515,6 +565,8 @@ class AnthropicToResponsesAdapter:
                 yield from self._open_text_block(data, block)
             elif block_type == "tool_use":
                 yield from self._open_tool_use_block(data, block)
+            elif block_type == "thinking":
+                yield from self._open_reasoning_block(data, block)
             return
         if event_type == "content_block_delta":
             delta = data.get("delta", {})
@@ -523,6 +575,8 @@ class AnthropicToResponsesAdapter:
                 yield from self._apply_text_delta(delta)
             elif delta_type == "input_json_delta":
                 yield from self._apply_tool_input_delta(delta)
+            elif delta_type == "thinking_delta":
+                yield from self._apply_reasoning_delta(delta)
             return
         if event_type == "content_block_stop":
             yield from self._handle_block_stop()
@@ -552,6 +606,8 @@ class AnthropicToResponsesAdapter:
             yield from self._close_open_message()
         if self._open_function_call is not None:
             yield from self._close_open_function_call()
+        if self._open_reasoning is not None:
+            yield from self._close_open_reasoning()
         item_id = new_output_item_id()
         message_item = {
             "id": item_id,
@@ -602,6 +658,8 @@ class AnthropicToResponsesAdapter:
             yield from self._close_open_message()
         if self._open_function_call is not None:
             yield from self._close_open_function_call()
+        if self._open_reasoning is not None:
+            yield from self._close_open_reasoning()
         item_id = block.get("id") or new_function_call_id()
         call_id = item_id
         name = block.get("name", "")
@@ -623,6 +681,60 @@ class AnthropicToResponsesAdapter:
         self._output_index += 1
         yield build_output_item_added(item, self._open_function_call.output_index)
 
+    def _open_reasoning_block(
+        self, data: dict[str, Any], block: dict[str, Any]
+    ) -> Iterator[str]:
+        if self._open_message is not None:
+            yield from self._close_open_message()
+        if self._open_function_call is not None:
+            yield from self._close_open_function_call()
+        if self._open_reasoning is not None:
+            yield from self._close_open_reasoning()
+        item_id = new_reasoning_id()
+        item = {
+            "id": item_id,
+            "type": "reasoning",
+            "status": "in_progress",
+            "summary": [],
+        }
+        self._open_reasoning = _PendingReasoningState(
+            item_id=item_id,
+            output_index=self._output_index,
+            started=True,
+        )
+        self._output_index += 1
+        yield build_output_item_added(item, self._open_reasoning.output_index)
+
+    def _apply_reasoning_delta(self, delta: dict[str, Any]) -> Iterator[str]:
+        if self._open_reasoning is None:
+            return
+        text = delta.get("thinking", "") or delta.get("text", "")
+        if not text:
+            return
+        self._open_reasoning.text += text
+        yield build_reasoning_summary_delta(
+            item_id=self._open_reasoning.item_id,
+            delta=text,
+        )
+
+    def _close_open_reasoning(self) -> Iterator[str]:
+        reasoning = self._open_reasoning
+        assert reasoning is not None
+        summary = [{"type": "summary_text", "text": reasoning.text}]
+        item = {
+            "id": reasoning.item_id,
+            "type": "reasoning",
+            "status": "completed",
+            "summary": summary,
+        }
+        yield build_reasoning_summary_done(
+            item_id=reasoning.item_id,
+            summary=summary,
+        )
+        yield build_output_item_done(item, reasoning.output_index)
+        self._closed_reasoning.append(item)
+        self._open_reasoning = None
+
     def _apply_tool_input_delta(self, delta: dict[str, Any]) -> Iterator[str]:
         if self._open_function_call is None:
             return
@@ -641,6 +753,8 @@ class AnthropicToResponsesAdapter:
             yield from self._close_open_function_call()
         elif self._open_message is not None:
             yield from self._close_open_message()
+        elif self._open_reasoning is not None:
+            yield from self._close_open_reasoning()
         return
 
     def _close_open_message(self) -> Iterator[str]:
