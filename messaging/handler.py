@@ -491,7 +491,9 @@ class CodexMessageHandler:
             )
             logger.error("CLI binary not found: {}", e)
             transcript.apply({"type": "error", "message": err_msg})
-            await update_ui(self.format_status("❌", "CLI not found", err_msg), force=True)
+            await update_ui(
+                self.format_status("❌", "CLI not found", err_msg), force=True
+            )
             if tree:
                 await self._propagate_error_to_children(
                     node_id, err_msg, "CLI binary missing"

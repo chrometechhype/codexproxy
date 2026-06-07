@@ -35,12 +35,21 @@ class _StubProvider:
     def __init__(self) -> None:
         self.last_messages_request: Any = None
         self.last_thinking_enabled: bool | None = None
+        self._stream_data: list[str] | None = None
+
+    def set_stream(self, data: list[str]) -> None:
+        self._stream_data = data
 
     async def stream_response(
         self, messages_request, *, input_tokens, request_id, thinking_enabled
     ):
         self.last_messages_request = messages_request
         self.last_thinking_enabled = thinking_enabled
+        if self._stream_data is not None:
+            for chunk in self._stream_data:
+                yield chunk
+            self._stream_data = None
+            return
         yield (
             "event: message_start\n"
             'data: {"message":{"id":"msg_1","usage":{"input_tokens":1,'
@@ -225,6 +234,109 @@ def test_post_responses_streaming_emits_completed_event(
     assert "event: response.in_progress" in raw
     assert "event: response.output_text.delta" in raw
     assert "event: response.completed" in raw
+
+
+def test_post_responses_multi_turn_tool_use(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    stub_provider: _StubProvider,
+) -> None:
+    """Simulate multi-turn Codex flow: request → tool call → tool result → response."""
+    # --- Turn 1: model returns text + tool_use ---
+    turn1_stream = [
+        "event: message_start\n"
+        'data: {"message":{"id":"msg_1","usage":{"input_tokens":5,'
+        '"output_tokens":0}}}\n\n',
+        "event: content_block_start\n"
+        'data: {"index":0,"content_block":{"type":"text","text":""}}\n\n',
+        "event: content_block_delta\n"
+        'data: {"index":0,"delta":{"type":"text_delta","text":"Let me '
+        'search"}}\n\n',
+        'event: content_block_stop\ndata: {"index":0}\n\n',
+        "event: content_block_start\n"
+        'data: {"index":1,"content_block":{"type":"tool_use",'
+        '"id":"toolu_1","name":"Bash","input":{}}}\n\n',
+        "event: content_block_delta\n"
+        'data: {"index":1,"delta":{"type":"input_json_delta",'
+        '"partial_json":"{\\"command\\": \\"ls"}}\n\n',
+        "event: content_block_delta\n"
+        'data: {"index":1,"delta":{"type":"input_json_delta",'
+        '"partial_json":" -la\\"}"}}\n\n',
+        'event: content_block_stop\ndata: {"index":1}\n\n',
+        'event: message_delta\ndata: {"usage":{"output_tokens":10}}\n\n',
+        "event: message_stop\ndata: {}\n\n",
+    ]
+    stub_provider.set_stream(turn1_stream)
+
+    body1 = {"model": "gpt-4o", "input": "list files", "stream": True}
+    resp1 = client.post("/v1/responses", headers=auth_headers, json=body1)
+    assert resp1.status_code == 200
+    raw1 = b"".join(resp1.iter_bytes()).decode()
+
+    assert "event: response.output_text.delta" in raw1
+    assert "event: response.function_call_arguments.delta" in raw1
+    assert "event: response.function_call_arguments.done" in raw1
+    assert "event: response.output_item.done" in raw1
+    assert "event: response.completed" in raw1
+    assert "toolu_1" in raw1 or "toolu_1" in raw1
+
+    # --- Turn 2: submit tool result and get more text ---
+    turn2_stream = [
+        "event: message_start\n"
+        'data: {"message":{"id":"msg_2","usage":{"input_tokens":8,'
+        '"output_tokens":0}}}\n\n',
+        "event: content_block_start\n"
+        'data: {"index":0,"content_block":{"type":"text","text":""}}\n\n',
+        "event: content_block_delta\n"
+        'data: {"index":0,"delta":{"type":"text_delta","text":"Found '
+        'files!"}}\n\n',
+        'event: content_block_stop\ndata: {"index":0}\n\n',
+        'event: message_delta\ndata: {"usage":{"output_tokens":3}}\n\n',
+        "event: message_stop\ndata: {}\n\n",
+    ]
+    stub_provider.set_stream(turn2_stream)
+
+    body2 = {
+        "model": "gpt-4o",
+        "input": [
+            {"type": "message", "role": "user", "content": "list files"},
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "Let me search"}],
+            },
+            {
+                "type": "function_call",
+                "call_id": "toolu_1",
+                "name": "Bash",
+                "arguments": '{"command": "ls -la"}',
+            },
+            {
+                "type": "function_call_output",
+                "call_id": "toolu_1",
+                "output": "total 42\n-rw-r--r-- 1 user user 10 file.txt",
+            },
+        ],
+        "stream": True,
+    }
+    resp2 = client.post("/v1/responses", headers=auth_headers, json=body2)
+    assert resp2.status_code == 200
+    raw2 = b"".join(resp2.iter_bytes()).decode()
+    assert "event: response.output_text.delta" in raw2
+    assert "Found files!" in raw2
+    assert "event: response.completed" in raw2
+
+    # Verify the provider received the correct conversation context
+    assert stub_provider.last_messages_request is not None
+    req = stub_provider.last_messages_request
+    assert (
+        len(req.messages) == 4
+    )  # user + assistant(text) + assistant(tool) + user(tool_result)
+    assert req.messages[0].role == "user"
+    assert req.messages[2].role == "assistant"
+    assert req.messages[2].content[0].type == "tool_use"
+    assert req.messages[3].role == "user"
+    assert req.messages[3].content[0].type == "tool_result"
 
 
 # ---------------------------------------------------------------------------

@@ -576,7 +576,10 @@ def test_finalize_closes_unclosed_reasoning_block() -> None:
                 "content_block_delta",
                 {
                     "index": 0,
-                    "delta": {"type": "thinking_delta", "thinking": "truncated reasoning"},
+                    "delta": {
+                        "type": "thinking_delta",
+                        "thinking": "truncated reasoning",
+                    },
                 },
             ),
             # No content_block_stop — simulate truncation mid-thinking

@@ -275,7 +275,7 @@ def _codex_auth_json_backup_path(auth_path: Path) -> Path:
 
 def _toml_quote(value: str) -> str:
     """Render a string for embedding inside a double-quoted TOML literal."""
-    return value.replace("\\", "\\\\").replace('\"', '\\\"')
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _update_top_level_codex_settings(

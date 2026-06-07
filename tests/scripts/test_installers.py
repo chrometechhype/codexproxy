@@ -212,5 +212,5 @@ def test_install_ps1_checks_uv_exit_code() -> None:
     body = _braced_body(text, "function Install-CodexProxy")
 
     assert "Invoke-InstallCommand -FilePath" in body
-    assert '$LASTEXITCODE -ne 0' in body
+    assert "$LASTEXITCODE -ne 0" in body
     assert "throw" in body

@@ -18,8 +18,8 @@ ClaudeMessageHandler = CodexMessageHandler
 
 __all__ = [
     "CLISession",
-    "CodexMessageHandler",
     "ClaudeMessageHandler",  # legacy alias
+    "CodexMessageHandler",
     "IncomingMessage",
     "MessageNode",
     "MessageState",

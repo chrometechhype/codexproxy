@@ -57,14 +57,14 @@ class ThinkTagParser:
         """Feed content and yield parsed chunks."""
         # Normalize <thought> to <think> inside buffer for consistent single-tag tracking.
         # Partial <thou / <though that complete across chunks will be normalized too.
-        content = (
-            content.replace("<thought>", "<think>").replace("</thought>", "</think>")
+        content = content.replace("<thought>", "<think>").replace(
+            "</thought>", "</think>"
         )
         self._buffer += content
 
         # Normalise any <thought> / </thought> that formed in the buffer across chunks.
-        self._buffer = (
-            self._buffer.replace("<thought>", "<think>").replace("</thought>", "</think>")
+        self._buffer = self._buffer.replace("<thought>", "<think>").replace(
+            "</thought>", "</think>"
         )
 
         while self._buffer:
@@ -126,8 +126,7 @@ class ThinkTagParser:
             ):
                 potential_tag = self._buffer[last_bracket:]
                 if any(
-                    close_tag.startswith(potential_tag)
-                    for close_tag in self.CLOSE_TAGS
+                    close_tag.startswith(potential_tag) for close_tag in self.CLOSE_TAGS
                 ):
                     emit = self._buffer[:last_bracket]
                     self._buffer = self._buffer[last_bracket:]

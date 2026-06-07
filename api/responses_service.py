@@ -9,9 +9,9 @@ streams Anthropic-format SSE) by routing their output through
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import time
-import traceback
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -23,6 +23,7 @@ from config.provider_ids import SUPPORTED_PROVIDER_IDS
 from config.settings import Settings
 from core.responses.sse import (
     AnthropicToResponsesAdapter,
+    build_response_in_progress,
     new_response_id,
 )
 from core.responses.store import ResponseStore, StoredResponse
@@ -112,46 +113,78 @@ class ResponsesService:
         for event in adapter.opening_events():
             yield event
 
+        keepalive_interval = 15.0
+        timeout = self._settings.http_read_timeout
+        queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=1)
+
+        async def _producer() -> None:
+            """Read from the provider and push chunks onto the queue."""
+            try:
+                async with asyncio.timeout(timeout):
+                    async for chunk in provider.stream_response(
+                        messages_request,
+                        input_tokens=0,
+                        request_id=response_id,
+                        thinking_enabled=resolved.thinking_enabled,
+                    ):
+                        await queue.put(chunk)
+                await queue.put(None)
+            except TimeoutError:
+                await queue.put("__TIMEOUT__")
+            except BaseException as exc:
+                await queue.put(f"__ERROR__:{type(exc).__name__}")
+                raise
+
+        producer_task = asyncio.create_task(_producer())
+
         try:
-            timeout = self._settings.http_read_timeout
-            async with asyncio.timeout(timeout):
-                async for chunk in provider.stream_response(
-                    messages_request,
-                    input_tokens=0,
-                    request_id=response_id,
-                    thinking_enabled=resolved.thinking_enabled,
-                ):
-                    for event in adapter.feed(chunk):
+            while True:
+                try:
+                    item = await asyncio.wait_for(
+                        queue.get(), timeout=keepalive_interval
+                    )
+                except TimeoutError:
+                    yield build_response_in_progress(response_id)
+                    continue
+
+                if item is None:
+                    break
+                if item == "__TIMEOUT__":
+                    logger.error(
+                        "Responses stream timeout request_id={} timeout={}s",
+                        response_id,
+                        timeout,
+                    )
+                    for event in adapter.feed(
+                        "event: error\ndata: "
+                        '{"type":"error","error":{"type":"timeout_error",'
+                        f'"message":"Provider stream timed out after {timeout}s"}}'
+                        "\n\n"
+                    ):
                         yield event
-        except TimeoutError:
-            logger.error(
-                "Responses stream timeout request_id={} timeout={}s",
-                response_id,
-                timeout,
-            )
-            for event in adapter.feed(
-                'event: error\ndata: {"type":"error","error":{"type":"timeout_error",'
-                f'"message":"Provider stream timed out after {timeout}s"}}\n\n'
-            ):
-                yield event
-        except Exception as exc:
-            settings = self._settings
-            if settings.log_api_error_tracebacks:
-                logger.error(
-                    "Responses stream error request_id={}: {}", response_id, exc
-                )
-                logger.error(traceback.format_exc())
-            else:
-                logger.error(
-                    "Responses stream error request_id={} exc_type={}",
-                    response_id,
-                    type(exc).__name__,
-                )
-            for event in adapter.feed(
-                'event: error\ndata: {"type":"error","error":{"type":"api_error",'
-                f'"message":"{type(exc).__name__}"}}\n\n'
-            ):
-                yield event
+                    break
+                if isinstance(item, str) and item.startswith("__ERROR__:"):
+                    exc_name = item.split(":", 1)[1]
+                    logger.error(
+                        "Responses stream error request_id={} exc_type={}",
+                        response_id,
+                        exc_name,
+                    )
+                    for event in adapter.feed(
+                        "event: error\ndata: "
+                        '{"type":"error","error":{"type":"api_error",'
+                        f'"message":"{exc_name}"}}'
+                        "\n\n"
+                    ):
+                        yield event
+                    break
+                for event in adapter.feed(item):
+                    yield event
+        finally:
+            if not producer_task.done():
+                producer_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await producer_task
 
         for event in adapter.finalize():
             yield event
