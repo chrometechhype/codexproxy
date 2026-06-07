@@ -99,7 +99,7 @@ cdx-server
 
 ### Do I need an API key?
 
-Yes — each provider requires its own API key. Set it in the Admin UI or via environment variables (see `.env.example`). By default the proxy itself requires `ANTHROPIC_AUTH_TOKEN` for authentication; you can disable this by setting the same token in `.env`.
+Yes — each provider requires its own API key. Set it in the Admin UI or via environment variables (see `.env.example`). By default the proxy itself requires `CODEX_PROXY_AUTH_TOKEN` for authentication; you can disable this by setting it in `.env`.
 
 ### Can I run multiple models at the same time?
 
