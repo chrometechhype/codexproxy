@@ -34,7 +34,6 @@ cdx-codex = "cli.entrypoints:launch_codex"
 cdx-codex-config = "cli.entrypoints:configure_codex"
 cdx-codex-app = "cli.entrypoints:launch_codex_app"
 cdx-restore = "cli.entrypoints:restore"
-cdx-delete = "cli.entrypoints:delete_all"
 
 [project.optional-dependencies]
 voice = [
