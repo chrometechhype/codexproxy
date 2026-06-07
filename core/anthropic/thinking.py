@@ -22,13 +22,13 @@ class ContentChunk:
 
 class ThinkTagParser:
     """
-    Streaming parser for ``<think>...</think>`` tags.
+    Streaming parser for ``<think>...</think>`` and ``<thought>...</thought>`` tags.
 
     Handles partial tags at chunk boundaries by buffering.
     """
 
-    OPEN_TAG = "<think>"
-    CLOSE_TAG = "</think>"
+    OPEN_TAGS = ("<think>", "<thought>")
+    CLOSE_TAGS = ("</think>", "</thought>")
 
     def __init__(self):
         self._buffer: str = ""
@@ -39,9 +39,33 @@ class ThinkTagParser:
         """Whether currently inside a think tag."""
         return self._in_think_tag
 
+    def _any_tag_start(self, tag: str, tags: tuple[str, ...]) -> int | None:
+        """Return position of the first occurrence of any tag in ``tags``, or None."""
+        best: int | None = None
+        for t in tags:
+            pos = tag.find(t)
+            if pos != -1 and (best is None or pos < best):
+                best = pos
+        return best
+
+    def _is_partial_tag(self, text: str) -> bool:
+        """Check if ``text`` could be a partial open or close tag."""
+        tags = self.OPEN_TAGS + self.CLOSE_TAGS
+        return any(t.startswith(text) for t in tags)
+
     def feed(self, content: str) -> Iterator[ContentChunk]:
         """Feed content and yield parsed chunks."""
+        # Normalize <thought> to <think> inside buffer for consistent single-tag tracking.
+        # Partial <thou / <though that complete across chunks will be normalized too.
+        content = (
+            content.replace("<thought>", "<think>").replace("</thought>", "</think>")
+        )
         self._buffer += content
+
+        # Normalise any <thought> / </thought> that formed in the buffer across chunks.
+        self._buffer = (
+            self._buffer.replace("<thought>", "<think>").replace("</thought>", "</think>")
+        )
 
         while self._buffer:
             prev_len = len(self._buffer)
@@ -57,12 +81,12 @@ class ThinkTagParser:
 
     def _parse_outside_think(self) -> ContentChunk | None:
         """Parse content outside think tags."""
-        think_start = self._buffer.find(self.OPEN_TAG)
-        orphan_close = self._buffer.find(self.CLOSE_TAG)
+        think_start = self._buffer.find("<think>")
+        orphan_close = self._buffer.find("</think>")
 
         if orphan_close != -1 and (think_start == -1 or orphan_close < think_start):
             pre_orphan = self._buffer[:orphan_close]
-            self._buffer = self._buffer[orphan_close + len(self.CLOSE_TAG) :]
+            self._buffer = self._buffer[orphan_close + len("</think>") :]
             if pre_orphan:
                 return ContentChunk(ContentType.TEXT, pre_orphan)
             return None
@@ -71,14 +95,7 @@ class ThinkTagParser:
             last_bracket = self._buffer.rfind("<")
             if last_bracket != -1:
                 potential_tag = self._buffer[last_bracket:]
-                tag_len = len(potential_tag)
-                if (
-                    tag_len < len(self.OPEN_TAG)
-                    and self.OPEN_TAG.startswith(potential_tag)
-                ) or (
-                    tag_len < len(self.CLOSE_TAG)
-                    and self.CLOSE_TAG.startswith(potential_tag)
-                ):
+                if self._is_partial_tag(potential_tag):
                     emit = self._buffer[:last_bracket]
                     self._buffer = self._buffer[last_bracket:]
                     if emit:
@@ -92,7 +109,7 @@ class ThinkTagParser:
             return None
 
         pre_think = self._buffer[:think_start]
-        self._buffer = self._buffer[think_start + len(self.OPEN_TAG) :]
+        self._buffer = self._buffer[think_start + len("<think>") :]
         self._in_think_tag = True
         if pre_think:
             return ContentChunk(ContentType.TEXT, pre_think)
@@ -100,15 +117,18 @@ class ThinkTagParser:
 
     def _parse_inside_think(self) -> ContentChunk | None:
         """Parse content inside think tags."""
-        think_end = self._buffer.find(self.CLOSE_TAG)
+        think_end = self._buffer.find("</think>")
 
         if think_end == -1:
             last_bracket = self._buffer.rfind("<")
             if last_bracket != -1 and len(self._buffer) - last_bracket < len(
-                self.CLOSE_TAG
+                "</think>"
             ):
                 potential_tag = self._buffer[last_bracket:]
-                if self.CLOSE_TAG.startswith(potential_tag):
+                if any(
+                    close_tag.startswith(potential_tag)
+                    for close_tag in self.CLOSE_TAGS
+                ):
                     emit = self._buffer[:last_bracket]
                     self._buffer = self._buffer[last_bracket:]
                     if emit:
@@ -122,7 +142,7 @@ class ThinkTagParser:
             return None
 
         thinking_content = self._buffer[:think_end]
-        self._buffer = self._buffer[think_end + len(self.CLOSE_TAG) :]
+        self._buffer = self._buffer[think_end + len("</think>") :]
         self._in_think_tag = False
         if thinking_content:
             return ContentChunk(ContentType.THINKING, thinking_content)

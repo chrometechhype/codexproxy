@@ -419,6 +419,50 @@ def test_think_tag_parser_empty_think_tags():
     assert text == "remaining"
 
 
+def test_thought_tag_parsed_like_think():
+    """<thought> tags are normalized to <think> and parsed identically."""
+    parser = ThinkTagParser()
+    chunks = list(parser.feed("<thought>reasoning</thought> answer"))
+    assert len(chunks) == 2
+    assert chunks[0].type == ContentType.THINKING
+    assert chunks[0].content == "reasoning"
+    assert chunks[1].type == ContentType.TEXT
+    assert chunks[1].content == " answer"
+
+
+def test_thought_tag_streaming():
+    """<thought> tag split across chunks."""
+    parser = ThinkTagParser()
+    chunks1 = list(parser.feed("<thou"))
+    # Nothing emitted yet — partial tag is buffered
+    assert len(chunks1) == 0
+    chunks2 = list(parser.feed("ght>deep reasoning</thought>"))
+    assert len(chunks2) == 1
+    assert chunks2[0].type == ContentType.THINKING
+    assert chunks2[0].content == "deep reasoning"
+
+
+def test_mixed_think_and_thought_tags():
+    """Both <think> and <thought> tags are handled."""
+    parser = ThinkTagParser()
+    chunks = list(parser.feed("<think>first</think><thought>second</thought>text"))
+    thinking = "".join(c.content for c in chunks if c.type == ContentType.THINKING)
+    text = "".join(c.content for c in chunks if c.type == ContentType.TEXT)
+    assert thinking == "firstsecond"
+    assert text == "text"
+
+
+def test_thought_tag_unicode():
+    """Unicode inside <thought> tag."""
+    parser = ThinkTagParser()
+    chunks = list(parser.feed("hello <thought>思考中</thought> world"))
+    thinking = "".join(c.content for c in chunks if c.type == ContentType.THINKING)
+    text = "".join(c.content for c in chunks if c.type == ContentType.TEXT)
+    assert thinking == "思考中"
+    assert "hello" in text
+    assert "world" in text
+
+
 def test_think_tag_parser_unicode():
     """Unicode content inside and outside think tags."""
     parser = ThinkTagParser()
