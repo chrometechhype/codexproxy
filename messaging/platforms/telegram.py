@@ -190,7 +190,7 @@ class TelegramPlatform(MessagingPlatform):
             target = self.allowed_user_id
             if target:
                 startup_text = (
-                    f"🚀 *{escape_md_v2('Claude Code Proxy is online!')}* "
+                    f"🚀 *{escape_md_v2('CodexProxy is online!')}* "
                     f"{escape_md_v2('(Bot API)')}"
                 )
                 await self.send_message(
@@ -488,7 +488,7 @@ class TelegramPlatform(MessagingPlatform):
     ) -> None:
         """Handle /start command."""
         if update.message:
-            await update.message.reply_text("👋 Hello! I am the Claude Code Proxy Bot.")
+            await update.message.reply_text("👋 Hello! I am the CodexProxy Bot.")
         # We can also treat this as a message if we want it to trigger something
         await self._on_telegram_message(update, context)
 

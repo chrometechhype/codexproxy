@@ -61,7 +61,7 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
         ("test_provider_text_multiturn_e2e",),
         ("providers",),
         ("configured provider credentials or local provider endpoint",),
-        "missing providers are missing_env unless FCC_ALLOW_NO_PROVIDER_SMOKE=1",
+        "missing providers are missing_env unless CDX_ALLOW_NO_PROVIDER_SMOKE=1",
     ),
     FeatureCoverage(
         "drop_in_claude_code_replacement",
@@ -460,7 +460,7 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
     ),
     FeatureCoverage(
         "config_env_precedence",
-        "FCC_ENV_FILE, dotenv, and process env precedence are deterministic",
+        "CDX_ENV_FILE, dotenv, and process env precedence are deterministic",
         "public_surface",
         ("tests/config/test_config.py",),
         (),

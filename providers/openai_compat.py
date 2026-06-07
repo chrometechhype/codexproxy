@@ -123,7 +123,7 @@ class OpenAIChatTransport(BaseProvider):
                 timeout=httpx.Timeout(
                     config.http_read_timeout,
                     connect=config.http_connect_timeout,
-                    read=config.http_read_timeout,
+                    read=None,
                     write=config.http_write_timeout,
                 ),
             )
@@ -134,7 +134,7 @@ class OpenAIChatTransport(BaseProvider):
             timeout=httpx.Timeout(
                 config.http_read_timeout,
                 connect=config.http_connect_timeout,
-                read=config.http_read_timeout,
+                read=None,
                 write=config.http_write_timeout,
             ),
             http_client=http_client,

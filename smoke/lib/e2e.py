@@ -90,7 +90,7 @@ class ConversationDriver:
         self,
         text: str,
         *,
-        model: str = "fcc-smoke-default",
+        model: str = "cdx-smoke-default",
         max_tokens: int = 256,
         extra: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
@@ -178,9 +178,9 @@ class ProviderMatrixDriver:
             )
 
         models = self.config.provider_smoke_models()
-        if not models and os.getenv("FCC_ALLOW_NO_PROVIDER_SMOKE") != "1":
+        if not models and os.getenv("CDX_ALLOW_NO_PROVIDER_SMOKE") != "1":
             fail_missing_env(
-                "no configured provider smoke models; set FCC_ALLOW_NO_PROVIDER_SMOKE=1 "
+                "no configured provider smoke models; set CDX_ALLOW_NO_PROVIDER_SMOKE=1 "
                 "only for no-provider smoke collection"
             )
         return models

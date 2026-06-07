@@ -34,8 +34,8 @@ _SCHEMA_LIST_KEYS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
 _SCHEMA_MAP_KEYS = frozenset(
     {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"}
 )
-NIM_TOOL_ARGUMENT_ALIASES_KEY = "_fcc_nim_tool_argument_aliases"
-_NIM_TOOL_PARAMETER_ALIAS_PREFIX = "_fcc_arg_"
+NIM_TOOL_ARGUMENT_ALIASES_KEY = "_cdx_nim_tool_argument_aliases"
+_NIM_TOOL_PARAMETER_ALIAS_PREFIX = "_cdx_arg_"
 _NIM_UNSAFE_TOOL_PARAMETER_NAMES = frozenset({"type"})
 
 

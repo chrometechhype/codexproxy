@@ -235,7 +235,7 @@ CAPABILITY_CONTRACTS: tuple[CapabilityContract, ...] = (
         "env_precedence",
         "config_env_precedence",
         "config.settings.Settings",
-        "process env, user env file, repo env file, FCC_ENV_FILE",
+        "process env, user env file, repo env file, CDX_ENV_FILE",
         "deterministic settings values",
         "validation error for invalid settings",
         ("tests/config/test_config.py",),

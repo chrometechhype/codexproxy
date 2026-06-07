@@ -29,7 +29,7 @@ def _clear_process_config(monkeypatch) -> None:
         "OPENROUTER_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
         "CODEX_PROXY_AUTH_TOKEN",
-        "FCC_ENV_FILE",
+        "CDX_ENV_FILE",
         "HOST",
         "PORT",
         "LOG_FILE",
@@ -43,6 +43,10 @@ def _clear_process_config(monkeypatch) -> None:
 def test_admin_page_is_loopback_only(monkeypatch, tmp_path):
     _set_home(monkeypatch, tmp_path)
     app = create_app(lifespan_enabled=False)
+    # Debug: print registered routes
+    routes = [route.path for route in app.routes]
+    print(f"Registered routes: {routes}")
+    assert "/admin" in routes, f"/admin not in routes: {routes}"
 
     assert _local_client(app).get("/admin").status_code == 200
     remote_client = TestClient(app, client=("203.0.113.10", 50000))
@@ -397,7 +401,7 @@ def test_admin_apply_restart_required_reports_automatic_restart(monkeypatch, tmp
 
     response = _local_client(app).post(
         "/admin/api/config/apply",
-        json={"values": {"PORT": "8083"}},
+        json={"values": {"PORT": "8084"}},
     )
 
     assert response.status_code == 200
@@ -407,7 +411,7 @@ def test_admin_apply_restart_required_reports_automatic_restart(monkeypatch, tmp
     assert body["restart"] == {
         "required": True,
         "automatic": True,
-        "admin_url": "http://127.0.0.1:8083/admin",
+        "admin_url": "http://127.0.0.1:8084/admin",
         "fields": ["PORT"],
     }
     assert callbacks == ["restart"]
@@ -509,9 +513,9 @@ def test_admin_local_provider_status_reports_reachable(monkeypatch, tmp_path):
 
 
 def test_admin_launch_url_uses_loopback_for_wildcard_host():
-    settings = Settings.model_construct(host="0.0.0.0", port=8082)
+    settings = Settings.model_construct(host="0.0.0.0", port=8083)
 
-    assert local_admin_url(settings) == "http://127.0.0.1:8082/admin"
+    assert local_admin_url(settings) == "http://127.0.0.1:8083/admin"
 
 
 # ---------------------------------------------------------------------------
@@ -556,7 +560,7 @@ def _fake_settings():
     return Settings.model_construct(
         host="127.0.0.1",
         port=19095,
-        anthropic_auth_token="freecc",
+        anthropic_auth_token="codexproxy",
         model="big-pickle",
     )
 
@@ -576,7 +580,7 @@ def test_admin_codex_launch_cli_spawns_detached(monkeypatch, tmp_path):
     def _fake_configure(**kw):
         return {
             "base_url": "http://127.0.0.1:19095/v1",
-            "api_key": "freecc",
+            "api_key": "codexproxy",
             "model": "big-pickle",
             "provider": "codexproxy",
         }
@@ -614,7 +618,7 @@ def test_admin_codex_launch_cli_accepts_flags(monkeypatch, tmp_path):
     def _fake_configure(**kw):
         return {
             "base_url": "http://127.0.0.1:19095/v1",
-            "api_key": "freecc",
+            "api_key": "codexproxy",
             "model": "big-pickle",
             "provider": "codexproxy",
         }
@@ -703,7 +707,7 @@ def test_admin_codex_launch_app_spawns_detached(monkeypatch, tmp_path):
     def _fake_configure(**kw):
         return {
             "base_url": "http://127.0.0.1:19095/v1",
-            "api_key": "freecc",
+            "api_key": "codexproxy",
             "model": "big-pickle",
             "provider": "codexproxy",
         }

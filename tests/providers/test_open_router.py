@@ -123,7 +123,7 @@ def test_init_uses_configurable_timeouts():
     with patch("httpx.AsyncClient") as mock_client:
         OpenRouterProvider(config)
         timeout = mock_client.call_args.kwargs["timeout"]
-        assert timeout.read == 600.0
+        assert timeout.read is None
         assert timeout.write == 15.0
         assert timeout.connect == 5.0
 

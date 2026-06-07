@@ -23,7 +23,7 @@ def test_env_precedence_e2e(smoke_config: SmokeConfig, tmp_path) -> None:
         encoding="utf-8",
     )
     env = os.environ.copy()
-    env["FCC_ENV_FILE"] = str(env_file)
+    env["CDX_ENV_FILE"] = str(env_file)
     env["MODEL"] = "nvidia_nim/process-model"
     env["ANTHROPIC_AUTH_TOKEN"] = "process-token"
     script = (
@@ -50,7 +50,7 @@ def test_removed_env_migration_e2e(smoke_config: SmokeConfig, tmp_path) -> None:
     env_file = tmp_path / "removed.env"
     env_file.write_text('NIM_ENABLE_THINKING="true"\n', encoding="utf-8")
     env = os.environ.copy()
-    env["FCC_ENV_FILE"] = str(env_file)
+    env["CDX_ENV_FILE"] = str(env_file)
     result = subprocess.run(
         cmd_python_c("from config.settings import Settings; Settings()"),
         cwd=smoke_config.root,
@@ -75,7 +75,7 @@ def test_per_model_thinking_config_e2e(smoke_config: SmokeConfig, tmp_path) -> N
         encoding="utf-8",
     )
     env = os.environ.copy()
-    env["FCC_ENV_FILE"] = str(env_file)
+    env["CDX_ENV_FILE"] = str(env_file)
     script = (
         "from config.settings import Settings; "
         "s=Settings(); "
@@ -110,7 +110,7 @@ def test_proxy_timeout_config_e2e(smoke_config: SmokeConfig, tmp_path) -> None:
         encoding="utf-8",
     )
     env = os.environ.copy()
-    env["FCC_ENV_FILE"] = str(env_file)
+    env["CDX_ENV_FILE"] = str(env_file)
     script = (
         "from config.settings import Settings; "
         "from providers.registry import PROVIDER_DESCRIPTORS, build_provider_config; "

@@ -9,7 +9,7 @@ GATEWAY_MODEL_ID_PREFIX = "anthropic"
 # Claude Code currently treats any model id containing ``claude-3-`` as not
 # supporting thinking. This intentionally uses that client-side capability
 # heuristic while keeping the real provider/model ref reversible for routing.
-NO_THINKING_GATEWAY_MODEL_ID_PREFIX = "claude-3-freecc-no-thinking"
+NO_THINKING_GATEWAY_MODEL_ID_PREFIX = "claude-3-codexproxy-no-thinking"
 
 
 @dataclass(frozen=True, slots=True)

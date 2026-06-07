@@ -3,7 +3,7 @@
 > This file is identical to CLAUDE.md. Keep them in sync.
 >
 > **Fork notice:** This is `codexproxy`, a rebrand of
-> `free-claude-code` that targets the OpenAI Codex CLI (`codex exec`) and the
+> `codexproxy` that targets the OpenAI Codex CLI (`codex exec`) and the
 > OpenAI Responses API (`POST /v1/responses`) instead of Claude Code and the
 > Anthropic Messages API. Phase 1 keeps the Anthropic wire surface for one
 > release as a backward-compat shim; Phases 3-6 replace it with Responses
@@ -105,3 +105,4 @@ Example commit on `main` after a packaging fix: bump `1.2.38` → `1.2.39`, run 
 ## TOOLS
 
 - Prefer built-in tools (grep, read_file, etc.) over manual workflows. Check tool availability before use.
+

@@ -69,8 +69,8 @@ def client(stub_provider: _StubProvider, monkeypatch: pytest.MonkeyPatch):
     """A ``TestClient`` that bypasses the lifespan and shares a seeded store."""
     # Force the auth token so the dependency-injected guard accepts requests
     # without polluting the global env for other test files.
-    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "freecc")
-    monkeypatch.setenv("CODEX_PROXY_AUTH_TOKEN", "freecc")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "codexproxy")
+    monkeypatch.setenv("CODEX_PROXY_AUTH_TOKEN", "codexproxy")
     # Pre-seed ``app.state.responses_store`` with a known response so retrieval
     # tests work without a live provider call.
     store = ResponseStore()
@@ -130,7 +130,7 @@ def client(stub_provider: _StubProvider, monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture
 def auth_headers() -> dict[str, str]:
     return {
-        "Authorization": "Bearer freecc",
+        "Authorization": "Bearer codexproxy",
         "Content-Type": "application/json",
     }
 
@@ -142,7 +142,7 @@ def auth_headers() -> dict[str, str]:
 
 def test_models_list_contains_configured_model(client: TestClient) -> None:
     """The default ``MODEL`` is exposed (either Anthropic or Responses shape)."""
-    response = client.get("/v1/models", headers={"Authorization": "Bearer freecc"})
+    response = client.get("/v1/models", headers={"Authorization": "Bearer codexproxy"})
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data["data"], list)

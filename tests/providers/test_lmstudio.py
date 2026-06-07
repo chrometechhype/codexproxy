@@ -94,7 +94,7 @@ def test_init_uses_configurable_timeouts():
         LMStudioProvider(config)
         call_kwargs = mock_client.call_args[1]
         timeout = call_kwargs["timeout"]
-        assert timeout.read == 600.0
+        assert timeout.read is None
         assert timeout.write == 15.0
         assert timeout.connect == 5.0
 

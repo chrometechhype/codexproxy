@@ -121,7 +121,7 @@ uv run pytest smoke/product -n 0 -s --tb=short
 
 ## Environment
 
-- `FCC_ENV_FILE`: explicit dotenv path for startup/config scenarios.
+- `CDX_ENV_FILE`: explicit dotenv path for startup/config scenarios.
 - `CODEX_PROXY_LIVE_SMOKE=1`: enables live smoke execution.
 - `CODEX_PROXY_ALLOW_NO_PROVIDER_SMOKE=1`: permits no-provider live smoke for harness work.
 - `CODEX_PROXY_SMOKE_TARGETS`: comma-separated targets, or `all`.
@@ -155,7 +155,7 @@ uv run pytest smoke/product -n 0 -s --tb=short
 
 Run smoke the same way you run tests (`uv run pytest smoke` from the repo). Child
 processes use the **same Python interpreter** as the test runner, not nested
-`uv run`, so Windows does not try to replace `free-claude-code.exe` while it is
+`uv run`, so Windows does not try to replace `codexproxy.exe` while it is
 locked.
 
 ## Failure Classes
@@ -178,3 +178,5 @@ names contain `KEY`, `TOKEN`, `SECRET`, `WEBHOOK`, or `AUTH`.
 `upstream_unavailable`, and `probe_timeout` are skips except when the user
 explicitly selected a provider in `CODEX_PROXY_SMOKE_PROVIDER_MATRIX`;
 selected-but-missing providers fail.
+
+

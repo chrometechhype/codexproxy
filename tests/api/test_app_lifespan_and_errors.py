@@ -131,7 +131,7 @@ def test_create_app_provider_error_handler_returns_anthropic_format():
         allowed_dir="",
         claude_workspace="./agent_workspace",
         host="127.0.0.1",
-        port=8082,
+        port=8083,
     )
     with (
         patch.object(api_app_mod, "get_settings", return_value=settings),
@@ -167,7 +167,7 @@ def test_create_app_provider_error_default_logs_exclude_provider_message():
         allowed_dir="",
         claude_workspace="./agent_workspace",
         host="127.0.0.1",
-        port=8082,
+        port=8083,
         log_api_error_tracebacks=False,
     )
     with (
@@ -204,7 +204,7 @@ def test_create_app_general_exception_handler_returns_500():
         allowed_dir="",
         claude_workspace="./agent_workspace",
         host="127.0.0.1",
-        port=8082,
+        port=8083,
     )
     with (
         patch.object(api_app_mod, "get_settings", return_value=settings),
@@ -240,7 +240,7 @@ def test_create_app_general_exception_default_logs_exclude_exception_message():
         allowed_dir="",
         claude_workspace="./agent_workspace",
         host="127.0.0.1",
-        port=8082,
+        port=8083,
         log_api_error_tracebacks=False,
     )
     with (
@@ -278,7 +278,7 @@ def test_app_lifespan_sets_state_and_cleans_up(tmp_path, messaging_enabled):
         allowed_dir=str(tmp_path / "workspace"),
         claude_workspace=str(tmp_path / "data"),
         host="127.0.0.1",
-        port=8082,
+        port=8083,
     )
 
     fake_platform = MagicMock()
@@ -356,7 +356,7 @@ def test_app_lifespan_cleanup_continues_if_platform_stop_raises(tmp_path):
         allowed_dir=str(tmp_path / "workspace"),
         claude_workspace=str(tmp_path / "data"),
         host="127.0.0.1",
-        port=8082,
+        port=8083,
     )
 
     fake_platform = MagicMock()
@@ -406,7 +406,7 @@ async def test_runtime_startup_validation_failure_does_not_block_server(tmp_path
         allowed_dir=str(tmp_path / "workspace"),
         claude_workspace=str(tmp_path / "data"),
         host="127.0.0.1",
-        port=8082,
+        port=8083,
     )
     app = FastAPI()
     runtime = api_runtime_mod.AppRuntime(
@@ -453,7 +453,7 @@ async def test_graceful_asgi_lifespan_model_validation_failure_starts(tmp_path):
         allowed_dir=str(tmp_path / "workspace"),
         claude_workspace=str(tmp_path / "data"),
         host="127.0.0.1",
-        port=8082,
+        port=8083,
     )
     app = api_app_mod.GracefulLifespanApp(FastAPI())
     sent: list[MutableMapping[str, Any]] = []
@@ -498,7 +498,7 @@ def test_app_lifespan_messaging_import_error_no_crash(tmp_path, caplog):
         allowed_dir=str(tmp_path / "workspace"),
         claude_workspace=str(tmp_path / "data"),
         host="127.0.0.1",
-        port=8082,
+        port=8083,
     )
 
     api_app_mod = importlib.import_module("api.app")
@@ -533,7 +533,7 @@ def test_app_lifespan_platform_start_exception_cleanup_still_runs(tmp_path):
         allowed_dir=str(tmp_path / "workspace"),
         claude_workspace=str(tmp_path / "data"),
         host="127.0.0.1",
-        port=8082,
+        port=8083,
     )
 
     fake_platform = MagicMock()
@@ -583,7 +583,7 @@ def test_app_lifespan_flush_pending_save_exception_warning_only(tmp_path):
         allowed_dir=str(tmp_path / "workspace"),
         claude_workspace=str(tmp_path / "data"),
         host="127.0.0.1",
-        port=8082,
+        port=8083,
     )
 
     fake_platform = MagicMock()
@@ -620,8 +620,8 @@ def test_app_lifespan_flush_pending_save_exception_warning_only(tmp_path):
     registry_cleanup.assert_awaited_once()
 
 
-def test_create_app_writes_server_log_under_fcc_home(monkeypatch, tmp_path):
-    """App logging uses ~/.fcc/logs/server.log regardless of cwd."""
+def test_create_app_writes_server_log_under_cdx_home(monkeypatch, tmp_path):
+    """App logging uses ~/.cdx/logs/server.log regardless of cwd."""
     from loguru import logger
 
     import config.logging_config as logging_config_mod

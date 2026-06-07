@@ -152,7 +152,7 @@ class SmokeConfig:
             live=os.getenv("CODEX_PROXY_LIVE_SMOKE") == "1",
             interactive=os.getenv("CODEX_PROXY_SMOKE_INTERACTIVE") == "1",
             targets=_parse_targets(
-                os.getenv("CODEX_PROXY_SMOKE_TARGETS") or os.getenv("FCC_SMOKE_TARGETS")
+                os.getenv("CODEX_PROXY_SMOKE_TARGETS") or os.getenv("CDX_SMOKE_TARGETS")
             ),
             provider_matrix=_parse_csv(os.getenv("CODEX_PROXY_SMOKE_PROVIDER_MATRIX")),
             timeout_s=float(os.getenv("CODEX_PROXY_SMOKE_TIMEOUT_S", "45")),

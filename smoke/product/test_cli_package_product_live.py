@@ -30,14 +30,14 @@ def test_entrypoint_init_e2e(smoke_config: SmokeConfig, tmp_path: Path) -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr or result.stdout
-    env_file = tmp_path / ".fcc" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     assert env_file.is_file()
     assert env_file.read_text(encoding="utf-8").strip()
 
 
 @pytest.mark.asyncio
 async def test_cli_session_resume_fork_e2e(tmp_path: Path) -> None:
-    session = CLISession(str(tmp_path), "http://127.0.0.1:8082/v1")
+    session = CLISession(str(tmp_path), "http://127.0.0.1:8083/v1")
     process = AsyncMock()
     process.stdout.read.side_effect = [b""]
     process.stderr.read.return_value = b""
@@ -64,7 +64,7 @@ async def test_cli_session_resume_fork_e2e(tmp_path: Path) -> None:
 async def test_cli_process_cleanup_e2e(tmp_path: Path) -> None:
     manager = CLISessionManager(
         workspace_path=str(tmp_path),
-        api_url="http://127.0.0.1:8082/v1",
+        api_url="http://127.0.0.1:8083/v1",
     )
     session, pending_id, is_new = await manager.get_or_create_session()
     assert is_new is True
@@ -84,7 +84,7 @@ async def test_cli_process_cleanup_e2e(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_cli_session_stop_kills_child_e2e(tmp_path: Path) -> None:
-    session = CLISession(str(tmp_path), "http://127.0.0.1:8082/v1")
+    session = CLISession(str(tmp_path), "http://127.0.0.1:8083/v1")
     process = MagicMock()
     process.pid = 123456
     process.returncode = None

@@ -18,7 +18,7 @@ def test_api_auth_header_variants_e2e(smoke_config: SmokeConfig, tmp_path) -> No
         name="product-auth",
         env_overrides={
             "ANTHROPIC_AUTH_TOKEN": token,
-            "FCC_ENV_FILE": str(env_file),
+            "CDX_ENV_FILE": str(env_file),
             "MESSAGING_PLATFORM": "none",
         },
     ).run() as server:

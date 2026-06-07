@@ -429,7 +429,7 @@ FIELDS: tuple[ConfigFieldSpec, ...] = (
         "runtime",
         "secret",
         settings_attr="codex_proxy_auth_token",
-        default="freecc",
+        default="codexproxy",
         secret=True,
         description="Protects Codex/API access. It is not admin-page login.",
     ),
@@ -495,7 +495,7 @@ FIELDS: tuple[ConfigFieldSpec, ...] = (
         "runtime",
         "number",
         settings_attr="port",
-        default="8082",
+        default="8083",
         restart_required=True,
     ),
     ConfigFieldSpec(
@@ -891,10 +891,10 @@ def explicit_env_path() -> Path | None:
     """Return the explicit env file path, when configured.
 
     Reads ``CODEX_PROXY_ENV_FILE`` first, then falls back to the legacy
-    ``FCC_ENV_FILE`` for one release.
+    ``CDX_ENV_FILE`` for one release.
     """
 
-    explicit = os.environ.get("CODEX_PROXY_ENV_FILE") or os.environ.get("FCC_ENV_FILE")
+    explicit = os.environ.get("CODEX_PROXY_ENV_FILE") or os.environ.get("CDX_ENV_FILE")
     if explicit:
         return Path(explicit)
     return None

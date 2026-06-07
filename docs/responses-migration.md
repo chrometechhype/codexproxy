@@ -37,9 +37,9 @@ The `responses_native` provider (direct OpenAI Responses passthrough) is **defer
 Deprecated (one-release alias for `CODEX_PROXY_AUTH_TOKEN`):
 
 - `ANTHROPIC_AUTH_TOKEN`
-- `FCC_OPEN_BROWSER`
-- `FCC_ENV_FILE`
-- `FCC_SMOKE_TARGETS`
+- `CDX_OPEN_BROWSER`
+- `CDX_ENV_FILE`
+- `CDX_SMOKE_TARGETS`
 
 ## Launcher
 
@@ -48,13 +48,13 @@ Deprecated (one-release alias for `CODEX_PROXY_AUTH_TOKEN`):
 ```toml
 [model_providers.codexproxy]
 name = "codexproxy"
-base_url = "http://127.0.0.1:8082/v1"
-api_key = "freecc"
+base_url = "http://127.0.0.1:8083/v1"
+api_key = "codexproxy"
 wire_api = "responses"
 requires_openai_auth = true
 
 [model_providers.codexproxy.env]
-OPENAI_API_KEY = "freecc"
+OPENAI_API_KEY = "codexproxy"
 
 [codexproxy]
 model = "<bare model id>"
@@ -92,3 +92,5 @@ For users who run only the Codex Desktop App and never `codex exec`, the dedicat
 - Strict-mode `previous_response_id` chain validation.
 - Function-call tools (`web_search`, `web_fetch`) wire-up.
 - Removal of the legacy `/v1/messages` Anthropic shim.
+
+

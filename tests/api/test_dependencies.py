@@ -392,7 +392,7 @@ async def test_get_provider_passes_http_timeouts_from_settings():
         assert isinstance(provider, NvidiaNimProvider)
         call_kwargs = mock_openai.call_args[1]
         timeout = call_kwargs["timeout"]
-        assert timeout.read == 600.0
+        assert timeout.read is None
         assert timeout.write == 20.0
         assert timeout.connect == 5.0
 

@@ -140,7 +140,7 @@ def test_init_configures_httpx_client(provider_config):
     timeout = kwargs["timeout"]
     assert kwargs["base_url"] == "https://custom.test/v1"
     assert kwargs["proxy"] == "socks5://127.0.0.1:9999"
-    assert timeout.read == 600.0
+    assert timeout.read is None
     assert timeout.write == 15.0
     assert timeout.connect == 5.0
 

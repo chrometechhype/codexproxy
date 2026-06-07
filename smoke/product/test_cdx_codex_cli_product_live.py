@@ -40,14 +40,14 @@ def test_cdx_codex_writes_responses_config_pointing_at_proxy(
 
     user_env = os.environ.copy()
     user_env["CODEX_HOME"] = str(codex_home)
-    user_env["CODEX_PROXY_AUTH_TOKEN"] = "freecc"
+    user_env["CODEX_PROXY_AUTH_TOKEN"] = "codexproxy"
 
     with SmokeServerDriver(
         smoke_config,
         name="product-cdx-codex",
         env_overrides={
             "MESSAGING_PLATFORM": "none",
-            "CODEX_PROXY_AUTH_TOKEN": "freecc",
+            "CODEX_PROXY_AUTH_TOKEN": "codexproxy",
         },
     ).run() as server:
         env = dict(user_env)
@@ -89,7 +89,7 @@ def test_cdx_codex_writes_responses_config_pointing_at_proxy(
         provider = parsed["model_providers"]["codexproxy"]
         assert provider["wire_api"] == "responses"
         assert provider["base_url"].rstrip("/") == f"{server.base_url}/v1"
-        assert provider["api_key"] == "freecc"
+        assert provider["api_key"] == "codexproxy"
         assert parsed["codexproxy"]["model_provider"] == "codexproxy"
 
 
@@ -102,7 +102,7 @@ def test_cdx_codex_errors_cleanly_when_proxy_is_down(
 
     env = os.environ.copy()
     env["CODEX_HOME"] = str(codex_home)
-    env["CODEX_PROXY_AUTH_TOKEN"] = "freecc"
+    env["CODEX_PROXY_AUTH_TOKEN"] = "codexproxy"
     env["PYTHONPATH"] = str(smoke_config.root)
     env["PATH"] = (
         str(smoke_config.root / ".venv" / "Scripts") + os.pathsep + env.get("PATH", "")
@@ -152,14 +152,14 @@ def test_cdx_codex_replaces_existing_top_level_model(
 
     user_env = os.environ.copy()
     user_env["CODEX_HOME"] = str(codex_home)
-    user_env["CODEX_PROXY_AUTH_TOKEN"] = "freecc"
+    user_env["CODEX_PROXY_AUTH_TOKEN"] = "codexproxy"
 
     with SmokeServerDriver(
         smoke_config,
         name="product-cdx-codex-model",
         env_overrides={
             "MESSAGING_PLATFORM": "none",
-            "CODEX_PROXY_AUTH_TOKEN": "freecc",
+            "CODEX_PROXY_AUTH_TOKEN": "codexproxy",
         },
     ).run() as server:
         env = dict(user_env)
@@ -220,14 +220,14 @@ def test_cdx_codex_config_writes_config_without_launching_codex(
 
     user_env = os.environ.copy()
     user_env["CODEX_HOME"] = str(codex_home)
-    user_env["CODEX_PROXY_AUTH_TOKEN"] = "freecc"
+    user_env["CODEX_PROXY_AUTH_TOKEN"] = "codexproxy"
 
     with SmokeServerDriver(
         smoke_config,
         name="product-cdx-codex-config",
         env_overrides={
             "MESSAGING_PLATFORM": "none",
-            "CODEX_PROXY_AUTH_TOKEN": "freecc",
+            "CODEX_PROXY_AUTH_TOKEN": "codexproxy",
         },
     ).run() as server:
         env = dict(user_env)
@@ -266,7 +266,7 @@ def test_cdx_codex_config_writes_config_without_launching_codex(
         assert parsed["model"] == parsed["codexproxy"]["model"]
         assert parsed["model_provider"] == "codexproxy"
         assert parsed["model_providers"]["codexproxy"]["wire_api"] == "responses"
-        assert parsed["model_providers"]["codexproxy"]["api_key"] == "freecc"
+        assert parsed["model_providers"]["codexproxy"]["api_key"] == "codexproxy"
 
         combined = (result.stdout or "") + (result.stderr or "")
         assert "Codex CLI config written to" in combined

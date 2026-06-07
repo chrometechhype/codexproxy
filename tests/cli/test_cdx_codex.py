@@ -12,11 +12,11 @@ from config.settings import Settings
 
 
 def _settings(
-    *, model: str = "nvidia_nim/test-model", token: str = "freecc"
+    *, model: str = "nvidia_nim/test-model", token: str = "codexproxy"
 ) -> Settings:
     return Settings.model_construct(
         host="0.0.0.0",
-        port=8082,
+        port=8083,
         anthropic_auth_token=token,
         model=model,
     )
@@ -41,7 +41,7 @@ def test_update_top_level_settings_replaces_existing_model() -> None:
         'sandbox_mode = "danger-full-access"\n'
         "\n"
         "[model_providers.codexproxy]\n"
-        'base_url = "http://localhost:8082/v1/"\n'
+        'base_url = "http://localhost:8083/v1/"\n'
     )
     updated = _update_top_level_codex_settings(text, model="test-model")
 
@@ -51,7 +51,7 @@ def test_update_top_level_settings_replaces_existing_model() -> None:
     assert parsed["model_reasoning_effort"] == "xhigh"
     assert parsed["sandbox_mode"] == "danger-full-access"
     assert parsed["model_providers"]["codexproxy"]["base_url"] == (
-        "http://localhost:8082/v1/"
+        "http://localhost:8083/v1/"
     )
 
 
@@ -148,8 +148,8 @@ def test_write_codex_config_creates_file_with_block(tmp_path: Path) -> None:
     p = tmp_path / "config.toml"
     _write_codex_config(
         p,
-        base_url="http://127.0.0.1:8082/v1",
-        api_key="freecc",
+        base_url="http://127.0.0.1:8083/v1",
+        api_key="codexproxy",
         model="test-model",
     )
 
@@ -157,8 +157,8 @@ def test_write_codex_config_creates_file_with_block(tmp_path: Path) -> None:
     assert ">>> codexproxy (managed by cdx-codex) >>>" in text
     assert "<<< codexproxy <<<" in text
     assert "[model_providers.codexproxy]" in text
-    assert 'base_url = "http://127.0.0.1:8082/v1"' in text
-    assert 'api_key = "freecc"' in text
+    assert 'base_url = "http://127.0.0.1:8083/v1"' in text
+    assert 'api_key = "codexproxy"' in text
     assert 'wire_api = "responses"' in text
     assert 'model = "test-model"' in text
     assert 'model_provider = "codexproxy"' in text
@@ -170,18 +170,18 @@ def test_write_codex_config_produces_parseable_toml(tmp_path: Path) -> None:
     p = tmp_path / "config.toml"
     _write_codex_config(
         p,
-        base_url="http://127.0.0.1:8082/v1",
-        api_key="freecc",
+        base_url="http://127.0.0.1:8083/v1",
+        api_key="codexproxy",
         model="test-model",
     )
 
     parsed = tomllib.loads(p.read_text(encoding="utf-8"))
     provider = parsed["model_providers"]["codexproxy"]
-    assert provider["base_url"] == "http://127.0.0.1:8082/v1"
-    assert provider["api_key"] == "freecc"
+    assert provider["base_url"] == "http://127.0.0.1:8083/v1"
+    assert provider["api_key"] == "codexproxy"
     assert provider["wire_api"] == "responses"
     assert "requires_openai_auth" not in provider
-    assert provider["env"]["OPENAI_API_KEY"] == "freecc"
+    assert provider["env"]["OPENAI_API_KEY"] == "codexproxy"
     assert parsed["codexproxy"]["model"] == "test-model"
     assert parsed["codexproxy"]["model_provider"] == "codexproxy"
     assert parsed["codexproxy"]["approval_policy"] == "never"
@@ -198,8 +198,8 @@ def test_write_codex_config_preserves_existing_user_settings(tmp_path: Path) -> 
 
     _write_codex_config(
         p,
-        base_url="http://127.0.0.1:8082/v1",
-        api_key="freecc",
+        base_url="http://127.0.0.1:8083/v1",
+        api_key="codexproxy",
         model="test-model",
     )
 
@@ -215,24 +215,24 @@ def test_write_codex_config_is_idempotent_on_second_call(tmp_path: Path) -> None
     p = tmp_path / "config.toml"
     _write_codex_config(
         p,
-        base_url="http://127.0.0.1:8082/v1",
-        api_key="freecc",
+        base_url="http://127.0.0.1:8083/v1",
+        api_key="codexproxy",
         model="test-model",
     )
     first = p.read_text(encoding="utf-8")
 
     _write_codex_config(
         p,
-        base_url="http://127.0.0.1:8082/v1",
-        api_key="freecc",
+        base_url="http://127.0.0.1:8083/v1",
+        api_key="codexproxy",
         model="test-model",
     )
     second = p.read_text(encoding="utf-8")
 
     assert first.count(">>> codexproxy (managed by cdx-codex) >>>") == 1
     assert second.count(">>> codexproxy (managed by cdx-codex) >>>") == 1
-    assert "http://127.0.0.1:8082/v1" in first
-    assert "http://127.0.0.1:8082/v1" in second
+    assert "http://127.0.0.1:8083/v1" in first
+    assert "http://127.0.0.1:8083/v1" in second
     assert first == second
 
 
@@ -244,8 +244,8 @@ def test_write_codex_config_creates_parent_directory(tmp_path: Path) -> None:
 
     _write_codex_config(
         p,
-        base_url="http://127.0.0.1:8082/v1",
-        api_key="freecc",
+        base_url="http://127.0.0.1:8083/v1",
+        api_key="codexproxy",
         model="test-model",
     )
 
@@ -283,7 +283,7 @@ def test_launch_codex_writes_config_and_executes(
     from cli import entrypoints
 
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
-    monkeypatch.setenv("CODEX_PROXY_AUTH_TOKEN", "freecc")
+    monkeypatch.setenv("CODEX_PROXY_AUTH_TOKEN", "codexproxy")
     from config.settings import get_settings
 
     get_settings.cache_clear()
@@ -416,7 +416,7 @@ def test_write_codex_config_updates_existing_top_level_model(
     _write_codex_config(
         p,
         base_url="http://127.0.0.1:19095/v1",
-        api_key="freecc",
+        api_key="codexproxy",
         model="test-model",
     )
 
@@ -430,7 +430,7 @@ def test_write_codex_config_updates_existing_top_level_model(
     assert parsed["model_providers"]["codexproxy"]["base_url"] == (
         "http://127.0.0.1:19095/v1"
     )
-    assert parsed["model_providers"]["codexproxy"]["api_key"] == "freecc"
+    assert parsed["model_providers"]["codexproxy"]["api_key"] == "codexproxy"
 
 
 def test_configure_codex_writes_config_and_exits(
@@ -439,7 +439,7 @@ def test_configure_codex_writes_config_and_exits(
     from cli import entrypoints
 
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
-    monkeypatch.setenv("CODEX_PROXY_AUTH_TOKEN", "freecc")
+    monkeypatch.setenv("CODEX_PROXY_AUTH_TOKEN", "codexproxy")
     from config.settings import get_settings
 
     get_settings.cache_clear()
@@ -489,7 +489,7 @@ def test_configure_codex_updates_existing_top_level_model(
     from cli import entrypoints
 
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
-    monkeypatch.setenv("CODEX_PROXY_AUTH_TOKEN", "freecc")
+    monkeypatch.setenv("CODEX_PROXY_AUTH_TOKEN", "codexproxy")
     from config.settings import get_settings
 
     get_settings.cache_clear()

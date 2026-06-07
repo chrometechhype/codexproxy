@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import traceback
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -32,6 +33,21 @@ from .web_tools.streaming import stream_web_server_tool_response
 TokenCounter = Callable[[list[Any], str | list[Any] | None, list[Any] | None], int]
 
 ProviderGetter = Callable[[str], BaseProvider]
+
+
+async def _timeout_wrapper(
+    stream: AsyncIterator[str], timeout: float
+) -> AsyncIterator[str]:
+    """Wrap an async stream with a total timeout."""
+    try:
+        async with asyncio.timeout(timeout):
+            async for chunk in stream:
+                yield chunk
+    except TimeoutError:
+        logger.error("Provider stream timed out after {}s", timeout)
+        yield 'event: error\ndata: {"type":"error","error":{"type":"timeout_error",'
+        yield f'"message":"Provider stream timed out after {timeout}s"}}}}\n\n'
+
 
 # Providers that use ``/chat/completions`` + Anthropic-to-OpenAI conversion (not native Messages).
 _OPENAI_CHAT_UPSTREAM_IDS = frozenset({"nvidia_nim", "opencode", "opencode_go"})
@@ -187,13 +203,17 @@ class ClaudeProxyService:
                     routed.request.tools,
                 )
 
+                provider_stream = provider.stream_response(
+                    routed.request,
+                    input_tokens=input_tokens,
+                    request_id=request_id,
+                    thinking_enabled=routed.resolved.thinking_enabled,
+                )
+                timed_stream = _timeout_wrapper(
+                    provider_stream, self._settings.http_read_timeout
+                )
                 streamed = traced_async_stream(
-                    provider.stream_response(
-                        routed.request,
-                        input_tokens=input_tokens,
-                        request_id=request_id,
-                        thinking_enabled=routed.resolved.thinking_enabled,
-                    ),
+                    timed_stream,
                     stage="egress",
                     source="api",
                     complete_event="api.response.stream_completed",

@@ -4,8 +4,8 @@ from pathlib import Path
 
 CODEXPROXY_CONFIG_DIRNAME = ".codexproxy"
 CODEXPROXY_ENV_FILENAME = ".env"
-LEGACY_PREDECESSOR_DIRNAME = "free-claude-code"
-LEGACY_FCC_DIRNAME = ".fcc"
+LEGACY_PREDECESSOR_DIRNAME = "codexproxy"
+LEGACY_cdx_DIRNAME = ".cdx"
 LEGACY_XDG_CONFIG_DIRNAME = ".config"
 CODEX_WORKSPACE_DIRNAME = "agent_workspace"
 CODEXPROXY_LOGS_DIRNAME = "logs"
@@ -33,12 +33,12 @@ def legacy_env_paths() -> tuple[Path, ...]:
     home = Path.home()
     return (
         home / LEGACY_PREDECESSOR_DIRNAME / CODEXPROXY_ENV_FILENAME,
-        home / LEGACY_FCC_DIRNAME / CODEXPROXY_ENV_FILENAME,
+        home / LEGACY_cdx_DIRNAME / CODEXPROXY_ENV_FILENAME,
         home
         / LEGACY_XDG_CONFIG_DIRNAME
         / LEGACY_PREDECESSOR_DIRNAME
         / CODEXPROXY_ENV_FILENAME,
-        home / LEGACY_XDG_CONFIG_DIRNAME / LEGACY_FCC_DIRNAME / CODEXPROXY_ENV_FILENAME,
+        home / LEGACY_XDG_CONFIG_DIRNAME / LEGACY_cdx_DIRNAME / CODEXPROXY_ENV_FILENAME,
     )
 
 

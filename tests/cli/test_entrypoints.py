@@ -11,8 +11,8 @@ from config.settings import Settings
 
 def _launcher_settings(
     *,
-    port: int = 8082,
-    token: str = "freecc",
+    port: int = 8083,
+    token: str = "codexproxy",
 ) -> Settings:
     return Settings.model_construct(
         host="0.0.0.0",
@@ -60,8 +60,8 @@ def test_init_copies_template_content(tmp_path: Path) -> None:
 
 
 def test_init_migrates_home_checkout_env_before_template(tmp_path: Path) -> None:
-    """init() preserves users who kept config in ~/free-claude-code/.env."""
-    legacy_env = tmp_path / "free-claude-code" / ".env"
+    """init() preserves users who kept config in ~/codexproxy/.env."""
+    legacy_env = tmp_path / "codexproxy" / ".env"
     legacy_env.parent.mkdir(parents=True)
     legacy_env.write_text("MODEL=deepseek/deepseek-chat\n", encoding="utf-8")
 
@@ -72,8 +72,8 @@ def test_init_migrates_home_checkout_env_before_template(tmp_path: Path) -> None
 
 
 def test_init_migrates_legacy_xdg_env_before_template(tmp_path: Path) -> None:
-    """init() preserves users who kept config in ~/.config/free-claude-code/.env."""
-    legacy_env = tmp_path / ".config" / "free-claude-code" / ".env"
+    """init() preserves users who kept config in ~/.config/codexproxy/.env."""
+    legacy_env = tmp_path / ".config" / "codexproxy" / ".env"
     legacy_env.parent.mkdir(parents=True)
     legacy_env.write_text("MODEL=open_router/free-model\n", encoding="utf-8")
 
@@ -83,9 +83,9 @@ def test_init_migrates_legacy_xdg_env_before_template(tmp_path: Path) -> None:
     assert f"Config migrated from {legacy_env}" in output
 
 
-def test_init_migrates_legacy_fcc_home_env_before_template(tmp_path: Path) -> None:
-    """init() preserves users who kept config in ~/.fcc/.env."""
-    legacy_env = tmp_path / ".fcc" / ".env"
+def test_init_migrates_legacy_cdx_home_env_before_template(tmp_path: Path) -> None:
+    """init() preserves users who kept config in ~/.cdx/.env."""
+    legacy_env = tmp_path / ".cdx" / ".env"
     legacy_env.parent.mkdir(parents=True)
     legacy_env.write_text("MODEL=groq/legacy\n", encoding="utf-8")
 
@@ -104,7 +104,7 @@ def test_legacy_env_migration_does_not_overwrite_managed_env(
     managed_env = tmp_path / ".codexproxy" / ".env"
     managed_env.parent.mkdir(parents=True)
     managed_env.write_text("MODEL=nvidia_nim/current\n", encoding="utf-8")
-    legacy_env = tmp_path / "free-claude-code" / ".env"
+    legacy_env = tmp_path / "codexproxy" / ".env"
     legacy_env.parent.mkdir(parents=True)
     legacy_env.write_text("MODEL=deepseek/legacy\n", encoding="utf-8")
 
@@ -174,7 +174,7 @@ def test_schedule_open_admin_browser_opens_when_health_ready(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Opening /admin runs after /health preflight succeeds."""
-    monkeypatch.delenv("FCC_OPEN_BROWSER", raising=False)
+    monkeypatch.delenv("CDX_OPEN_BROWSER", raising=False)
     monkeypatch.delenv("CODEX_PROXY_OPEN_BROWSER", raising=False)
     from api.admin_urls import local_admin_url
     from cli import entrypoints
@@ -211,7 +211,7 @@ def test_schedule_open_admin_browser_skips_when_preflight_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """If /health never becomes reachable, the browser is not opened."""
-    monkeypatch.delenv("FCC_OPEN_BROWSER", raising=False)
+    monkeypatch.delenv("CDX_OPEN_BROWSER", raising=False)
     monkeypatch.delenv("CODEX_PROXY_OPEN_BROWSER", raising=False)
     from cli import entrypoints
 
@@ -264,9 +264,9 @@ def test_admin_browser_open_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> 
 def test_admin_browser_open_respects_legacy_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Legacy FCC_OPEN_BROWSER=0 still disables the scheduler (one-release alias)."""
+    """Legacy CDX_OPEN_BROWSER=0 still disables the scheduler (one-release alias)."""
     monkeypatch.delenv("CODEX_PROXY_OPEN_BROWSER", raising=False)
-    monkeypatch.setenv("FCC_OPEN_BROWSER", "0")
+    monkeypatch.setenv("CDX_OPEN_BROWSER", "0")
     from cli import entrypoints
 
     started: list[bool] = []

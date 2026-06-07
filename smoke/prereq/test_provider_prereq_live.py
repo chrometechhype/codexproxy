@@ -58,7 +58,7 @@ def test_configured_provider_models_stream_successfully(
         ) as server:
             events = collect_message_stream(
                 server,
-                message_payload(smoke_config.prompt, model="fcc-smoke-default"),
+                message_payload(smoke_config.prompt, model="cdx-smoke-default"),
                 smoke_config,
             )
             skip_if_upstream_unavailable_events(events)
@@ -93,7 +93,7 @@ def test_client_disconnect_mid_stream_does_not_crash_server(
             "POST",
             f"{server.base_url}/v1/messages",
             headers=auth_headers(),
-            json=message_payload(smoke_config.prompt, model="fcc-smoke-default"),
+            json=message_payload(smoke_config.prompt, model="cdx-smoke-default"),
             timeout=smoke_config.timeout_s,
         ) as response:
             assert response.status_code == 200, response.read()

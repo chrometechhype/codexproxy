@@ -149,11 +149,11 @@ class TestBuildRequestBody:
 
     def test_grep_schema_type_parameter_is_aliased_without_mutating_request(self, req):
         tool_schema = deepcopy(GREP_SCHEMA_FROM_SERVER_LOG)
-        tool_schema["properties"]["_fcc_arg_type"] = {
+        tool_schema["properties"]["_cdx_arg_type"] = {
             "type": "string",
             "description": "Existing safe property that collides with the alias",
         }
-        tool_schema["required"] = ["pattern", "-A", "_fcc_arg_type"]
+        tool_schema["required"] = ["pattern", "-A", "_cdx_arg_type"]
         original_schema = deepcopy(tool_schema)
         req.tools = [
             SimpleNamespace(
@@ -182,13 +182,13 @@ class TestBuildRequestBody:
             "count",
         ]
         assert (
-            properties["_fcc_arg_type"]
-            == original_schema["properties"]["_fcc_arg_type"]
+            properties["_cdx_arg_type"]
+            == original_schema["properties"]["_cdx_arg_type"]
         )
-        assert aliases == {"_fcc_arg_type_2": "type"}
-        assert properties["_fcc_arg_type_2"] == original_schema["properties"]["type"]
+        assert aliases == {"_cdx_arg_type_2": "type"}
+        assert properties["_cdx_arg_type_2"] == original_schema["properties"]["type"]
         assert "-A" in parameters["required"]
-        assert "_fcc_arg_type" in parameters["required"]
+        assert "_cdx_arg_type" in parameters["required"]
         assert tool_schema == original_schema
 
     def test_safe_tool_schema_does_not_add_alias_metadata(self, req):
@@ -248,26 +248,26 @@ class TestBuildRequestBody:
         parent = body["tools"][0]["function"]["parameters"]["properties"]["parent"]
         parent_properties = parent["properties"]
         assert "type" not in parent_properties
-        assert parent_properties["_fcc_arg_type"] == {
+        assert parent_properties["_cdx_arg_type"] == {
             "type": "string",
             "enum": ["page_id"],
         }
-        assert parent["required"] == ["_fcc_arg_type", "id"]
-        assert aliases == {"_fcc_arg_type": "type"}
+        assert parent["required"] == ["_cdx_arg_type", "id"]
+        assert aliases == {"_cdx_arg_type": "type"}
         assert tool_schema == original_schema
 
     def test_private_alias_metadata_is_stripped_without_mutating_body(self):
         body = {
             "model": "test",
-            NIM_TOOL_ARGUMENT_ALIASES_KEY: {"Grep": {"_fcc_arg_A": "-A"}},
+            NIM_TOOL_ARGUMENT_ALIASES_KEY: {"Grep": {"_cdx_arg_A": "-A"}},
         }
 
         upstream_body = body_without_nim_tool_argument_aliases(body)
 
         assert NIM_TOOL_ARGUMENT_ALIASES_KEY not in upstream_body
-        assert body[NIM_TOOL_ARGUMENT_ALIASES_KEY] == {"Grep": {"_fcc_arg_A": "-A"}}
+        assert body[NIM_TOOL_ARGUMENT_ALIASES_KEY] == {"Grep": {"_cdx_arg_A": "-A"}}
         assert nim_tool_argument_aliases_from_body(body) == {
-            "Grep": {"_fcc_arg_A": "-A"}
+            "Grep": {"_cdx_arg_A": "-A"}
         }
 
     def test_reasoning_params_in_extra_body(self):

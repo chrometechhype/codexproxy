@@ -94,7 +94,7 @@ def test_install_sh_package_spec_uses_codexproxy() -> None:
     body = _braced_body(text, "package_spec()")
 
     assert 'PACKAGE_NAME="codexproxy"' in text
-    assert "free-claude-code[" not in text
+    assert "codexproxy[" not in text
     assert (
         'printf \'%s[voice,voice_local] @ %s\' "$PACKAGE_NAME" "$REPO_GIT_URL"' in body
     )
@@ -192,7 +192,7 @@ def test_install_ps1_package_spec_uses_codexproxy() -> None:
     text = _script_text("install.ps1")
 
     assert '$PackageName = "codexproxy"' in text
-    assert "free-claude-code[" not in text
+    assert "codexproxy[" not in text
     assert "$PackageName[voice,voice_local] @ $RepoGitUrl" in text
     assert "$PackageName[voice] @ $RepoGitUrl" in text
     assert "$PackageName[voice_local] @ $RepoGitUrl" in text

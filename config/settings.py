@@ -33,7 +33,7 @@ def _env_files() -> tuple[Path, ...]:
         Path(".env"),
         managed_env_path(),
     ]
-    explicit = os.environ.get("CODEX_PROXY_ENV_FILE") or os.environ.get("FCC_ENV_FILE")
+    explicit = os.environ.get("CODEX_PROXY_ENV_FILE") or os.environ.get("CDX_ENV_FILE")
     if explicit:
         files.append(Path(explicit))
     return tuple(files)
@@ -183,9 +183,7 @@ class Settings(BaseSettings):
     )
 
     # ==================== HTTP Client Timeouts ====================
-    http_read_timeout: float = Field(
-        default=120.0, validation_alias="HTTP_READ_TIMEOUT"
-    )
+    http_read_timeout: float = Field(default=60.0, validation_alias="HTTP_READ_TIMEOUT")
     http_write_timeout: float = Field(
         default=10.0, validation_alias="HTTP_WRITE_TIMEOUT"
     )
@@ -282,7 +280,7 @@ class Settings(BaseSettings):
 
     # ==================== Server ====================
     host: str = "0.0.0.0"
-    port: int = 8082
+    port: int = 8083
     # Optional server API key to protect endpoints (Codex/Responses-style).
     # Set via env `CODEX_PROXY_AUTH_TOKEN`. When empty, no auth is required.
     codex_proxy_auth_token: str = Field(

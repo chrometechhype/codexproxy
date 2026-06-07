@@ -55,7 +55,7 @@ Codex Desktop App (`codex app`) now routes through CodexProxy alongside
 
 ## [1.0.0] - 2026-06-05
 
-First stable release of `codexproxy`. The fork of `free-claude-code` is
+First stable release of `codexproxy`. The fork of `codexproxy` is
 feature-complete for the OpenAI Responses API: the Codex CLI runs end-to-end
 through the proxy, all 17 providers are reachable, and the legacy
 `/v1/messages` Anthropic surface is preserved as a deprecation shim.
@@ -180,12 +180,14 @@ through the proxy, all 17 providers are reachable, and the legacy
 ## [0.1.0] - 2026-06-05
 
 ### Added
-- Initial rebrand of `free-claude-code` to `codexproxy` v0.1.0.
+- Initial rebrand of `codexproxy` to `codexproxy` v0.1.0.
 - New package metadata: `name = "codexproxy"`, scripts `cdx-server`,
   `cdx-init`, `cdx-codex` (Phase 1 stub).
 - New settings: `codex_workspace`, `codex_cli_bin`, `codex_proxy_auth_token`
   (with deprecated aliases `claude_workspace`, `claude_cli_bin`,
   `anthropic_auth_token`).
 - New `~/.codexproxy/` user config dir, replacing `~/.claude-code/`.
-- New `CODEX_PROXY_*` env-var prefix (with `FCC_*` / `ANTHROPIC_*` kept as
+- New `CODEX_PROXY_*` env-var prefix (with `CDX_*` / `ANTHROPIC_*` kept as
   deprecated aliases for one release).
+
+
