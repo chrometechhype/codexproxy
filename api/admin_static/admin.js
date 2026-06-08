@@ -19,7 +19,7 @@ const VIEW_GROUPS = [
     id: "model_config",
     label: "Model Config",
     title: "Model Config",
-    sections: ["models", "thinking", "prompt", "web_tools"],
+    sections: ["models", "thinking", "prompt"],
     containerId: "modelConfigSections",
   },
   {

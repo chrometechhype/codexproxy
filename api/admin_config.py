@@ -102,11 +102,6 @@ SECTIONS: tuple[ConfigSectionSpec, ...] = (
         "Voice note transcription settings.",
     ),
     ConfigSectionSpec(
-        "web_tools",
-        "Web Tools",
-        "Local web_search and web_fetch behavior.",
-    ),
-    ConfigSectionSpec(
         "diagnostics",
         "Diagnostics",
         "Logging and debugging flags.",
@@ -678,29 +673,6 @@ FIELDS: tuple[ConfigFieldSpec, ...] = (
         settings_attr="enable_filepath_extraction_mock",
         default="true",
         advanced=True,
-    ),
-    ConfigFieldSpec(
-        "ENABLE_WEB_SERVER_TOOLS",
-        "Web Server Tools",
-        "web_tools",
-        "boolean",
-        settings_attr="enable_web_server_tools",
-        default="true",
-    ),
-    ConfigFieldSpec(
-        "WEB_FETCH_ALLOWED_SCHEMES",
-        "Allowed Web Fetch Schemes",
-        "web_tools",
-        settings_attr="web_fetch_allowed_schemes",
-        default="http,https",
-    ),
-    ConfigFieldSpec(
-        "WEB_FETCH_ALLOW_PRIVATE_NETWORKS",
-        "Allow Private Networks",
-        "web_tools",
-        "boolean",
-        settings_attr="web_fetch_allow_private_networks",
-        default="false",
     ),
     ConfigFieldSpec(
         "DEBUG_PLATFORM_EDITS",

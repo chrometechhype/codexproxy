@@ -23,12 +23,6 @@ from .model_router import ModelRouter
 from .models.anthropic import MessagesRequest, TokenCountRequest
 from .models.responses import TokenCountResponse
 from .optimization_handlers import try_optimizations
-from .web_tools.egress import WebFetchEgressPolicy
-from .web_tools.request import (
-    is_web_server_tool_request,
-    openai_chat_upstream_server_tool_error,
-)
-from .web_tools.streaming import stream_web_server_tool_response
 
 TokenCounter = Callable[[list[Any], str | list[Any] | None, list[Any] | None], int]
 
@@ -47,21 +41,6 @@ async def _timeout_wrapper(
         logger.error("Provider stream timed out after {}s", timeout)
         yield 'event: error\ndata: {"type":"error","error":{"type":"timeout_error",'
         yield f'"message":"Provider stream timed out after {timeout}s"}}}}\n\n'
-
-
-# Providers that use ``/chat/completions`` + Anthropic-to-OpenAI conversion (not native Messages).
-_OPENAI_CHAT_UPSTREAM_IDS = frozenset(
-    {
-        "nvidia_nim",
-        "opencode",
-        "opencode_go",
-        "gemini",
-        "mistral",
-        "mistral_codestral",
-        "cerebras",
-        "groq",
-    }
-)
 
 
 def anthropic_sse_streaming_response(
@@ -132,39 +111,6 @@ class ClaudeProxyService:
             _require_non_empty_messages(request_data.messages)
 
             routed = self._model_router.resolve_messages_request(request_data)
-            if routed.resolved.provider_id in _OPENAI_CHAT_UPSTREAM_IDS:
-                tool_err = openai_chat_upstream_server_tool_error(
-                    routed.request,
-                    web_tools_enabled=self._settings.enable_web_server_tools,
-                )
-                if tool_err is not None:
-                    raise InvalidRequestError(tool_err)
-
-            if self._settings.enable_web_server_tools and is_web_server_tool_request(
-                routed.request
-            ):
-                input_tokens = self._token_counter(
-                    routed.request.messages, routed.request.system, routed.request.tools
-                )
-                trace_event(
-                    stage="routing",
-                    event="api.optimization.web_server_tool",
-                    source="api",
-                    model=routed.request.model,
-                )
-                egress = WebFetchEgressPolicy(
-                    allow_private_network_targets=self._settings.web_fetch_allow_private_networks,
-                    allowed_schemes=self._settings.web_fetch_allowed_scheme_set(),
-                )
-                return anthropic_sse_streaming_response(
-                    stream_web_server_tool_response(
-                        routed.request,
-                        input_tokens=input_tokens,
-                        web_fetch_egress=egress,
-                        verbose_client_errors=self._settings.log_api_error_tracebacks,
-                    ),
-                )
-
             optimized = try_optimizations(routed.request, self._settings)
             if optimized is not None:
                 trace_event(
