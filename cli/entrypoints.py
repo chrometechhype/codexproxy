@@ -446,6 +446,39 @@ def _clear_user_env_var(name: str) -> bool:
         return False
 
 
+_codex_app_store_cache: dict[str, str | None] = {}
+
+
+def _find_store_codex_exe() -> str | None:
+    """Detect Windows Store (AppX) Codex installation and return the .exe path."""
+    cached = _codex_app_store_cache.get("exe")
+    if cached is not None:
+        return cached if cached else None
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "$pkg = Get-AppxPackage -Name '*Codex*';if ($pkg) { $pkg.InstallLocation }",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        install = result.stdout.strip()
+        if install:
+            exe = Path(install) / "app" / "Codex.exe"
+            if exe.is_file():
+                path = str(exe)
+                _codex_app_store_cache["exe"] = path
+                return path
+    except Exception:
+        pass
+    _codex_app_store_cache["exe"] = ""
+    return None
+
+
 def _codex_app_install_path() -> str | None:
     """Return the path to the Codex Desktop App on Windows, or None."""
     if sys.platform != "win32":
@@ -459,6 +492,9 @@ def _codex_app_install_path() -> str | None:
     for candidate in candidates:
         if candidate.is_file():
             return str(candidate)
+    store_path = _find_store_codex_exe()
+    if store_path is not None:
+        return store_path
     fallback = shutil.which("Codex")
     if fallback and fallback.lower().endswith(".exe"):
         return fallback
