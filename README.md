@@ -12,6 +12,11 @@ Use the OpenAI Codex CLI and any OpenAI Responses client through your own provid
 
 </div>
 
+## What's New in v1.7.0
+
+- **Removed Web Tools**: `web_search`/`web_fetch` were only compatible with Claude Code (Anthropic), not Codex. The entire `api/web_tools/` package, admin UI section, and related settings have been removed.
+- Cleaner Admin UI — one less section
+
 ## What's New in v1.4.0
 
 - **Keepalive pings**: Provider idle no longer causes Codex CLI to hang — periodic `response.in_progress` events keep the connection alive during long model thinking
