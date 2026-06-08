@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from starlette.applications import Starlette
@@ -433,7 +434,9 @@ async def test_get_provider_ignores_non_string_proxy_value():
         provider = get_provider()
 
         assert isinstance(provider, NvidiaNimProvider)
-        assert mock_openai.call_args.kwargs["http_client"] is None
+        assert isinstance(
+            mock_openai.call_args.kwargs["http_client"], httpx.AsyncClient
+        )
 
 
 @pytest.mark.asyncio

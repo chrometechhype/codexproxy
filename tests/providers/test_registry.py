@@ -127,8 +127,7 @@ def test_zai_provider_config_ignores_stale_base_url_setting():
 
 
 def test_opencode_go_provider_config_uses_correct_base_url_and_name():
-    with patch("httpx.AsyncClient"):
-        provider = create_provider("opencode_go", _make_settings())
+    provider = create_provider("opencode_go", _make_settings())
 
     assert isinstance(provider, OpenCodeProvider)
     assert provider._base_url == "https://opencode.ai/zen/go/v1"
