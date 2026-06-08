@@ -446,6 +446,70 @@ def _clear_user_env_var(name: str) -> bool:
         return False
 
 
+def _codex_app_install_path() -> str | None:
+    """Return the path to the Codex Desktop App on Windows, or None."""
+    if sys.platform != "win32":
+        return shutil.which("codex-desktop") or shutil.which("Codex")
+    candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Codex" / "Codex.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Codex" / "Codex.exe",
+    ]
+    programs = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+    candidates.append(Path(programs) / "Codex" / "Codex.exe")
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    fallback = shutil.which("Codex")
+    if fallback and fallback.lower().endswith(".exe"):
+        return fallback
+    return None
+
+
+def launch_codex_app() -> None:
+    """Write proxy config and launch the Codex Desktop App.
+
+    This is the ``cdx-codex-app`` entry point: it writes the Codex config
+    (same as ``cdx-codex-config``) and then launches the Codex Desktop App
+    so the user can start conversations through the proxy immediately.
+    """
+    settings = get_settings()
+    proxy_root_url = local_proxy_root_url(settings)
+    if error := _preflight_proxy(proxy_root_url):
+        print(
+            f"CodexProxy is not reachable at {proxy_root_url}: {error}",
+            file=sys.stderr,
+        )
+        print("Start it in another terminal with: cdx-server", file=sys.stderr)
+        raise SystemExit(1)
+
+    _configure_codex_for_api(skip_preflight=True)
+
+    app_path = _codex_app_install_path()
+    if app_path is None:
+        print(
+            "Codex Desktop App not found. Install it from "
+            "https://github.com/openai/codex",
+            file=sys.stderr,
+        )
+        raise SystemExit(127)
+
+    print(f"Launching Codex Desktop App from {app_path}", file=sys.stderr)
+    try:
+        process = subprocess.Popen([app_path], shell=True)
+    except OSError as exc:
+        print(f"Failed to launch Codex Desktop App: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+    if process.pid:
+        register_pid(process.pid)
+    print(f"Codex Desktop App started (PID {process.pid})", file=sys.stderr)
+
+
+def restore() -> dict[str, Any]:
+    """Alias for :func:`restore_codex_defaults` (registered as ``cdx-restore``)."""
+    return restore_codex_defaults()
+
+
 def restore_codex_defaults() -> dict[str, Any]:
     """Restore the user's pre-CodexProxy ``config.toml`` and ``auth.json``.
 

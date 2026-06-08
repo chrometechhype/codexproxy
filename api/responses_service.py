@@ -110,6 +110,11 @@ class ResponsesService:
             store=bool(request.store),
             user=request.user,
         )
+
+        # Resolve provider BEFORE yielding any events to avoid "response already started" errors
+        # on authentication or configuration failures.
+        provider = self._provider_getter(resolved.provider_id)
+
         for event in adapter.opening_events():
             yield event
 
