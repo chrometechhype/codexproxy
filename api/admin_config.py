@@ -104,7 +104,7 @@ SECTIONS: tuple[ConfigSectionSpec, ...] = (
     ConfigSectionSpec(
         "web_tools",
         "Web Tools",
-        "Local Anthropic web_search and web_fetch behavior.",
+        "Local web_search and web_fetch behavior.",
     ),
     ConfigSectionSpec(
         "diagnostics",
