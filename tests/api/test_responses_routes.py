@@ -14,6 +14,7 @@ from api.models.anthropic import (
     ContentBlockText,
 )
 from api.responses_service import (
+    _convert_native_tool,
     _expand_namespace_tools,
     _responses_content_to_anthropic,
 )
@@ -581,6 +582,44 @@ class TestExpandNamespaceTools:
 
     def test_input_is_none_not_list(self):
         assert _expand_namespace_tools([]) == []
+
+
+class TestConvertNativeTool:
+    """Tests for ``_convert_native_tool``."""
+
+    def test_apply_patch_converted_to_function(self):
+        result = _convert_native_tool({"type": "apply_patch"})
+        assert result["type"] == "function"
+        assert result["name"] == "apply_patch"
+        assert "description" in result
+        assert "parameters" in result
+        assert result["parameters"]["type"] == "object"
+        assert "cmd" in result["parameters"]["properties"]
+        assert "required" in result["parameters"]
+
+    def test_apply_patch_expanded_in_tools(self):
+        tools = [
+            {"type": "apply_patch"},
+            {"type": "function", "name": "shell_command"},
+        ]
+        result = _expand_namespace_tools(tools)
+        assert len(result) == 2
+        assert result[0]["type"] == "function"
+        assert result[0]["name"] == "apply_patch"
+        assert result[1]["type"] == "function"
+        assert result[1]["name"] == "shell_command"
+
+    def test_function_tool_passes_through(self):
+        raw = {"type": "function", "name": "greet", "parameters": {}}
+        assert _convert_native_tool(raw) is raw
+
+    def test_namespace_tool_passes_through(self):
+        raw = {"type": "namespace", "name": "mcp__x", "tools": []}
+        assert _convert_native_tool(raw) is raw
+
+    def test_unknown_type_passes_through(self):
+        raw = {"type": "weird", "name": "x"}
+        assert _convert_native_tool(raw) is raw
 
 
 def test_responses_content_skips_unknown_blocks() -> None:

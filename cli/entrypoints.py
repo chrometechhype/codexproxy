@@ -325,23 +325,35 @@ def _update_top_level_codex_settings(
 def _remove_managed_codexproxy_block(text: str) -> str:
     """Strip any pre-existing managed ``codexproxy`` tables and their markers.
 
-    The launcher owns two TOML tables — ``[model_providers.codexproxy]`` (with
-    its sub-tables like ``[model_providers.codexproxy.env]``) and the custom
-    ``[codexproxy]`` table. The Codex CLI tolerates a lenient merge when the
-    same table is declared twice, but strict TOML parsers (Python's
-    ``tomllib``, the ``@iarna/toml`` JS package, etc.) reject it. To keep the
-    file parseable in both worlds, we make sure there is exactly one managed
-    block at the bottom of the file: if any of these tables already appear
-    (whether or not the user kept the launcher's previous markers), we delete
-    the section in place before re-appending the new block.
+    Everything between ``# >>> codexproxy ... >>>`` and
+    ``# <<< codexproxy <<<`` is removed wholesale, including tables the
+    launcher owns (``[model_providers.codexproxy]``, ``[codexproxy]``,
+    ``[sandbox_workspace_write]``) and any other content inside the block.
+
+    As a fallback for files that carry the managed tables without markers
+    (manual edits, older versions), we also skip those tables by name when
+    they appear outside a marked block.
     """
 
     managed_roots = ("model_providers.codexproxy", "codexproxy")
     lines = text.splitlines(keepends=True)
     output: list[str] = []
     skipping = False
+    in_marked_block = False
     for line in lines:
         stripped = line.strip()
+
+        # Marker-based removal — skip everything between open/close markers.
+        if stripped == "# >>> codexproxy (managed by cdx-codex) >>>":
+            in_marked_block = True
+            continue
+        if stripped == "# <<< codexproxy <<<":
+            in_marked_block = False
+            continue
+        if in_marked_block:
+            continue
+
+        # Fallback: skip managed tables even without surrounding markers.
         if stripped.startswith("["):
             inner = stripped.strip("[]").strip()
             normalized = re.sub(r"\s+", "", inner)
@@ -353,10 +365,6 @@ def _remove_managed_codexproxy_block(text: str) -> str:
                 continue
             skipping = False
         if not skipping:
-            if stripped == "# >>> codexproxy (managed by cdx-codex) >>>":
-                continue
-            if stripped == "# <<< codexproxy <<<":
-                continue
             output.append(line)
     return "".join(output)
 
@@ -420,6 +428,10 @@ def _write_codex_config(
         f'model_provider = "codexproxy"\n'
         f'approval_policy = "never"\n'
         f'sandbox_mode = "{_toml_quote(_settings_for_block.codex_sandbox_mode)}"\n'
+        "\n"
+        "[sandbox_workspace_write]\n"
+        "allow_network = true\n"
+        "process_timeout = 600\n"
         "# <<< codexproxy <<<\n"
     )
     merged = deduped.rstrip() + "\n" + block if deduped.strip() else block

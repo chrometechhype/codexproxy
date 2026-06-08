@@ -272,7 +272,7 @@ class ResponsesService:
         provider_model_ref = self._resolve_provider_model_ref(request.model)
         provider_id = _parse_provider_id(provider_model_ref)
         provider_model = _strip_provider_prefix(provider_model_ref, provider_id)
-        max_tokens = request.max_output_tokens or 4096
+        max_tokens = request.max_output_tokens or 16384
         thinking_enabled = self._settings.resolve_thinking(request.model)
         anthropic_tools = [
             _payload_to_tool(t) for t in _expand_namespace_tools(request.tools or [])
@@ -585,6 +585,10 @@ def _expand_namespace_tools(tools: list[Any]) -> list[dict[str, Any]]:
 
     Namespace tools that contain no inner tools are dropped; plain
     ``function`` tools pass through unchanged.
+
+    Native Responses API tool types (``apply_patch``, ``shell``, etc.)
+    are converted to ``function`` tools so they survive the translation
+    to the Anthropic wire format.
     """
     expanded: list[dict[str, Any]] = []
     for tool in tools:
@@ -604,8 +608,54 @@ def _expand_namespace_tools(tools: list[Any]) -> list[dict[str, Any]]:
                 prefixed["name"] = f"{namespace_name}__{inner_raw['name']}"
                 expanded.append(prefixed)
         else:
-            expanded.append(raw)
+            expanded.append(_convert_native_tool(raw))
     return expanded
+
+
+_NATIVE_TOOL_DEFS: dict[str, dict[str, Any]] = {
+    "apply_patch": {
+        "description": (
+            "Create, update, or delete files using structured V4A diffs. "
+            "Use this for ALL file editing operations — creating new files, "
+            "modifying existing files, or deleting files. "
+        ),
+    },
+}
+
+
+def _convert_native_tool(raw: dict[str, Any]) -> dict[str, Any]:
+    """Convert a native Responses API tool to a ``function`` tool.
+
+    OpenAI-native tool types such as ``{"type": "apply_patch"}`` are not
+    understood by non-OpenAI providers.  This function rewrites them into
+    equivalent ``type: "function"`` definitions so the downstream model
+    can still emit ``apply_patch`` function calls that Codex CLI knows how
+    to handle.
+    """
+    tool_type = raw.get("type")
+    if tool_type not in _NATIVE_TOOL_DEFS:
+        return raw
+
+    defs = _NATIVE_TOOL_DEFS[tool_type]
+    return {
+        "type": "function",
+        "name": tool_type,
+        "description": defs["description"],
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "cmd": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        f"The {tool_type} command array. "
+                        f'Format: ["{tool_type}", "*** Begin Patch\\\\n...\\\\n*** End Patch"]'
+                    ),
+                },
+            },
+            "required": ["cmd"],
+        },
+    }
 
 
 def _tool_to_payload(tool: Any) -> dict[str, Any]:

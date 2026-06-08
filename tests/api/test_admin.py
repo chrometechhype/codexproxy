@@ -6,6 +6,8 @@ from unittest.mock import patch
 import httpx
 from fastapi.testclient import TestClient
 
+from starlette.routing import Route
+
 from api.admin_config import MASKED_SECRET
 from api.admin_urls import local_admin_url
 from api.app import create_app
@@ -44,7 +46,7 @@ def test_admin_page_is_loopback_only(monkeypatch, tmp_path):
     _set_home(monkeypatch, tmp_path)
     app = create_app(lifespan_enabled=False)
     # Debug: print registered routes
-    routes = [route.path for route in app.routes]
+    routes = [route.path for route in app.routes if isinstance(route, Route)]
     print(f"Registered routes: {routes}")
     assert "/admin" in routes, f"/admin not in routes: {routes}"
 

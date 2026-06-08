@@ -38,7 +38,7 @@ class TestSettings:
         assert isinstance(settings.nim.temperature, float)
         assert isinstance(settings.fast_prefix_detection, bool)
         assert isinstance(settings.enable_model_thinking, bool)
-        assert settings.http_read_timeout == 60.0
+        assert settings.http_read_timeout == 300.0
         assert settings.http_connect_timeout == HTTP_CONNECT_TIMEOUT_DEFAULT
         assert settings.log_raw_api_payloads is False
         assert settings.log_raw_sse_events is False
