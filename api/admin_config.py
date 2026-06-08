@@ -506,6 +506,19 @@ FIELDS: tuple[ConfigFieldSpec, ...] = (
         default="60",
     ),
     ConfigFieldSpec(
+        "CODEX_SANDBOX_MODE",
+        "Codex Sandbox Mode",
+        "runtime",
+        "select",
+        settings_attr="codex_sandbox_mode",
+        default="workspace-write",
+        options=("workspace-write", "write", "none"),
+        description=(
+            "Sandbox mode written to the Codex Desktop App config. "
+            'Try "write" or "none" if "workspace-write" fails on Windows.'
+        ),
+    ),
+    ConfigFieldSpec(
         "HOST",
         "Server Host",
         "runtime",

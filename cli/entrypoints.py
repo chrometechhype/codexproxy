@@ -403,6 +403,7 @@ def _write_codex_config(
         deduped, model=model, provider="codexproxy"
     )
 
+    _settings_for_block = get_settings()
     block = (
         "\n# >>> codexproxy (managed by cdx-codex) >>>\n"
         "[model_providers.codexproxy]\n"
@@ -418,7 +419,7 @@ def _write_codex_config(
         f'model = "{_toml_quote(model)}"\n'
         f'model_provider = "codexproxy"\n'
         f'approval_policy = "never"\n'
-        f'sandbox_mode = "workspace-write"\n'
+        f'sandbox_mode = "{_toml_quote(_settings_for_block.codex_sandbox_mode)}"\n'
         "# <<< codexproxy <<<\n"
     )
     merged = deduped.rstrip() + "\n" + block if deduped.strip() else block

@@ -292,6 +292,12 @@ class Settings(BaseSettings):
         default="", validation_alias="ANTHROPIC_AUTH_TOKEN"
     )
 
+    # ==================== Codex Desktop App ====================
+    # Sandbox mode written to ~/.codex/config.toml: "workspace-write", "write", or "none".
+    codex_sandbox_mode: str = Field(
+        default="workspace-write", validation_alias="CODEX_SANDBOX_MODE"
+    )
+
     # ==================== Responses API ====================
     # Comma-separated list of additional model ids to advertise on
     # ``GET /v1/models`` alongside the default ``MODEL``. Useful when the
