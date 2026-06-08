@@ -8,7 +8,7 @@ Use the OpenAI Codex CLI and any OpenAI Responses client through your own provid
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json&style=for-the-badge)](https://github.com/astral-sh/uv)
 
-**Last update: 2026-06-07 — v1.5.0**
+**Last update: 2026-06-08 — v1.7.0**
 
 </div>
 
