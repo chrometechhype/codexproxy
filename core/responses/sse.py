@@ -15,7 +15,7 @@ all 17 providers with zero per-provider Responses plumbing in v0.1.
 from __future__ import annotations
 
 import json
-import re
+import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -352,37 +352,49 @@ def build_response_completed(
 # ---------------------------------------------------------------------------
 
 
-_SSE_EVENT_RE = re.compile(r"^event:\s*(?P<event>\S+)", re.MULTILINE)
-_SSE_DATA_RE = re.compile(r"^data:\s*(?P<data>.*)$", re.MULTILINE)
-
-
 def _split_sse_events(buffer: str) -> tuple[list[tuple[str, dict[str, Any]]], str]:
     """Split a chunk of Anthropic-style SSE into ``(event_type, data)`` pairs.
+
+    Handles multiple ``data:`` lines per event (concatenated with ``\\n`` per
+    SSE spec) and preserves ``\\n\\n`` inside data values by using a line-based
+    state machine instead of a naive ``\\n\\n`` split.
 
     Returns the events that completed within ``buffer`` and the trailing
     incomplete event text that should be re-fed on the next call.
     """
     events: list[tuple[str, dict[str, Any]]] = []
-    pending = buffer
-    while "\n\n" in pending:
-        block, pending = pending.split("\n\n", 1)
-        block = block.strip("\n")
-        if not block:
+    event_type: str | None = None
+    data_lines: list[str] = []
+
+    for line in buffer.splitlines(keepends=False):
+        if not line.strip():
+            # Empty line — event boundary. Finalize the pending event.
+            if data_lines:
+                data_raw = "\n".join(data_lines)
+                try:
+                    data = json.loads(data_raw)
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    events.append((event_type or "", data))
+            event_type = None
+            data_lines = []
             continue
-        event_match = _SSE_EVENT_RE.search(block)
-        data_match = _SSE_DATA_RE.search(block)
-        if not event_match or not data_match:
-            continue
-        event_type = event_match.group("event")
-        data_raw = data_match.group("data").strip()
-        if not data_raw:
-            continue
-        try:
-            data = json.loads(data_raw)
-        except json.JSONDecodeError:
-            continue
-        events.append((event_type, data))
-    return events, pending
+
+        if line.startswith("event:"):
+            event_type = line[len("event:") :].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[len("data:") :].strip())
+
+    # Whatever is left is an incomplete event.
+    remaining_lines: list[str] = []
+    if event_type is not None:
+        remaining_lines.append(f"event: {event_type}")
+    remaining_lines.extend(f"data: {dl}" for dl in data_lines)
+    remaining = "\n".join(remaining_lines)
+    if remaining:
+        remaining += "\n"
+    return events, remaining
 
 
 @dataclass
@@ -813,7 +825,7 @@ class AnthropicToResponsesAdapter:
         yield build_response_completed(
             response_id=self._response_id,
             created_at=self._created_at,
-            completed_at=self._created_at,
+            completed_at=int(time.time()),
             model=self._model,
             output=self.output,
             usage=self.usage,

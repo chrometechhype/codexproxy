@@ -194,11 +194,12 @@ class ResponsesService:
         for event in adapter.finalize():
             yield event
 
+        completed_at = int(time.time())
         self._store.put(
             StoredResponse(
                 id=response_id,
                 created_at=created_at,
-                completed_at=created_at,
+                completed_at=completed_at,
                 model=request.model,
                 status=adapter.status,
                 output=adapter.output,

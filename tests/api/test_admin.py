@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 import httpx
 from fastapi.testclient import TestClient
-
 from starlette.routing import Route
 
 from api.admin_config import MASKED_SECRET
