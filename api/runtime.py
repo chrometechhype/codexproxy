@@ -128,9 +128,15 @@ class AppRuntime:
         admin_url = local_admin_url(self.settings)
         self._provider_registry = ProviderRegistry()
         self.app.state.provider_registry = self._provider_registry
-        from core.responses.store import ResponseStore
+        from core.responses.store import ResponseStore, SqliteResponseStore
 
-        self.app.state.responses_store = ResponseStore()
+        backend = self.settings.responses_store_backend
+        if backend == "sqlite":
+            db_path = self.settings.responses_store_path
+            logger.info("Using SQLite response store: {}", db_path)
+            self.app.state.responses_store = SqliteResponseStore(db_path)
+        else:
+            self.app.state.responses_store = ResponseStore()
         try:
             warn_if_process_auth_token(self.settings)
             await self._validate_configured_models_best_effort()
@@ -197,6 +203,11 @@ class AppRuntime:
                 self._provider_registry.cleanup(),
                 log_verbose_errors=verbose,
             )
+        from core.responses.store import SqliteResponseStore
+
+        store = getattr(self.app.state, "responses_store", None)
+        if isinstance(store, SqliteResponseStore):
+            store.close()
         await self._shutdown_limiter()
         logger.info("Server shut down cleanly")
 

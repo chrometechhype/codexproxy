@@ -1,5 +1,6 @@
 """Pydantic models for API responses."""
 
+from collections.abc import Sequence
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -118,7 +119,7 @@ class ResponsesCreateRequest(BaseModel):
     top_p: float = 1.0
     parallel_tool_calls: bool = True
     previous_response_id: str | None = None
-    tools: list[ResponsesToolFunction | dict[str, Any]] = []
+    tools: Sequence[ResponsesToolFunction | dict[str, Any]] = []
     tool_choice: str | dict[str, Any] = "auto"
     metadata: dict[str, Any] = {}
     user: str | None = None

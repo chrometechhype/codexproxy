@@ -16,6 +16,11 @@ from api.models.responses import (
     ResponsesModelInfo,
     ResponsesModelsListResponse,
 )
+from api.openai_compat import (
+    _extract_chat_response,
+    _responses_sse_to_chat_stream,
+    chat_to_responses_request,
+)
 from api.responses_service import ResponsesService
 from config.settings import Settings
 from core.responses.sse import RESPONSES_SSE_RESPONSE_HEADERS
@@ -65,6 +70,30 @@ async def create_response(
         )
     response = await service.create(body)
     return JSONResponse(response)
+
+
+@router.post("/v1/chat/completions", dependencies=[Depends(require_api_key)])
+async def create_chat_completion(
+    request: Request,
+    service: ResponsesService = Depends(get_responses_service),
+) -> Response:
+    """OpenAI-compatible Chat Completions endpoint."""
+    body = await request.json()
+    stream = bool(body.get("stream", False))
+    responses_req = chat_to_responses_request(body)
+
+    if stream:
+        responses_stream = service.stream_create(responses_req)
+        return StreamingResponse(
+            _responses_sse_to_chat_stream(responses_stream),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+    responses_result = await service.create(responses_req)
+    return JSONResponse(_extract_chat_response(responses_result))
 
 
 @router.get("/v1/responses/{response_id}", dependencies=[Depends(require_api_key)])

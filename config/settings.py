@@ -305,6 +305,16 @@ class Settings(BaseSettings):
         default=True, validation_alias="CODEX_PROXY_USE_PREVIOUS_RESPONSE_ID"
     )
 
+    # ==================== Response Store ====================
+    # Backend for the response store: "memory" (in-process dict) or "sqlite".
+    responses_store_backend: str = Field(
+        default="memory", validation_alias="RESPONSES_STORE_BACKEND"
+    )
+    # SQLite database path (only used when RESPONSES_STORE_BACKEND=sqlite).
+    responses_store_path: str = Field(
+        default="responses.db", validation_alias="RESPONSES_STORE_PATH"
+    )
+
     # ==================== System Prompt ====================
     # Controls the default system prompt sent to the provider.
     # "default" — use the built-in CodexProxy prompt
@@ -408,6 +418,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 "OLLAMA_BASE_URL must be the Ollama root URL for native Anthropic "
                 "messages, e.g. http://localhost:11434 (without /v1)."
+            )
+        return v
+
+    @field_validator("responses_store_backend")
+    @classmethod
+    def validate_responses_store_backend(cls, v: str) -> str:
+        if v not in ("memory", "sqlite"):
+            raise ValueError(
+                f"responses_store_backend must be 'memory' or 'sqlite', got {v!r}"
             )
         return v
 

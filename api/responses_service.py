@@ -12,7 +12,7 @@ import asyncio
 import contextlib
 import json
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -26,7 +26,7 @@ from core.responses.sse import (
     build_response_in_progress,
     new_response_id,
 )
-from core.responses.store import ResponseStore, StoredResponse
+from core.responses.store import ResponseStore, Store, StoredResponse
 from providers.base import BaseProvider
 
 from .model_router import ModelRouter
@@ -72,14 +72,14 @@ class ResponsesService:
         settings: Settings,
         *,
         provider_getter: ProviderGetter,
-        store: ResponseStore | None = None,
+        store: Store | None = None,
     ) -> None:
         self._settings = settings
         self._provider_getter = provider_getter
         self._store = store or ResponseStore()
 
     @property
-    def store(self) -> ResponseStore:
+    def store(self) -> Store:
         return self._store
 
     # ------------------------------------------------------------------
@@ -120,25 +120,63 @@ class ResponsesService:
 
         keepalive_interval = 15.0
         timeout = self._settings.http_read_timeout
-        queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=1)
+        queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=100)
 
         async def _producer() -> None:
-            """Read from the provider and push chunks onto the queue."""
-            try:
-                async with asyncio.timeout(timeout):
-                    async for chunk in provider.stream_response(
-                        messages_request,
-                        input_tokens=0,
-                        request_id=response_id,
-                        thinking_enabled=resolved.thinking_enabled,
-                    ):
-                        await queue.put(chunk)
-                await queue.put(None)
-            except TimeoutError:
+            """Read from the provider and push chunks onto the queue.
+            Retries once on transient errors (timeout, connection errors).
+            """
+            retries = 0
+            max_retries = 1
+            last_error: str | None = None
+            while retries <= max_retries:
+                try:
+                    async with asyncio.timeout(timeout):
+                        async for chunk in provider.stream_response(
+                            messages_request,
+                            input_tokens=0,
+                            request_id=response_id,
+                            thinking_enabled=resolved.thinking_enabled,
+                        ):
+                            await queue.put(chunk)
+                    await queue.put(None)
+                    return
+                except TimeoutError:
+                    retries += 1
+                    last_error = "__TIMEOUT__"
+                    logger.warning(
+                        "Responses stream timeout request_id={} attempt={}/{}",
+                        response_id,
+                        retries,
+                        max_retries + 1,
+                    )
+                    if retries <= max_retries:
+                        await asyncio.sleep(1.0)
+                        continue
+                except (
+                    ConnectionError,
+                    ConnectionResetError,
+                    ConnectionAbortedError,
+                ) as exc:
+                    retries += 1
+                    last_error = f"__ERROR__:{type(exc).__name__}"
+                    logger.warning(
+                        "Responses stream connection error request_id={} attempt={}/{} exc={}",
+                        response_id,
+                        retries,
+                        max_retries + 1,
+                        type(exc).__name__,
+                    )
+                    if retries <= max_retries:
+                        await asyncio.sleep(1.0)
+                        continue
+                except BaseException as exc:
+                    await queue.put(f"__ERROR__:{type(exc).__name__}")
+                    raise
+            if last_error == "__TIMEOUT__":
                 await queue.put("__TIMEOUT__")
-            except BaseException as exc:
-                await queue.put(f"__ERROR__:{type(exc).__name__}")
-                raise
+            elif last_error is not None:
+                await queue.put(last_error)
 
         producer_task = asyncio.create_task(_producer())
 
@@ -571,7 +609,7 @@ def _input_item_to_view(
     return None
 
 
-def _expand_namespace_tools(tools: list[Any]) -> list[dict[str, Any]]:
+def _expand_namespace_tools(tools: Sequence[Any]) -> list[dict[str, Any]]:
     """Expand namespace-type tools into plain ``function`` tools.
 
     Codex CLI wraps MCP and other tool groups inside
@@ -702,25 +740,46 @@ def _payload_to_tool_choice(choice: Any) -> dict[str, Any] | None:
     return None
 
 
+def _parse_sse_line(line: str) -> tuple[str, str] | None:
+    """Parse a single SSE line into ``(field, value)`` or ``None``."""
+    if ":" in line:
+        field, _, value = line.partition(":")
+        return field.strip(), value.strip()
+    return None
+
+
 def _sse_chunks_to_response(chunks: list[str]) -> dict[str, Any]:
     """Aggregate a stream of Responses SSE chunks into a final resource."""
     completed: dict[str, Any] | None = None
-    buffer = "".join(chunks)
-    for raw in buffer.split("\n\n"):
-        raw = raw.strip("\n")
-        if not raw.startswith("event:"):
-            continue
-        try:
-            event_type = raw.split("event:", 1)[1].split("\n", 1)[0].strip()
-            data_line = raw.split("data:", 1)[1].strip()
-        except IndexError:
-            continue
-        try:
-            payload = json.loads(data_line)
-        except json.JSONDecodeError:
-            continue
-        if event_type in {"response.completed", "response.incomplete"}:
-            completed = payload.get("response", payload)
+    event_type: str | None = None
+    data_lines: list[str] = []
+
+    for chunk in chunks:
+        for line in chunk.splitlines(keepends=False):
+            if not line.strip():
+                if data_lines and event_type in {
+                    "response.completed",
+                    "response.incomplete",
+                }:
+                    data_raw = "\n".join(data_lines)
+                    try:
+                        payload = json.loads(data_raw)
+                    except json.JSONDecodeError:
+                        pass
+                    else:
+                        completed = payload.get("response", payload)
+                event_type = None
+                data_lines = []
+                continue
+            parsed = _parse_sse_line(line)
+            if parsed is None:
+                continue
+            field, value = parsed
+            if field == "event":
+                event_type = value
+            elif field == "data":
+                data_lines.append(value)
+
     if completed is None:
         return {
             "id": "",
