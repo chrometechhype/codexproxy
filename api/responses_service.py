@@ -4,6 +4,9 @@ The service hides the Anthropic wire surface from the Responses routes.
 It re-uses the existing provider transports (every provider already
 streams Anthropic-format SSE) by routing their output through
 :class:`core.responses.sse.AnthropicToResponsesAdapter`.
+
+When local tool execution is enabled, the non-streaming ``create()``
+path runs an agent loop: think → execute tools → observe → continue.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from core.responses.sse import (
     new_response_id,
 )
 from core.responses.store import ResponseStore, Store, StoredResponse
+from core.tools.executor import ToolExecutor
 from providers.base import BaseProvider
 
 from .model_router import ModelRouter
@@ -49,6 +53,9 @@ from .models.anthropic import (
 )
 from .models.responses import (
     ResponsesCreateRequest,
+    ResponsesInputFunctionCallItem,
+    ResponsesInputFunctionCallOutputItem,
+    ResponsesInputItem,
     ResponsesInputItemsList,
     ResponsesInputItemView,
     ResponsesInputMessage,
@@ -73,10 +80,13 @@ class ResponsesService:
         *,
         provider_getter: ProviderGetter,
         store: Store | None = None,
+        tool_executor: ToolExecutor | None = None,
     ) -> None:
         self._settings = settings
         self._provider_getter = provider_getter
         self._store = store or ResponseStore()
+        self._tool_executor = tool_executor
+        self._failover_models = _parse_failover_models(settings.failover_models)
 
     @property
     def store(self) -> Store:
@@ -90,7 +100,6 @@ class ResponsesService:
     ) -> AsyncIterator[str]:
         """Yield Responses SSE events for a streaming ``POST /v1/responses``."""
         messages_request, resolved = self._build_messages_request(request)
-        provider = self._provider_getter(resolved.provider_id)
         response_id = new_response_id()
         created_at = int(time.time())
         tools_payload = _expand_namespace_tools(request.tools or [])
@@ -111,9 +120,24 @@ class ResponsesService:
             user=request.user,
         )
 
-        # Resolve provider BEFORE yielding any events to avoid "response already started" errors
-        # on authentication or configuration failures.
-        provider = self._provider_getter(resolved.provider_id)
+        # Build provider chain: primary + failover models.
+        provider_pairs: list[tuple[Any, MessagesRequest, _Resolved]] = [
+            (self._provider_getter(resolved.provider_id), messages_request, resolved)
+        ]
+        for failover_ref in self._failover_models:
+            try:
+                fo_messages, fo_resolved = self._build_messages_request_with_ref(
+                    request, failover_ref
+                )
+                fo_provider = self._provider_getter(fo_resolved.provider_id)
+                provider_pairs.append((fo_provider, fo_messages, fo_resolved))
+                logger.info("Failover provider available: ref={}", failover_ref)
+            except Exception as exc:
+                logger.warning(
+                    "Failover provider unavailable: ref={} exc={}",
+                    failover_ref,
+                    type(exc).__name__,
+                )
 
         for event in adapter.opening_events():
             yield event
@@ -123,60 +147,76 @@ class ResponsesService:
         queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=100)
 
         async def _producer() -> None:
-            """Read from the provider and push chunks onto the queue.
-            Retries once on transient errors (timeout, connection errors).
+            """Read from providers and push chunks onto the queue.
+            Retries once per provider, then tries the next failover.
             """
-            retries = 0
-            max_retries = 1
-            last_error: str | None = None
-            while retries <= max_retries:
-                try:
-                    async with asyncio.timeout(timeout):
-                        async for chunk in provider.stream_response(
-                            messages_request,
-                            input_tokens=0,
-                            request_id=response_id,
-                            thinking_enabled=resolved.thinking_enabled,
-                        ):
-                            await queue.put(chunk)
-                    await queue.put(None)
-                    return
-                except TimeoutError:
-                    retries += 1
-                    last_error = "__TIMEOUT__"
+            for pair_index, (prov, msg_req, res) in enumerate(provider_pairs):
+                retries = 0
+                max_retries = 1
+                last_error: str | None = None
+                while retries <= max_retries:
+                    try:
+                        async with asyncio.timeout(timeout):
+                            async for chunk in prov.stream_response(
+                                msg_req,
+                                input_tokens=0,
+                                request_id=response_id,
+                                thinking_enabled=res.thinking_enabled,
+                            ):
+                                await queue.put(chunk)
+                        await queue.put(None)
+                        return
+                    except TimeoutError:
+                        retries += 1
+                        last_error = "__TIMEOUT__"
+                        logger.warning(
+                            "Responses stream timeout request_id={} provider={} attempt={}/{}",
+                            response_id,
+                            res.provider_id,
+                            retries,
+                            max_retries + 1,
+                        )
+                        if retries <= max_retries:
+                            await asyncio.sleep(1.0)
+                            continue
+                    except (
+                        ConnectionError,
+                        ConnectionResetError,
+                        ConnectionAbortedError,
+                    ) as exc:
+                        retries += 1
+                        last_error = f"__ERROR__:{type(exc).__name__}"
+                        logger.warning(
+                            "Responses stream connection error request_id={} provider={} attempt={}/{} exc={}",
+                            response_id,
+                            res.provider_id,
+                            retries,
+                            max_retries + 1,
+                            type(exc).__name__,
+                        )
+                        if retries <= max_retries:
+                            await asyncio.sleep(1.0)
+                            continue
+                    except BaseException as exc:
+                        await queue.put(f"__ERROR__:{type(exc).__name__}")
+                        raise
+
+                # Exhausted retries for this provider — try failover.
+                if pair_index < len(provider_pairs) - 1:
                     logger.warning(
-                        "Responses stream timeout request_id={} attempt={}/{}",
+                        "Failover: switching provider request_id={} from={} to={}",
                         response_id,
-                        retries,
-                        max_retries + 1,
+                        res.provider_id,
+                        provider_pairs[pair_index + 1][2].provider_id,
                     )
-                    if retries <= max_retries:
-                        await asyncio.sleep(1.0)
-                        continue
-                except (
-                    ConnectionError,
-                    ConnectionResetError,
-                    ConnectionAbortedError,
-                ) as exc:
-                    retries += 1
-                    last_error = f"__ERROR__:{type(exc).__name__}"
-                    logger.warning(
-                        "Responses stream connection error request_id={} attempt={}/{} exc={}",
-                        response_id,
-                        retries,
-                        max_retries + 1,
-                        type(exc).__name__,
-                    )
-                    if retries <= max_retries:
-                        await asyncio.sleep(1.0)
-                        continue
-                except BaseException as exc:
-                    await queue.put(f"__ERROR__:{type(exc).__name__}")
-                    raise
-            if last_error == "__TIMEOUT__":
-                await queue.put("__TIMEOUT__")
-            elif last_error is not None:
-                await queue.put(last_error)
+                    await asyncio.sleep(1.0)
+                    continue
+
+                # Last provider failed — report error.
+                if last_error == "__TIMEOUT__":
+                    await queue.put("__TIMEOUT__")
+                elif last_error is not None:
+                    await queue.put(last_error)
 
         producer_task = asyncio.create_task(_producer())
 
@@ -261,9 +301,127 @@ class ResponsesService:
     # Non-streaming entry point (collects the SSE stream into JSON).
     # ------------------------------------------------------------------
     async def create(self, request: ResponsesCreateRequest) -> dict[str, Any]:
-        """Aggregate the streaming output into a single Responses resource."""
-        chunks = [chunk async for chunk in self.stream_create(request)]
-        return _sse_chunks_to_response(chunks)
+        """Aggregate the streaming output into a single Responses resource.
+
+        When local tool execution is enabled, the agent loop runs:
+        think → execute tools → observe → continue.
+        """
+        if not self._settings.enable_local_tool_execution:
+            chunks = [chunk async for chunk in self.stream_create(request)]
+            return _sse_chunks_to_response(chunks)
+        return await self._agent_loop_create(request)
+
+    async def _agent_loop_create(
+        self, request: ResponsesCreateRequest
+    ) -> dict[str, Any]:
+        """Run the agent loop for non-streaming requests."""
+        max_iterations = self._settings.agent_max_iterations
+        all_output: list[dict[str, Any]] = []
+        all_usage: dict[str, Any] = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
+        final_status = "completed"
+        final_error: dict[str, Any] | None = None
+        final_id: str | None = None
+        final_created_at: int = 0
+
+        for iteration in range(max_iterations):
+            chunks = [chunk async for chunk in self.stream_create(request)]
+            response = _sse_chunks_to_response(chunks)
+
+            if iteration == 0:
+                final_id = response.get("id")
+                final_created_at = response.get("created_at", 0)
+
+            output = response.get("output", [])
+            tool_calls = [
+                item for item in output if item.get("type") == "function_call"
+            ]
+
+            all_output.extend(output)
+            _merge_usage(all_usage, response.get("usage", {}))
+
+            if response.get("status") != "completed" or not tool_calls:
+                final_status = response.get("status", "completed")
+                final_error = response.get("error")
+                break
+
+            tool_results = await self._execute_tool_calls(tool_calls)
+            all_output.extend(
+                {
+                    "type": "function_call_output",
+                    "call_id": r["call_id"],
+                    "output": r["output"],
+                }
+                for r in tool_results
+            )
+
+            request = _build_continuation_request(request, tool_calls, tool_results)
+        else:
+            final_status = "incomplete"
+
+        return {
+            "id": final_id or "",
+            "object": "response",
+            "created_at": final_created_at,
+            "completed_at": int(time.time()),
+            "status": final_status,
+            "background": False,
+            "error": final_error,
+            "incomplete_details": None,
+            "instructions": request.instructions,
+            "metadata": request.metadata or {},
+            "model": request.model,
+            "output": all_output,
+            "parallel_tool_calls": request.parallel_tool_calls,
+            "previous_response_id": request.previous_response_id,
+            "reasoning": None,
+            "store": request.store,
+            "temperature": request.temperature,
+            "text": None,
+            "tool_choice": request.tool_choice,
+            "tools": request.tools,
+            "top_p": request.top_p,
+            "truncation": "disabled",
+            "usage": all_usage,
+            "user": request.user,
+        }
+
+    async def _execute_tool_calls(
+        self, tool_calls: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Execute tool calls locally and return results."""
+        executor = self._tool_executor
+        if executor is None:
+            return [
+                {
+                    "call_id": tc.get("call_id", ""),
+                    "output": "Tool executor not configured",
+                    "success": False,
+                }
+                for tc in tool_calls
+            ]
+
+        results: list[dict[str, Any]] = []
+        for tc in tool_calls:
+            name = tc.get("name", "")
+            arguments_raw = tc.get("arguments", "{}")
+            try:
+                arguments = json.loads(arguments_raw) if arguments_raw else {}
+            except json.JSONDecodeError:
+                arguments = {}
+            result = executor.execute(name, arguments)
+            results.append(
+                {
+                    "call_id": tc.get("call_id", ""),
+                    "output": result.output,
+                    "success": result.success,
+                    "error": result.error,
+                }
+            )
+        return results
 
     # ------------------------------------------------------------------
     # Retrieval
@@ -348,6 +506,40 @@ class ResponsesService:
         router = ModelRouter(self._settings)
         resolved = router.resolve(model)
         return resolved.provider_model_ref
+
+    def _build_messages_request_with_ref(
+        self, request: ResponsesCreateRequest, model_ref: str
+    ) -> tuple[MessagesRequest, _Resolved]:
+        """Build a messages request using an explicit ``provider/model`` ref."""
+        provider_id = _parse_provider_id(model_ref)
+        provider_model = _strip_provider_prefix(model_ref, provider_id)
+        base_prompt = self._effective_system_prompt()
+        messages, system = _responses_input_to_messages(request, base_prompt)
+        max_tokens = request.max_output_tokens or 16384
+        thinking_enabled = self._settings.resolve_thinking(model_ref)
+        anthropic_tools = [
+            _payload_to_tool(t) for t in _expand_namespace_tools(request.tools or [])
+        ]
+        anthropic_tools = [t for t in anthropic_tools if t is not None]
+        return (
+            MessagesRequest(
+                model=provider_model,
+                max_tokens=max_tokens,
+                messages=messages,
+                system=system,
+                stream=True,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                tools=anthropic_tools or None,
+                tool_choice=_payload_to_tool_choice(request.tool_choice),
+                thinking=ThinkingConfig(enabled=thinking_enabled),
+            ),
+            _Resolved(
+                provider_id=provider_id,
+                provider_model=provider_model,
+                thinking_enabled=thinking_enabled,
+            ),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -818,3 +1010,58 @@ def _stored_to_response(stored: StoredResponse) -> dict[str, Any]:
         "usage": stored.usage,
         "user": stored.user,
     }
+
+
+# ---------------------------------------------------------------------------
+# Agent loop helpers
+# ---------------------------------------------------------------------------
+
+
+def _parse_failover_models(raw: str) -> list[str]:
+    """Parse comma-separated failover model refs."""
+    if not raw or not raw.strip():
+        return []
+    return [ref.strip() for ref in raw.split(",") if ref.strip()]
+
+
+def _merge_usage(target: dict[str, Any], source: dict[str, Any]) -> None:
+    """Merge usage stats from one response into the accumulator."""
+    target["input_tokens"] = target.get("input_tokens", 0) + source.get(
+        "input_tokens", 0
+    )
+    target["output_tokens"] = target.get("output_tokens", 0) + source.get(
+        "output_tokens", 0
+    )
+    target["total_tokens"] = target.get("total_tokens", 0) + source.get(
+        "total_tokens", 0
+    )
+
+
+def _build_continuation_request(
+    request: ResponsesCreateRequest,
+    tool_calls: list[dict[str, Any]],
+    tool_results: list[dict[str, Any]],
+) -> ResponsesCreateRequest:
+    """Build a new request with tool results appended for the next iteration."""
+    from copy import deepcopy
+
+    new = deepcopy(request)
+    new_input: list[ResponsesInputItem] = list(
+        _normalise_input_items(request.input, request.instructions)
+    )
+    for tc, tr in zip(tool_calls, tool_results, strict=False):
+        new_input.append(
+            ResponsesInputFunctionCallItem(
+                call_id=tc.get("call_id", ""),
+                name=tc.get("name", ""),
+                arguments=tc.get("arguments", ""),
+            )
+        )
+        new_input.append(
+            ResponsesInputFunctionCallOutputItem(
+                call_id=tr.get("call_id", ""),
+                output=tr.get("output", ""),
+            )
+        )
+    new.input = new_input
+    return new

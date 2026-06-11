@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -24,9 +25,36 @@ from api.openai_compat import (
 from api.responses_service import ResponsesService
 from config.settings import Settings
 from core.responses.sse import RESPONSES_SSE_RESPONSE_HEADERS
+from core.tools.executor import ToolExecutor
 from providers.registry import ProviderRegistry
 
 router = APIRouter()
+
+
+def _build_tool_executor(settings: Settings) -> ToolExecutor | None:
+    """Create a :class:`ToolExecutor` when local tool execution is enabled."""
+    if not settings.enable_local_tool_execution:
+        return None
+    allowed_cmds_raw = settings.tool_execution_allowed_commands.strip()
+    allowed_commands = (
+        tuple(c.strip().lower() for c in allowed_cmds_raw.split(",") if c.strip())
+        if allowed_cmds_raw
+        else ()
+    )
+    allowed_paths_raw = settings.tool_execution_allowed_paths.strip()
+    allowed_paths = (
+        tuple(Path(p.strip()) for p in allowed_paths_raw.split(",") if p.strip())
+        if allowed_paths_raw
+        else ()
+    )
+    return ToolExecutor(
+        workspace=settings.codex_workspace,
+        enabled=True,
+        allowed_commands=allowed_commands,
+        allowed_paths=allowed_paths,
+        sandbox_mode=settings.tool_execution_sandbox_mode,
+        shell_timeout=settings.tool_execution_shell_timeout,
+    )
 
 
 def get_responses_service(
@@ -46,6 +74,7 @@ def get_responses_service(
             provider_type, app=request.app, settings=settings
         ),
         store=store,
+        tool_executor=_build_tool_executor(settings),
     )
 
 

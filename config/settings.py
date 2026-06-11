@@ -315,6 +315,43 @@ class Settings(BaseSettings):
         default="responses.db", validation_alias="RESPONSES_STORE_PATH"
     )
 
+    # ==================== Local Tool Execution ====================
+    # When true, the proxy can execute apply_patch, shell, read, write,
+    # and run_tests locally (agent loop). Default is false for safety.
+    enable_local_tool_execution: bool = Field(
+        default=False, validation_alias="ENABLE_LOCAL_TOOL_EXECUTION"
+    )
+    # Comma-separated list of allowed shell commands (lowercase).
+    # Empty means all commands are blocked (if allowed_commands is empty).
+    tool_execution_allowed_commands: str = Field(
+        default="", validation_alias="TOOL_EXECUTION_ALLOWED_COMMANDS"
+    )
+    # Comma-separated list of allowed path prefixes for file operations.
+    # Empty means only the workspace directory is allowed.
+    tool_execution_allowed_paths: str = Field(
+        default="", validation_alias="TOOL_EXECUTION_ALLOWED_PATHS"
+    )
+    # Sandbox mode: "none" (no restriction), "restrictive" (allowlist-based), "isolated" (no network)
+    tool_execution_sandbox_mode: str = Field(
+        default="restrictive", validation_alias="TOOL_EXECUTION_SANDBOX_MODE"
+    )
+    # Timeout in seconds for shell commands invoked by the tool executor.
+    tool_execution_shell_timeout: int = Field(
+        default=60, validation_alias="TOOL_EXECUTION_SHELL_TIMEOUT"
+    )
+    # Maximum number of tool execution iterations in the agent loop.
+    agent_max_iterations: int = Field(
+        default=10, validation_alias="AGENT_MAX_ITERATIONS"
+    )
+
+    # ==================== Provider Failover ====================
+    # Comma-separated list of fallback model refs (provider/model) to try
+    # when the primary provider fails. Example:
+    # "open_router/gpt-4o,gemini/gemini-2.0-flash"
+    failover_models: str = Field(
+        default="", validation_alias="CODEX_PROXY_FAILOVER_MODELS"
+    )
+
     # ==================== System Prompt ====================
     # Controls the default system prompt sent to the provider.
     # "default" — use the built-in CodexProxy prompt
@@ -427,6 +464,15 @@ class Settings(BaseSettings):
         if v not in ("memory", "sqlite"):
             raise ValueError(
                 f"responses_store_backend must be 'memory' or 'sqlite', got {v!r}"
+            )
+        return v
+
+    @field_validator("tool_execution_sandbox_mode")
+    @classmethod
+    def validate_tool_execution_sandbox_mode(cls, v: str) -> str:
+        if v not in ("none", "restrictive", "isolated"):
+            raise ValueError(
+                f"tool_execution_sandbox_mode must be 'none', 'restrictive', or 'isolated', got {v!r}"
             )
         return v
 
