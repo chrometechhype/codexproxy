@@ -8,9 +8,19 @@ Use the OpenAI Codex CLI and any OpenAI Responses client through your own provid
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json&style=for-the-badge)](https://github.com/astral-sh/uv)
 
-**Last update: 2026-06-08 — v1.13.0**
+**Last update: 2026-06-09 — v1.9.0**
 
 </div>
+
+## What's New in v1.9.0
+
+- **`/v1/chat/completions` endpoint** — OpenAI Chat Completions ↔ Responses API adapter. Codex CLI and any OpenAI SDK client can now use the proxy via the standard chat completions surface.
+- **SQLite response store** — optional persistent store (`responses_store_backend=sqlite`). Enables `GET /v1/responses/{id}` across restarts.
+- **Native `apply_patch` tool conversion** — Codex CLI's `{"type": "apply_patch"}` is automatically converted to a function tool for non-OpenAI providers.
+- **Improved SSE parsing** — line-based state machine replaces regex-based parser. Handles `\n\n` inside event data correctly.
+- **Stream retry/failover** — `_producer()` retries once on transient errors (timeout, connection reset).
+- **`completed_at` fix** — timestamp now reflects actual completion time, not request creation time.
+- **`asyncio.Queue` maxsize** bumped from 1 to 100 for better throughput under load.
 
 ## What You Get
 
