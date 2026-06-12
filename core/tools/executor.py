@@ -51,11 +51,19 @@ class ToolExecutor:
 
         handlers = {
             "apply_patch": self._execute_apply_patch,
+            "edit_file": self._execute_apply_patch,
             "shell": self._execute_shell,
             "shell_command": self._execute_shell,
             "exec_command": self._execute_shell,
+            "bash": self._execute_shell,
+            "cmd": self._execute_shell,
+            "run_terminal_cmd": self._execute_shell,
             "read": self._execute_read,
+            "read_file": self._execute_read,
+            "view": self._execute_read,
             "write": self._execute_write,
+            "write_file": self._execute_write,
+            "create_file": self._execute_write,
             "run_tests": self._execute_run_tests,
             "run_code": self._execute_run_code,
         }

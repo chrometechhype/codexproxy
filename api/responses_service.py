@@ -1212,12 +1212,20 @@ def _expand_namespace_tools(tools: Sequence[Any]) -> list[dict[str, Any]]:
 
 _NATIVE_TOOL_DEFS: dict[str, dict[str, Any]] = {
     "apply_patch": APPLY_PATCH_TOOL,
+    "edit_file": APPLY_PATCH_TOOL,
     "shell_command": SHELL_COMMAND_TOOL,
     "exec_command": EXEC_COMMAND_TOOL,
+    "bash": SHELL_COMMAND_TOOL,
+    "cmd": SHELL_COMMAND_TOOL,
+    "run_terminal_cmd": SHELL_COMMAND_TOOL,
     "view_image": VIEW_IMAGE_TOOL,
     "write_stdin": WRITE_STDIN_TOOL,
     "read": READ_TOOL,
+    "read_file": READ_TOOL,
+    "view": READ_TOOL,
     "write": WRITE_TOOL,
+    "write_file": WRITE_TOOL,
+    "create_file": WRITE_TOOL,
     "shell": {
         "type": "function",
         "name": "shell",
