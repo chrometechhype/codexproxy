@@ -38,7 +38,7 @@ Use the OpenAI Codex CLI and any OpenAI Responses client through your own provid
 
 ### 1. Install
 
-#### Linux / macOS
+#### Linux
 ```bash
 curl -LsSf "https://raw.githubusercontent.com/chrometechhype/codexproxy/main/scripts/install.sh" | sh
 ```
@@ -105,7 +105,7 @@ Yes. CodexProxy is a standard OpenAI Responses API server. Any HTTP client that 
 Set `CODEX_PROXY_PORT` before starting:
 
 ```bash
-# Linux / macOS
+# Linux
 export CODEX_PROXY_PORT=9090
 cdx-server
 
@@ -117,7 +117,7 @@ cdx-server
 Or pass it inline:
 
 ```bash
-# Linux / macOS
+# Linux
 CODEX_PROXY_PORT=9090 cdx-server
 
 # Windows
@@ -134,7 +134,7 @@ No, CodexProxy currently supports a single active model at a time. Use the Admin
 
 ### Which platforms are supported?
 
-**Linux** and **Windows** are fully supported. macOS support is untested but should work — the installer (`scripts/install.sh`) and all CLI commands are cross-platform.
+**Linux** and **Windows** are fully supported.
 
 **Important:** On Linux only the npm version of Codex CLI is available (`npm install -g @openai/codex`). The Codex Desktop App is Windows-only (UWP). All CLI commands (`cdx-codex`, `cdx-server`, `cdx-init`, etc.) work identically on both platforms.
 
