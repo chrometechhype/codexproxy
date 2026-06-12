@@ -451,10 +451,36 @@ def _store_codex_aumid() -> str | None:
     return None
 
 
+_LINUX_TERMINAL_CANDIDATES = [
+    "x-terminal-emulator",
+    "gnome-terminal",
+    "xterm",
+    "konsole",
+    "xfce4-terminal",
+    "lxterminal",
+    "mate-terminal",
+    "alacritty",
+    "kitty",
+    "terminator",
+    "tilix",
+    "urxvt",
+    "rxvt",
+]
+
+
+def _find_terminal_emulator() -> str | None:
+    """Find a usable terminal emulator on Linux, or None."""
+    for candidate in _LINUX_TERMINAL_CANDIDATES:
+        path = shutil.which(candidate)
+        if path:
+            return path
+    return None
+
+
 def _spawn_with_new_console(
     args: list[str], env: dict[str, str] | None = None
 ) -> subprocess.Popen[bytes]:
-    """Spawn a console application in a new console window (Windows-aware)."""
+    """Spawn a console application in a new console window (cross-platform)."""
     if sys.platform == "win32":
         creationflags = (
             subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NEW_CONSOLE
@@ -465,11 +491,19 @@ def _spawn_with_new_console(
             creationflags=creationflags,
             env=env,
         )
+
+    terminal = _find_terminal_emulator()
+    if terminal is None:
+        raise OSError("No terminal emulator found. Launch the CLI manually: cdx-codex")
+    terminal_name = os.path.basename(terminal)
+    if terminal_name == "gnome-terminal":
+        full_args = [terminal, "--", *args]
+    elif terminal_name == "konsole":
+        full_args = [terminal, "--hold", "-e", *args]
+    else:
+        full_args = [terminal, "-e", *args]
     return subprocess.Popen(
-        args,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        full_args,
         close_fds=True,
         start_new_session=True,
         env=env,

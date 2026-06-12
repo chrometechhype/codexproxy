@@ -167,7 +167,7 @@ function renderCodexStatus(target, status) {
       label: "Codex App",
       value: status.codex_app_installed
         ? status.codex_app_path.split(/[/\\]/).pop()
-        : "not installed",
+        : "Windows only",
     },
   ];
   target.innerHTML = items
@@ -185,7 +185,7 @@ function updateCodexButtons(status) {
   if (cliBtn) {
     cliBtn.disabled = !status.codex_cli_available;
     cliBtn.title = status.codex_cli_available
-      ? "Spawn a new console window running 'codex exec' through this proxy"
+      ? "Launch codex CLI through this proxy (opens a new terminal window)"
       : "Codex CLI not found on PATH";
   }
   if (appBtn) {
