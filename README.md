@@ -21,14 +21,6 @@ Use the OpenAI Codex CLI and any OpenAI Responses client through your own provid
 
 </div>
 
-## What's New in v1.12.0
-
-- **Native tool execution** — CodexProxy can now execute tools (`shell_command`, `exec_command`, `apply_patch`, `view_image`, etc.) directly without the Codex CLI. Set `ENABLE_LOCAL_TOOL_EXECUTION=true` to run the full agent loop (think → execute tools → observe → continue) in both streaming and non-streaming modes.
-- **Tool registry** — Built-in handlers for shell commands, V4A patches, image viewing, and file operations. Tools are executed in the workspace directory with configurable sandboxing (`TOOL_EXECUTION_SANDBOX_MODE`).
-- **Streaming agent loop** — When local tool execution is enabled, `POST /v1/responses` with `stream: true` runs the agent loop in real-time: model output streams to the client, tool results are injected as `function_call_output`, and the model continues reasoning until complete.
-- **Linux support** — Full cross-platform support. The installer, CLI, and proxy work on Linux and Windows. On Linux, the Codex CLI is available via npm.
-- **`/v1/chat/completions` endpoint** — OpenAI Chat Completions ↔ Responses API adapter.
-- **SQLite response store** — optional persistent store (`responses_store_backend=sqlite`).
 
 ## What You Get
 
