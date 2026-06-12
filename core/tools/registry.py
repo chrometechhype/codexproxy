@@ -226,6 +226,47 @@ VIEW_IMAGE_TOOL: dict[str, Any] = {
     },
 }
 
+READ_TOOL: dict[str, Any] = {
+    "type": "function",
+    "name": "read",
+    "description": "Read the contents of a file from the local filesystem.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file to read (relative to workspace).",
+            },
+        },
+        "required": ["path"],
+        "additionalProperties": False,
+    },
+}
+
+WRITE_TOOL: dict[str, Any] = {
+    "type": "function",
+    "name": "write",
+    "description": (
+        "Write content directly to a file, creating or overwriting it. "
+        "Always use this for creating or writing files instead of shell commands."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "File path to write (relative to workspace).",
+            },
+            "content": {
+                "type": "string",
+                "description": "Full text content to write to the file.",
+            },
+        },
+        "required": ["path", "content"],
+        "additionalProperties": False,
+    },
+}
+
 TEST_SYNC_TOOL: dict[str, Any] = {
     "type": "function",
     "name": "test_sync_tool",
@@ -252,6 +293,8 @@ DEFAULT_TOOL_SPECS: list[dict[str, Any]] = [
     SHELL_COMMAND_TOOL,
     EXEC_COMMAND_TOOL,
     APPLY_PATCH_TOOL,
+    READ_TOOL,
+    WRITE_TOOL,
     VIEW_IMAGE_TOOL,
     TEST_SYNC_TOOL,
 ]
@@ -266,9 +309,11 @@ def build_default_registry(
     from .handlers import (
         ApplyPatchHandler,
         ExecCommandHandler,
+        ReadHandler,
         ShellCommandHandler,
         TestSyncHandler,
         ViewImageHandler,
+        WriteHandler,
         WriteStdinHandler,
     )
 
@@ -280,6 +325,8 @@ def build_default_registry(
         ExecCommandHandler(workspace=workspace, shell_timeout=shell_timeout)
     )
     registry.register(ApplyPatchHandler(workspace=workspace))
+    registry.register(ReadHandler(workspace=workspace))
+    registry.register(WriteHandler(workspace=workspace))
     registry.register(ViewImageHandler(workspace=workspace))
     registry.register(
         WriteStdinHandler(workspace=workspace, shell_timeout=shell_timeout)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -10,10 +11,12 @@ from .executor import ToolResult, _apply_v4a_hunks, _parse_v4a_patches
 from .registry import (
     APPLY_PATCH_TOOL,
     EXEC_COMMAND_TOOL,
+    READ_TOOL,
     SHELL_COMMAND_TOOL,
     TEST_SYNC_TOOL,
     VIEW_IMAGE_TOOL,
     WRITE_STDIN_TOOL,
+    WRITE_TOOL,
 )
 
 
@@ -71,7 +74,7 @@ class _BaseHandler:
 
 
 class ShellCommandHandler(_BaseHandler):
-    """Handles ``shell_command`` tool calls."""
+    """Handles ``shell_command`` tool calls with smart file-write detection."""
 
     def __init__(self, *, workspace: str | Path, shell_timeout: int = 60) -> None:
         super().__init__(workspace=workspace)
@@ -86,12 +89,18 @@ class ShellCommandHandler(_BaseHandler):
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         command = arguments.get("command", "")
         timeout_ms = arguments.get("timeout_ms", 10000)
+
+        # Try smart file write first.
+        file_result = _handle_file_write(command, self._workspace)
+        if file_result is not None:
+            return file_result
+
         timeout = max(1, min(timeout_ms / 1000, self._shell_timeout))
         return self._run_shell(command, timeout=int(timeout))
 
 
 class ExecCommandHandler(_BaseHandler):
-    """Handles ``exec_command`` tool calls."""
+    """Handles ``exec_command`` tool calls with smart file-write detection."""
 
     def __init__(self, *, workspace: str | Path, shell_timeout: int = 60) -> None:
         super().__init__(workspace=workspace)
@@ -107,6 +116,12 @@ class ExecCommandHandler(_BaseHandler):
         cmd = arguments.get("cmd", "")
         if isinstance(cmd, list):
             cmd = " ".join(str(c) for c in cmd)
+
+        # Try smart file write first.
+        file_result = _handle_file_write(cmd, self._workspace)
+        if file_result is not None:
+            return file_result
+
         yield_time_ms = arguments.get("yield_time_ms", 10000)
         timeout = max(1, min(yield_time_ms / 1000, self._shell_timeout))
         return self._run_shell(cmd, timeout=int(timeout))
@@ -198,6 +213,69 @@ class ApplyPatchHandler(_BaseHandler):
         return ToolResult(success=True, output="\n".join(results))
 
 
+class ReadHandler(_BaseHandler):
+    """Handles ``read`` tool calls."""
+
+    def name(self) -> str:
+        return "read"
+
+    def spec(self) -> dict[str, Any]:
+        return dict(READ_TOOL)
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        path = arguments.get("path", "")
+        resolved = self._safe_path(path)
+        if resolved is None:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Path '{path}' is outside workspace",
+                exit_code=-1,
+            )
+        if not resolved.is_file():
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"File not found: {resolved}",
+                exit_code=-1,
+            )
+        try:
+            content = resolved.read_text(encoding="utf-8")
+            return ToolResult(success=True, output=content)
+        except Exception as exc:
+            return ToolResult(success=False, output="", error=str(exc), exit_code=-1)
+
+
+class WriteHandler(_BaseHandler):
+    """Handles ``write`` tool calls — writes file content directly."""
+
+    def name(self) -> str:
+        return "write"
+
+    def spec(self) -> dict[str, Any]:
+        return dict(WRITE_TOOL)
+
+    async def execute(self, arguments: dict[str, Any]) -> ToolResult:
+        path = arguments.get("path", "")
+        content = arguments.get("content", "")
+        resolved = self._safe_path(path)
+        if resolved is None:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Path '{path}' is outside workspace",
+                exit_code=-1,
+            )
+        try:
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            resolved.write_text(content, encoding="utf-8")
+            return ToolResult(
+                success=True, output=f"Written {len(content)} bytes to {path}"
+            )
+        except Exception as exc:
+            return ToolResult(success=False, output="", error=str(exc), exit_code=-1)
+
+
 class ViewImageHandler(_BaseHandler):
     """Handles ``view_image`` tool calls."""
 
@@ -244,3 +322,84 @@ class TestSyncHandler(_BaseHandler):
 
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         return ToolResult(success=True, output="ok")
+
+
+# ---------------------------------------------------------------------------
+# Smart file-write detection for shell commands
+# ---------------------------------------------------------------------------
+
+_HEREDOC_PATTERN = re.compile(
+    r"""cat\s+<<['"]?(\w+)['"]?\s*(?:[>]{1,2})\s*(\S+)\s*\n(.*?)\n\1""",
+    re.DOTALL | re.MULTILINE,
+)
+
+_ECHO_WRITE_PATTERN = re.compile(
+    r"""echo\s+['"](.+?)['"]\s*(?:>>|>)\s*(\S+)""",
+    re.DOTALL,
+)
+
+
+def _handle_file_write(command: str, workspace: Path) -> ToolResult | None:
+    """Detect file writes in a shell command and handle them directly.
+
+    Recognised patterns:
+
+    - ``cat <<'EOF' > path  (heredoc)``
+    - ``cat <<EOF > path   (heredoc)``
+    - ``echo 'content' > path``
+    """
+    # Try heredoc: cat <<'MARK' > path ... MARK
+    match = _HEREDOC_PATTERN.search(command)
+    if match:
+        path_str = match.group(2)
+        content = match.group(3)
+        resolved = (workspace / path_str).resolve()
+        try:
+            resolved.relative_to(workspace)
+        except ValueError:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Path '{path_str}' is outside workspace",
+                exit_code=-1,
+            )
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        resolved.write_text(content, encoding="utf-8")
+        return ToolResult(
+            success=True,
+            output=f"Written {len(content)} bytes to {path_str}",
+            exit_code=0,
+        )
+
+    # Try echo > file (single line).
+    match = _ECHO_WRITE_PATTERN.search(command)
+    if match:
+        content = match.group(1)
+        path_str = match.group(2)
+        mode = "w" if ">" in command and ">>" not in command else "a"
+        resolved = (workspace / path_str).resolve()
+        try:
+            resolved.relative_to(workspace)
+        except ValueError:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Path '{path_str}' is outside workspace",
+                exit_code=-1,
+            )
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        if mode == "a" and resolved.exists():
+            existing = resolved.read_text(encoding="utf-8")
+            content = (
+                existing
+                + ("\n" if existing and not existing.endswith("\n") else "")
+                + content
+            )
+        resolved.write_text(content, encoding="utf-8")
+        return ToolResult(
+            success=True,
+            output=f"Written {len(content)} bytes to {path_str}",
+            exit_code=0,
+        )
+
+    return None
