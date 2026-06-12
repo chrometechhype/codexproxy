@@ -8,7 +8,16 @@ Use the OpenAI Codex CLI and any OpenAI Responses client through your own provid
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json&style=for-the-badge)](https://github.com/astral-sh/uv)
 
-**Last update: 2026-06-12 — v1.12.0**
+**Last update: 2026-06-12 — v1.13.0**
+
+## What's New in v1.13.0
+
+- Replaced default system prompt with official Codex CLI base_instructions (from gpt-5.5 model)
+  - Adapted for CodexProxy: translated tool references (shell_command, read, write, apply_patch, exec_command, view_image)
+  - Removed commentary/final channels and multi_tool_use.parallel references
+  - Preserved personality, engineering judgment, frontend guidance, editing constraints, formatting rules, autonomy/persistence sections
+  - SYSTEM_PROMPT_MODE=default now uses this rich prompt (custom/none modes unchanged)
+- Bumped version from v1.12.0 to v1.13.0
 
 </div>
 
