@@ -119,6 +119,7 @@ class ResponsesCreateRequest(BaseModel):
     top_p: float = 1.0
     parallel_tool_calls: bool = True
     previous_response_id: str | None = None
+    conversation_id: str | None = None
     tools: Sequence[ResponsesToolFunction | dict[str, Any]] = []
     tool_choice: str | dict[str, Any] = "auto"
     metadata: dict[str, Any] = {}

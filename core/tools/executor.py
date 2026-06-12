@@ -52,9 +52,12 @@ class ToolExecutor:
         handlers = {
             "apply_patch": self._execute_apply_patch,
             "shell": self._execute_shell,
+            "shell_command": self._execute_shell,
+            "exec_command": self._execute_shell,
             "read": self._execute_read,
             "write": self._execute_write,
             "run_tests": self._execute_run_tests,
+            "run_code": self._execute_run_code,
         }
         handler = handlers.get(tool_name)
         if handler is None:
@@ -221,6 +224,50 @@ class ToolExecutor:
             )
 
         return self._run_shell(command)
+
+    def _execute_run_code(self, arguments: dict[str, Any]) -> ToolResult:
+        code = arguments.get("code", "")
+        language = arguments.get("language", "python")
+        if not code.strip():
+            return ToolResult(
+                success=False, output="", error="run_code requires code", exit_code=-1
+            )
+
+        ext_map = {
+            "python": ".py",
+            "javascript": ".js",
+            "node": ".js",
+            "bash": ".sh",
+            "sh": ".sh",
+            "shell": ".sh",
+        }
+        ext = ext_map.get(language, ".py")
+        filename = f"_code_exec_{abs(hash(code)) % 10_000_000}{ext}"
+
+        filepath = self._resolve_sandbox_path(filename)
+        if filepath is None:
+            return ToolResult(
+                success=False,
+                output="",
+                error="Cannot write code file outside workspace",
+                exit_code=-1,
+            )
+
+        self._safe_write(filepath, code)
+
+        runner_map = {
+            "python": "python",
+            "javascript": "node",
+            "node": "node",
+            "bash": "",
+            "sh": "",
+            "shell": "",
+        }
+        runner = runner_map.get(language, "python")
+        if not runner:
+            return self._run_shell(code)
+
+        return self._run_shell(f"{runner} {filename}")
 
     def _run_shell(self, command: str) -> ToolResult:
         try:

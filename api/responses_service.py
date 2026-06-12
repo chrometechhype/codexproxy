@@ -30,6 +30,8 @@ from core.responses.sse import (
     build_response_completed,
     build_response_created,
     build_response_in_progress,
+    format_responses_sse,
+    new_output_item_id,
     new_response_id,
 )
 from core.responses.store import ResponseStore, Store, StoredResponse
@@ -37,9 +39,11 @@ from core.tools.executor import ToolExecutor
 from core.tools.registry import (
     APPLY_PATCH_TOOL,
     EXEC_COMMAND_TOOL,
+    READ_TOOL,
     SHELL_COMMAND_TOOL,
     VIEW_IMAGE_TOOL,
     WRITE_STDIN_TOOL,
+    WRITE_TOOL,
     ToolRegistry,
 )
 from providers.base import BaseProvider
@@ -312,6 +316,7 @@ class ResponsesService:
                 top_p=float(request.top_p or 1.0),
                 parallel_tool_calls=bool(request.parallel_tool_calls),
                 previous_response_id=request.previous_response_id,
+                conversation_id=request.conversation_id,
                 store=bool(request.store),
                 user=request.user,
                 input_items=_input_items_to_storage(request),
@@ -410,6 +415,138 @@ class ResponsesService:
             "user": request.user,
         }
 
+    async def _stream_agent_loop(
+        self, request: ResponsesCreateRequest
+    ) -> AsyncIterator[str]:
+        """Streaming agent loop: think → execute tools → observe → continue."""
+        max_iterations = self._settings.agent_max_iterations
+        all_output: list[dict[str, Any]] = []
+        all_usage: dict[str, Any] = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
+        main_response_id: str | None = None
+        main_created_at: int | None = None
+        final_status = "completed"
+        first_iteration = True
+
+        for _ in range(max_iterations):
+            should_continue = False
+            done = False
+            completed_data: dict[str, Any] | None = None
+
+            async for event in self.stream_create(request):
+                if event.startswith("event: response.created"):
+                    if first_iteration:
+                        data = _parse_sse_data(event)
+                        rd = data.get("response", data)
+                        main_response_id = rd.get("id")
+                        main_created_at = rd.get("created_at")
+                        yield event
+                    continue
+
+                if event.startswith("event: response.in_progress"):
+                    if first_iteration:
+                        yield event
+                    continue
+
+                if event.startswith("event: response.incomplete"):
+                    data = _parse_sse_data(event)
+                    rd = data.get("response", data)
+                    all_output.extend(rd.get("output", []))
+                    _merge_usage(all_usage, rd.get("usage", {}))
+                    final_status = "incomplete"
+                    done = True
+                    break
+
+                if event.startswith("event: response.completed"):
+                    data = _parse_sse_data(event)
+                    rd = data.get("response", data)
+                    all_output.extend(rd.get("output", []))
+                    _merge_usage(all_usage, rd.get("usage", {}))
+                    final_status = rd.get("status", "completed")
+                    completed_data = data
+                    done = True
+                    break
+
+                yield event
+
+            first_iteration = False
+
+            if done and completed_data is not None:
+                tool_calls = [
+                    item
+                    for item in completed_data.get("response", completed_data).get(
+                        "output", []
+                    )
+                    if item.get("type") == "function_call"
+                ]
+
+                if not tool_calls:
+                    break
+
+                if main_response_id is not None:
+                    yield format_responses_sse(
+                        "response.in_progress",
+                        {"response": {"id": main_response_id, "status": "in_progress"}},
+                    )
+
+                tool_results = await self._execute_tool_calls(tool_calls)
+
+                for result in tool_results:
+                    item_id = new_output_item_id()
+                    yield format_responses_sse(
+                        "response.output_item.added",
+                        {
+                            "type": "function_call_output",
+                            "id": item_id,
+                            "call_id": result["call_id"],
+                            "output": result["output"],
+                        },
+                    )
+                    yield format_responses_sse(
+                        "response.output_item.done",
+                        {"id": item_id},
+                    )
+
+                all_output.extend(
+                    {
+                        "type": "function_call_output",
+                        "call_id": r["call_id"],
+                        "output": r["output"],
+                    }
+                    for r in tool_results
+                )
+
+                request = _build_continuation_request(request, tool_calls, tool_results)
+                should_continue = True
+
+            if not should_continue:
+                break
+        else:
+            final_status = "incomplete"
+
+        yield build_response_completed(
+            response_id=main_response_id or new_response_id(),
+            created_at=main_created_at or int(time.time()),
+            completed_at=int(time.time()),
+            model=request.model,
+            output=all_output,
+            usage=all_usage,
+            instructions=request.instructions,
+            metadata=request.metadata or {},
+            tools=_expand_namespace_tools(request.tools or []),
+            tool_choice=_tool_choice_to_payload(request.tool_choice),
+            temperature=float(request.temperature or 1.0),
+            top_p=float(request.top_p or 1.0),
+            parallel_tool_calls=bool(request.parallel_tool_calls),
+            previous_response_id=request.previous_response_id,
+            store=bool(request.store),
+            user=request.user,
+            status=final_status,
+        )
+
     async def _execute_tool_calls(
         self, tool_calls: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -433,7 +570,7 @@ class ResponsesService:
                 arguments = json.loads(arguments_raw) if arguments_raw else {}
             except json.JSONDecodeError:
                 arguments = {}
-            result = executor.execute(name, arguments)
+            result = await asyncio.to_thread(executor.execute, name, arguments)
             results.append(
                 {
                     "call_id": tc.get("call_id", ""),
@@ -1079,6 +1216,30 @@ _NATIVE_TOOL_DEFS: dict[str, dict[str, Any]] = {
     "exec_command": EXEC_COMMAND_TOOL,
     "view_image": VIEW_IMAGE_TOOL,
     "write_stdin": WRITE_STDIN_TOOL,
+    "read": READ_TOOL,
+    "write": WRITE_TOOL,
+    "shell": {
+        "type": "function",
+        "name": "shell",
+        "description": (
+            "Run a shell command in the workspace. "
+            "Prefer dedicated tools (read, write, apply_patch) over shell for file operations."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The shell command to execute.",
+                },
+                "workdir": {
+                    "type": "string",
+                    "description": "Optional working directory relative to the workspace.",
+                },
+            },
+            "required": ["command"],
+        },
+    },
 }
 
 
@@ -1094,7 +1255,11 @@ def _convert_native_tool(raw: dict[str, Any]) -> dict[str, Any]:
     if tool_type not in _NATIVE_TOOL_DEFS:
         return raw
 
-    return dict(_NATIVE_TOOL_DEFS[tool_type])
+    defs = _NATIVE_TOOL_DEFS[tool_type]
+    result = dict(defs)
+    result.setdefault("type", "function")
+    result.setdefault("name", tool_type)
+    return result
 
 
 def _tool_to_payload(tool: Any) -> dict[str, Any]:
@@ -1263,6 +1428,14 @@ def _merge_usage(target: dict[str, Any], source: dict[str, Any]) -> None:
     target["total_tokens"] = target.get("total_tokens", 0) + source.get(
         "total_tokens", 0
     )
+
+
+def _parse_sse_data(event_str: str) -> dict[str, Any]:
+    """Extract the JSON payload from an SSE event string."""
+    for line in event_str.splitlines():
+        if line.startswith("data: "):
+            return json.loads(line[6:])
+    return {}
 
 
 def _build_continuation_request(

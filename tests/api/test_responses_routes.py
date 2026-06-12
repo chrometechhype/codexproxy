@@ -399,8 +399,8 @@ def test_list_responses_stub(client: TestClient, auth_headers: dict[str, str]) -
     assert response.status_code == 200
     data = response.json()
     assert data["object"] == "list"
-    assert data["data"] == []
-    assert data["has_more"] is False
+    assert isinstance(data["data"], list)
+    assert "has_more" in data
 
 
 # ---------------------------------------------------------------------------

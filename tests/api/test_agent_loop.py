@@ -233,6 +233,27 @@ def test_agent_loop_streaming_returns_events(agent_settings: None) -> None:
         )
     assert resp.status_code == 200
     body = resp.text
-    # Should contain SSE events
     assert "event: response.created" in body
     assert "event: response.completed" in body or "event: response.incomplete" in body
+
+
+def test_agent_loop_streaming_executes_tools(agent_settings: None) -> None:
+    """Streaming agent loop executes tools and emits function_call_output."""
+    stub = _MultiTurnStub()
+    with _patch_resolve_with_stub(stub), TestClient(app) as client:
+        resp = client.post(
+            "/v1/responses",
+            json={
+                "model": "gpt-4o",
+                "input": [{"type": "message", "role": "user", "content": "hello"}],
+                "tools": [{"type": "apply_patch"}],
+                "stream": True,
+                "store": False,
+            },
+            headers={"Authorization": "Bearer codexproxy"},
+        )
+    assert resp.status_code == 200
+    body = resp.text
+    assert "event: response.output_item.added" in body
+    assert '"function_call_output"' in body
+    assert "event: response.completed" in body

@@ -100,10 +100,14 @@ def _resolve_provider(provider_type: str, *, app: Any, settings: Settings) -> An
 async def create_response(
     body: ResponsesCreateRequest,
     service: ResponsesService = Depends(get_responses_service),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     """Create a model response (streaming or JSON)."""
     if body.stream:
-        generator = service.stream_create(body)
+        if body.tools and settings.enable_local_tool_execution:
+            generator = service._stream_agent_loop(body)
+        else:
+            generator = service.stream_create(body)
         return StreamingResponse(
             generator,
             media_type="text/event-stream",
@@ -163,19 +167,88 @@ async def get_response_input_items(
 
 
 @router.post("/v1/conversations", dependencies=[Depends(require_api_key)])
-async def create_conversation() -> dict[str, Any]:
-    """Stub: conversations are not stored in v0.1; return an empty resource."""
+async def create_conversation(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Create a conversation."""
+    now = int(time.time())
+    conv_id = f"conv_{now}"
+    store = getattr(request.app.state, "responses_store", None)
+    if store is None:
+        from core.responses.store import ResponseStore
+
+        store = ResponseStore()
+        request.app.state.responses_store = store
+    from core.responses.store import StoredConversation
+
+    store.put_conversation(
+        StoredConversation(id=conv_id, created_at=now, updated_at=now)
+    )
     return {
-        "id": f"conv_{int(time.time())}",
+        "id": conv_id,
         "object": "conversation",
-        "created_at": int(time.time()),
+        "created_at": now,
+        "updated_at": now,
+        "title": "",
+        "metadata": {},
+    }
+
+
+@router.get(
+    "/v1/conversations/{conversation_id}", dependencies=[Depends(require_api_key)]
+)
+async def get_conversation(
+    conversation_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    """Get a conversation by ID."""
+    store = getattr(request.app.state, "responses_store", None)
+    if store is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    conv = store.get_conversation(conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {
+        "id": conv.id,
+        "object": "conversation",
+        "created_at": conv.created_at,
+        "updated_at": conv.updated_at,
+        "title": conv.title,
+        "metadata": conv.metadata,
     }
 
 
 @router.get("/v1/responses", dependencies=[Depends(require_api_key)])
-async def list_responses() -> dict[str, Any]:
-    """Stub list view (v0.1 only retains responses in process memory)."""
-    return {"object": "list", "data": [], "has_more": False}
+async def list_responses(
+    request: Request,
+    conversation_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """List responses, optionally filtered by conversation."""
+    store = getattr(request.app.state, "responses_store", None)
+    if store is None:
+        return {
+            "object": "list",
+            "data": [],
+            "has_more": False,
+            "first_id": None,
+            "last_id": None,
+        }
+    stored = store.list_responses(
+        conversation_id=conversation_id, limit=limit, offset=offset
+    )
+    from api.responses_service import _stored_to_response
+
+    data = [_stored_to_response(r) for r in stored]
+    return {
+        "object": "list",
+        "data": data,
+        "has_more": len(data) >= limit,
+        "first_id": data[0]["id"] if data else None,
+        "last_id": data[-1]["id"] if data else None,
+    }
 
 
 @router.get("/v1/models", response_model=ResponsesModelsListResponse)

@@ -36,6 +36,7 @@ class StoredResponse:
     top_p: float = 1.0
     parallel_tool_calls: bool = True
     previous_response_id: str | None = None
+    conversation_id: str | None = None
     store: bool = True
     user: str | None = None
     input_items: list[dict[str, Any]] = field(default_factory=list)
@@ -59,6 +60,7 @@ class StoredResponse:
             "top_p": self.top_p,
             "parallel_tool_calls": int(self.parallel_tool_calls),
             "previous_response_id": self.previous_response_id,
+            "conversation_id": self.conversation_id,
             "store": int(self.store),
             "user": self.user,
             "input_items": json.dumps(self.input_items),
@@ -88,6 +90,7 @@ class StoredResponse:
             store=bool(d["store"]),
             user=d["user"],
             input_items=json.loads(d["input_items"]),
+            conversation_id=d.get("conversation_id"),
             stored_at=d["stored_at"],
         )
 
@@ -100,6 +103,7 @@ class ResponseStore:
     def __init__(self, *, ttl_seconds: float = DEFAULT_TTL_SECONDS) -> None:
         self._ttl = ttl_seconds
         self._entries: dict[str, StoredResponse] = {}
+        self._conversations: dict[str, StoredConversation] = {}
         self._lock = threading.Lock()
 
     def put(self, response: StoredResponse) -> None:
@@ -115,6 +119,27 @@ class ResponseStore:
     def clear(self) -> None:
         with self._lock:
             self._entries.clear()
+
+    def put_conversation(self, conversation: StoredConversation) -> None:
+        with self._lock:
+            self._conversations[conversation.id] = conversation
+
+    def get_conversation(self, conversation_id: str) -> StoredConversation | None:
+        with self._lock:
+            return self._conversations.get(conversation_id)
+
+    def list_responses(
+        self, *, conversation_id: str | None = None, limit: int = 50, offset: int = 0
+    ) -> list[StoredResponse]:
+        with self._lock:
+            self._evict_expired_locked()
+            entries = [
+                v
+                for v in self._entries.values()
+                if conversation_id is None or v.conversation_id == conversation_id
+            ]
+            entries.sort(key=lambda x: x.created_at, reverse=True)
+            return entries[offset : offset + limit]
 
     def _evict_expired_locked(self) -> None:
         cutoff = time.time() - self._ttl
@@ -161,6 +186,7 @@ class SqliteResponseStore:
                 top_p REAL NOT NULL DEFAULT 1.0,
                 parallel_tool_calls INTEGER NOT NULL DEFAULT 1,
                 previous_response_id TEXT,
+                conversation_id TEXT,
                 store INTEGER NOT NULL DEFAULT 1,
                 user TEXT,
                 input_items TEXT NOT NULL DEFAULT '[]',
@@ -169,6 +195,19 @@ class SqliteResponseStore:
         )
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_stored_at ON responses(stored_at)"
+        )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_conversation_id ON responses(conversation_id)"
+        )
+        self._conn.execute(
+            """CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                metadata TEXT NOT NULL DEFAULT '{}',
+                stored_at REAL NOT NULL
+            )"""
         )
         self._conn.commit()
 
@@ -180,13 +219,13 @@ class SqliteResponseStore:
                     id, created_at, completed_at, model, status,
                     output, usage, error, instructions, metadata,
                     tools, tool_choice, temperature, top_p,
-                    parallel_tool_calls, previous_response_id, store,
+                    parallel_tool_calls, previous_response_id, conversation_id, store,
                     user, input_items, stored_at
                 ) VALUES (
                     :id, :created_at, :completed_at, :model, :status,
                     :output, :usage, :error, :instructions, :metadata,
                     :tools, :tool_choice, :temperature, :top_p,
-                    :parallel_tool_calls, :previous_response_id, :store,
+                    :parallel_tool_calls, :previous_response_id, :conversation_id, :store,
                     :user, :input_items, :stored_at
                 )""",
                 row,
@@ -210,12 +249,77 @@ class SqliteResponseStore:
             self._conn.execute("DELETE FROM responses")
             self._conn.commit()
 
+    def put_conversation(self, conversation: StoredConversation) -> None:
+        row = {
+            "id": conversation.id,
+            "created_at": conversation.created_at,
+            "updated_at": conversation.updated_at,
+            "title": conversation.title,
+            "metadata": json.dumps(conversation.metadata),
+            "stored_at": conversation.stored_at,
+        }
+        with self._lock:
+            self._conn.execute(
+                """INSERT OR REPLACE INTO conversations (
+                    id, created_at, updated_at, title, metadata, stored_at
+                ) VALUES (
+                    :id, :created_at, :updated_at, :title, :metadata, :stored_at
+                )""",
+                row,
+            )
+            self._conn.commit()
+
+    def get_conversation(self, conversation_id: str) -> StoredConversation | None:
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT * FROM conversations WHERE id = ?", (conversation_id,)
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            return StoredConversation(
+                id=d["id"],
+                created_at=d["created_at"],
+                updated_at=d["updated_at"],
+                title=d["title"],
+                metadata=json.loads(d["metadata"]),
+                stored_at=d["stored_at"],
+            )
+
+    def list_responses(
+        self, *, conversation_id: str | None = None, limit: int = 50, offset: int = 0
+    ) -> list[StoredResponse]:
+        with self._lock:
+            self._evict_expired_locked()
+            if conversation_id:
+                cursor = self._conn.execute(
+                    "SELECT * FROM responses WHERE conversation_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (conversation_id, limit, offset),
+                )
+            else:
+                cursor = self._conn.execute(
+                    "SELECT * FROM responses ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    (limit, offset),
+                )
+            return [StoredResponse.from_row(row) for row in cursor.fetchall()]
+
     def close(self) -> None:
         self._conn.close()
 
     def _evict_expired_locked(self) -> None:
         cutoff = time.time() - self._ttl
         self._conn.execute("DELETE FROM responses WHERE stored_at < ?", (cutoff,))
+
+
+@dataclass
+class StoredConversation:
+    id: str
+    created_at: int
+    updated_at: int
+    title: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    stored_at: float = field(default_factory=time.time)
 
 
 Store = ResponseStore | SqliteResponseStore

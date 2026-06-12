@@ -228,7 +228,7 @@ async def _responses_sse_to_chat_stream(
     created = int(time.time())
     model = ""
     text_buffer: dict[int, str] = {}
-    tool_buffer: dict[int, list[dict[str, Any]]] = {}
+    tool_info: dict[int, dict[str, str]] = {}
 
     async for chunk in responses_stream:
         for line in chunk.splitlines(keepends=False):
@@ -245,6 +245,14 @@ async def _responses_sse_to_chat_stream(
             event_type = payload.get("type", "")
             if event_type == "response.created":
                 model = payload.get("response", {}).get("model", "")
+            elif event_type == "response.output_item.added":
+                item = payload.get("item", {})
+                if item.get("type") == "function_call":
+                    idx = payload.get("output_index", 0)
+                    tool_info[idx] = {
+                        "id": item.get("call_id", f"call_{uuid.uuid4().hex[:12]}"),
+                        "name": item.get("name", ""),
+                    }
             elif event_type == "response.output_text.delta":
                 response_data = payload.get("response", payload)
                 idx = response_data.get("output_index", 0)
@@ -269,12 +277,38 @@ async def _responses_sse_to_chat_stream(
                     )
                     + "\n\n"
                 )
+            elif event_type == "response.reasoning_summary.delta":
+                delta_text = payload.get("delta", "")
+                if delta_text:
+                    yield (
+                        json.dumps(
+                            {
+                                "id": response_id,
+                                "object": "chat.completion.chunk",
+                                "created": created,
+                                "model": model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"reasoning_content": delta_text},
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+                        )
+                        + "\n\n"
+                    )
             elif event_type == "response.function_call_arguments.delta":
                 response_data = payload.get("response", payload)
                 idx = response_data.get("output_index", 0)
                 delta = response_data.get("delta", "")
-                if idx not in tool_buffer:
-                    tool_buffer[idx] = []
+                info = tool_info.get(idx, {})
+                tc: dict[str, Any] = {"function": {"arguments": delta}}
+                if info:
+                    tc["id"] = info["id"]
+                    tc["type"] = "function"
+                    tc["function"]["name"] = info["name"]
+                    del tool_info[idx]
                 yield (
                     json.dumps(
                         {
@@ -286,12 +320,7 @@ async def _responses_sse_to_chat_stream(
                                 {
                                     "index": idx,
                                     "delta": {
-                                        "tool_calls": [
-                                            {
-                                                "index": 0,
-                                                "function": {"arguments": delta},
-                                            }
-                                        ]
+                                        "tool_calls": [tc],
                                     },
                                     "finish_reason": None,
                                 }
