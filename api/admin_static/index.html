@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CodexProxy Admin</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/admin/assets/admin.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">CX</div>
+          <div>
+            <h1>CodexProxy</h1>
+            <p>Server Control</p>
+          </div>
+        </div>
+        <nav id="sectionNav" class="section-nav" aria-label="Admin views"></nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h2 id="pageTitle">Providers</h2>
+          </div>
+        </header>
+
+        <div id="adminViews" class="admin-views">
+          <section id="view-providers" class="admin-view active" data-view="providers">
+            <section class="provider-strip" aria-label="Provider status">
+              <div class="strip-header">
+                <h3>Providers</h3>
+              </div>
+              <div id="providerGrid" class="provider-grid"></div>
+            </section>
+            <div
+              id="providersSections"
+              class="form-sections"
+              aria-label="Provider configuration"
+            ></div>
+          </section>
+
+          <section id="view-model_config" class="admin-view" data-view="model_config" hidden>
+            <div
+              id="modelConfigSections"
+              class="form-sections"
+              aria-label="Model configuration"
+            ></div>
+          </section>
+
+          <section id="view-messaging" class="admin-view" data-view="messaging" hidden>
+            <div
+              id="messagingSections"
+              class="form-sections"
+              aria-label="Messaging configuration"
+            ></div>
+          </section>
+
+          <section id="view-codex" class="admin-view" data-view="codex" hidden>
+            <div class="codex-layout">
+              <div class="codex-panel codex-panel--status">
+                <div class="panel-header">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M8 4v4l3 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                  <span>Current Status</span>
+                </div>
+                <div id="codexStatus" class="codex-status-grid"></div>
+              </div>
+
+              <div class="codex-panel codex-panel--actions">
+                <div class="panel-header">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8l4 4 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span>Launchers</span>
+                </div>
+                <div class="codex-launch-row">
+                  <div class="codex-launch-info">
+                    <strong>Codex CLI</strong>
+                    <span>Interactive terminal session via <code>codex exec</code></span>
+                  </div>
+                  <button id="codexLaunchCliButton" class="btn btn--primary" type="button">
+                    Launch CLI
+                  </button>
+                </div>
+                <div class="codex-launch-row">
+                  <div class="codex-launch-info">
+                    <strong>Codex Desktop App</strong>
+                    <span>GUI application — configure once, persists across restarts</span>
+                  </div>
+                  <button id="codexLaunchAppButton" class="btn btn--primary" type="button">
+                    Launch App
+                  </button>
+                </div>
+              </div>
+
+              <div class="codex-panel codex-panel--restore">
+                <div class="panel-header">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 1 0 1.5-3.9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M2 4v4h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <span>Account Restore</span>
+                </div>
+                <p class="codex-restore-desc">
+                  Revert <code>config.toml</code> and <code>auth.json</code> to their
+                  pre-CodexProxy state. Clears <code>OPENAI_BASE_URL</code> /
+                  <code>OPENAI_API_KEY</code> env vars. Disconnects the app from this proxy.
+                </p>
+                <button id="codexRestoreButton" class="btn btn--ghost" type="button">
+                  Restore Default Account
+                </button>
+              </div>
+
+              <div id="codexResult" class="codex-result" aria-live="polite" hidden></div>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <footer class="action-bar">
+        <div class="action-meta">
+          <strong id="dirtyState">No changes</strong>
+          <span id="configPath"></span>
+        </div>
+        <div id="messageArea" class="message-area"></div>
+        <div class="action-buttons">
+          <button id="validateButton" class="secondary-button" type="button">Validate</button>
+          <button id="applyButton" class="primary-button" type="button" disabled>Apply</button>
+        </div>
+      </footer>
+    </div>
+    <script src="/admin/assets/admin.js"></script>
+  </body>
+</html>
