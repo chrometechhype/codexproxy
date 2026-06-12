@@ -61,6 +61,36 @@ def new_call_id() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Argument translation for function calls
+# ---------------------------------------------------------------------------
+
+
+def _translate_tool_arguments(tool_name: str, arguments_json: str) -> str:
+    """Translate model-friendly function call arguments to Codex CLI format.
+
+    Non-OpenAI providers see simplified tool schemas and generate
+    arguments in those terms.  Before they reach Codex CLI they must be
+    rewritten to the format that Codex CLI's handlers expect.
+    """
+    if tool_name != "apply_patch":
+        return arguments_json
+
+    try:
+        args = json.loads(arguments_json)
+    except json.JSONDecodeError:
+        return arguments_json
+
+    # Model called apply_patch with {"patch": "..."}.
+    # Codex CLI expects {"cmd": ["apply_patch", "..."]}.
+    if "patch" in args and isinstance(args["patch"], str):
+        args["cmd"] = ["apply_patch", args["patch"]]
+        del args["patch"]
+        return json.dumps(args, separators=(",", ":"))
+
+    return arguments_json
+
+
+# ---------------------------------------------------------------------------
 # Event builders
 # ---------------------------------------------------------------------------
 
@@ -800,18 +830,21 @@ class AnthropicToResponsesAdapter:
     def _close_open_function_call(self) -> Iterator[str]:
         call = self._open_function_call
         assert call is not None
+        # Translate apply_patch arguments from model-friendly format
+        # {"patch": "..."} to Codex CLI format {"cmd": ["apply_patch", "..."]}.
+        arguments = _translate_tool_arguments(call.name, call.arguments)
         item = {
             "id": call.item_id,
             "type": "function_call",
             "call_id": call.call_id,
             "name": call.name,
-            "arguments": call.arguments,
+            "arguments": arguments,
             "status": "completed",
         }
         yield build_function_call_arguments_done(
             item_id=call.item_id,
             output_index=call.output_index,
-            arguments=call.arguments,
+            arguments=arguments,
         )
         yield build_output_item_done(item, call.output_index)
         self._closed_function_calls.append(item)

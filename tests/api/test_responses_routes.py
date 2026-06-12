@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import patch
 
@@ -594,8 +595,22 @@ class TestConvertNativeTool:
         assert "description" in result
         assert "parameters" in result
         assert result["parameters"]["type"] == "object"
-        assert "cmd" in result["parameters"]["properties"]
-        assert "required" in result["parameters"]
+        assert "patch" in result["parameters"]["properties"]
+        assert result["parameters"]["required"] == ["patch"]
+
+    def test_apply_patch_argument_translation(self):
+        from core.responses.sse import _translate_tool_arguments
+
+        # Model calls apply_patch with {"patch": "..."}
+        result = _translate_tool_arguments(
+            "apply_patch",
+            '{"patch": "*** Begin Patch ***\\n--- a/main.py\\n+++ b/main.py\\n@@ -1 +1,2 @@\\n-old\\n+new\\n*** End Patch ***"}',
+        )
+        parsed = json.loads(result)
+        assert "cmd" in parsed
+        assert parsed["cmd"][0] == "apply_patch"
+        assert "*** Begin Patch ***" in parsed["cmd"][1]
+        assert "patch" not in parsed
 
     def test_apply_patch_expanded_in_tools(self):
         tools = [

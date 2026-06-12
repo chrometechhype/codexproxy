@@ -150,22 +150,56 @@ APPLY_PATCH_TOOL: dict[str, Any] = {
     "type": "function",
     "name": "apply_patch",
     "description": (
-        "Create, update, or delete files using structured V4A diffs. "
-        "Use this for ALL file editing operations."
+        "Create, update, edit, or delete files using a standard unified diff format. "
+        "YOU MUST USE THIS TOOL FOR ALL FILE EDITING — never use shell commands for file operations.\\n\\n"
+        "Format:\\n"
+        "*** Begin Patch ***\\n"
+        "--- a/file.py\\n"
+        "+++ b/file.py\\n"
+        "@@ -1,3 +1,4 @@\\n"
+        " ...context lines...\\n"
+        "+new line\\n"
+        "-removed line\\n"
+        "*** End Patch ***\\n\\n"
+        "To create a new file: use /dev/null as old file.\\n"
+        "To delete a file: use /dev/null as new file."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "cmd": {
-                "type": "array",
-                "items": {"type": "string"},
+            "patch": {
+                "type": "string",
                 "description": (
-                    "The apply_patch command array. "
-                    'Format: ["apply_patch", "*** Begin Patch\\\\n...\\\\n*** End Patch"]'
+                    "The full patch content between *** Begin Patch *** and *** End Patch *** markers.\\n\\n"
+                    "Examples:\\n\\n"
+                    "CREATE a new file:\\n"
+                    "*** Begin Patch ***\\n"
+                    "--- /dev/null\\n"
+                    "+++ b/main.py\\n"
+                    "@@ -0,0 +1,3 @@\\n"
+                    "+#!/usr/bin/env python3\\n"
+                    "+print('hello')\\n"
+                    "*** End Patch ***\\n\\n"
+                    "EDIT an existing file:\\n"
+                    "*** Begin Patch ***\\n"
+                    "--- a/main.py\\n"
+                    "+++ b/main.py\\n"
+                    "@@ -1,3 +1,4 @@\\n"
+                    " print('hello')\\n"
+                    "+print('world')\\n"
+                    "*** End Patch ***\\n\\n"
+                    "DELETE a file:\\n"
+                    "*** Begin Patch ***\\n"
+                    "--- a/main.py\\n"
+                    "+++ /dev/null\\n"
+                    "@@ -1,3 +0,0 @@\\n"
+                    "-#!/usr/bin/env python3\\n"
+                    "-print('hello')\\n"
+                    "*** End Patch ***"
                 ),
             },
         },
-        "required": ["cmd"],
+        "required": ["patch"],
         "additionalProperties": False,
     },
 }
