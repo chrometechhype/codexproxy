@@ -8,9 +8,15 @@ Use the OpenAI Codex CLI and any OpenAI Responses client through your own provid
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json&style=for-the-badge)](https://github.com/astral-sh/uv)
 
-**Last update: 2026-06-12 — v1.10.0**
+**Last update: 2026-06-12 — v1.11.0**
 
 </div>
+
+## What's New in v1.11.0
+
+- **Native tool execution** — CodexProxy can now execute tools (`shell_command`, `exec_command`, `apply_patch`, `view_image`, etc.) directly without the Codex CLI. Set `ENABLE_LOCAL_TOOL_EXECUTION=true` to run the full agent loop (think → execute tools → observe → continue) in both streaming and non-streaming modes.
+- **Tool registry** — Built-in handlers for shell commands, V4A patches, image viewing, and file operations. Tools are executed in the workspace directory with configurable sandboxing (`TOOL_EXECUTION_SANDBOX_MODE`).
+- **Streaming agent loop** — When local tool execution is enabled, `POST /v1/responses` with `stream: true` runs the agent loop in real-time: model output streams to the client, tool results are injected as `function_call_output`, and the model continues reasoning until complete.
 
 ## What's New in v1.10.0
 
@@ -84,6 +90,20 @@ Set `MODEL` to a provider-prefixed slug. Examples:
 | `cdx-delete` | Complete removal of all CodexProxy files |
 | `cdx-init` | Optional scaffold for advanced setup |
 
+## Configuration
+
+Key environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ENABLE_LOCAL_TOOL_EXECUTION` | `false` | Enable native tool execution (agent loop). When `true`, the proxy runs shell/exec/patch tools directly. |
+| `TOOL_EXECUTION_SANDBOX_MODE` | `none` | Sandbox level: `none` (no restrictions), `restrictive` (only allowed commands), `isolated` (separate environment). |
+| `TOOL_EXECUTION_ALLOWED_COMMANDS` | (empty) | Comma-separated list of allowed shell commands when sandbox is `restrictive`. |
+| `TOOL_EXECUTION_ALLOWED_PATHS` | (empty) | Comma-separated list of allowed filesystem paths. |
+| `TOOL_EXECUTION_SHELL_TIMEOUT` | `60` | Max seconds for a single tool execution. |
+| `AGENT_MAX_ITERATIONS` | `10` | Max think → execute → observe cycles per request. |
+| `MODEL` | (required) | Provider/model slug, e.g. `openrouter/openai/gpt-4o`. |
+
 ## FAQ
 
 ### Why does Codex CLI seem to hang after running one command?
@@ -99,6 +119,8 @@ This was a known issue in v1.3.x when using models that take a long time to thin
 ### Can I use CodexProxy without the Codex CLI?
 
 Yes. CodexProxy is a standard OpenAI Responses API server. Any HTTP client that speaks `POST /v1/responses` can use it.
+
+Set `ENABLE_LOCAL_TOOL_EXECUTION=true` to let the proxy handle tool calls (`shell_command`, `exec_command`, `apply_patch`, `view_image`) directly. When enabled, the proxy runs a full agent loop — it streams model output, intercepts tool calls, executes them in the workspace, and feeds results back to the model automatically.
 
 ### How do I change the port?
 
