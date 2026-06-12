@@ -26,11 +26,22 @@ from config.provider_ids import SUPPORTED_PROVIDER_IDS
 from config.settings import Settings
 from core.responses.sse import (
     AnthropicToResponsesAdapter,
+    build_output_item_done,
+    build_response_completed,
+    build_response_created,
     build_response_in_progress,
     new_response_id,
 )
 from core.responses.store import ResponseStore, Store, StoredResponse
 from core.tools.executor import ToolExecutor
+from core.tools.registry import (
+    APPLY_PATCH_TOOL,
+    EXEC_COMMAND_TOOL,
+    SHELL_COMMAND_TOOL,
+    VIEW_IMAGE_TOOL,
+    WRITE_STDIN_TOOL,
+    ToolRegistry,
+)
 from providers.base import BaseProvider
 
 from .model_router import ModelRouter
@@ -81,11 +92,13 @@ class ResponsesService:
         provider_getter: ProviderGetter,
         store: Store | None = None,
         tool_executor: ToolExecutor | None = None,
+        tool_registry: ToolRegistry | None = None,
     ) -> None:
         self._settings = settings
         self._provider_getter = provider_getter
         self._store = store or ResponseStore()
         self._tool_executor = tool_executor
+        self._tool_registry = tool_registry
         self._failover_models = _parse_failover_models(settings.failover_models)
 
     @property
@@ -99,6 +112,14 @@ class ResponsesService:
         self, request: ResponsesCreateRequest
     ) -> AsyncIterator[str]:
         """Yield Responses SSE events for a streaming ``POST /v1/responses``."""
+        if (
+            self._settings.enable_local_tool_execution
+            and self._tool_registry is not None
+        ):
+            async for event in self._agent_loop_stream(request):
+                yield event
+            return
+
         messages_request, resolved = self._build_messages_request(request)
         response_id = new_response_id()
         created_at = int(time.time())
@@ -413,6 +434,215 @@ class ResponsesService:
             except json.JSONDecodeError:
                 arguments = {}
             result = executor.execute(name, arguments)
+            results.append(
+                {
+                    "call_id": tc.get("call_id", ""),
+                    "output": result.output,
+                    "success": result.success,
+                    "error": result.error,
+                }
+            )
+        return results
+
+    # ------------------------------------------------------------------
+    # Streaming agent loop (standalone mode)
+    # ------------------------------------------------------------------
+    async def _agent_loop_stream(
+        self, request: ResponsesCreateRequest
+    ) -> AsyncIterator[str]:
+        """Run the agent loop in streaming mode with local tool execution.
+
+        Each iteration streams model output and function calls to the
+        client. When function calls complete, tools are executed locally
+        and the results are fed back to the model in the next iteration.
+        """
+        max_iterations = self._settings.agent_max_iterations or 10
+        response_id = new_response_id()
+        created_at = int(time.time())
+
+        tools_payload = _expand_namespace_tools(request.tools or [])
+        tool_choice_payload = _tool_choice_to_payload(request.tool_choice)
+
+        # If no tools were specified by the client, inject our default tool
+        # specs so the model knows it can use shell/exec/patch tools.
+        if not tools_payload and self._tool_registry is not None:
+            tools_payload = list(self._tool_registry.get_specs())
+
+        # Collect output across all iterations for the final response.
+        all_output: list[dict[str, Any]] = []
+        all_usage: dict[str, Any] = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
+
+        yield build_response_created(
+            response_id=response_id,
+            created_at=created_at,
+            model=request.model,
+            instructions=request.instructions,
+            metadata=request.metadata or {},
+            tools=tools_payload,
+            tool_choice=tool_choice_payload,
+            temperature=float(request.temperature or 1.0),
+            top_p=float(request.top_p or 1.0),
+            parallel_tool_calls=bool(request.parallel_tool_calls),
+            previous_response_id=request.previous_response_id,
+            store=bool(request.store),
+            user=request.user,
+        )
+        yield build_response_in_progress(response_id)
+
+        for iteration in range(max_iterations):
+            # Build messages request for this iteration.
+            messages_request, resolved = self._build_messages_request(request)
+            provider = self._provider_getter(resolved.provider_id)
+
+            inner_adapter = AnthropicToResponsesAdapter(
+                response_id=f"{response_id}_iter_{iteration}",
+                created_at=created_at,
+                model=request.model,
+                instructions=request.instructions,
+                metadata=request.metadata or {},
+                tools=tools_payload,
+                tool_choice=tool_choice_payload,
+                temperature=float(request.temperature or 1.0),
+                top_p=float(request.top_p or 1.0),
+                parallel_tool_calls=bool(request.parallel_tool_calls),
+                previous_response_id=request.previous_response_id,
+                store=bool(request.store),
+                user=request.user,
+            )
+
+            # Stream from provider and collect function calls.
+            exit_code = "completed"
+            iteration_error: dict[str, Any] | None = None
+            try:
+                async for chunk in provider.stream_response(
+                    messages_request,
+                    input_tokens=0,
+                    request_id=response_id,
+                    thinking_enabled=resolved.thinking_enabled,
+                ):
+                    for event in inner_adapter.feed(chunk):
+                        if not _is_lifecycle_event(event):
+                            yield event
+            except (TimeoutError, ConnectionError, ConnectionResetError) as exc:
+                exit_code = "failed"
+                iteration_error = {
+                    "type": "api_error",
+                    "message": f"{type(exc).__name__}: Provider stream error",
+                }
+                inner_adapter._completed = True
+                inner_adapter._error = iteration_error
+                inner_adapter._status = "failed"
+
+            # Close open items (text done, function call done) but NOT lifecycle.
+            for event in inner_adapter.finalize():
+                if not _is_lifecycle_event(event):
+                    yield event
+
+            # Extract output items from this iteration.
+            iter_output = inner_adapter.output
+            iter_usage = inner_adapter.usage
+            all_output.extend(iter_output)
+            _merge_usage(all_usage, iter_usage)
+
+            # Check for function calls to execute.
+            function_calls = [
+                item for item in iter_output if item.get("type") == "function_call"
+            ]
+
+            if exit_code != "completed" or not function_calls:
+                break
+
+            # Execute tools locally.
+            tool_results = await self._execute_tool_calls_with_registry(function_calls)
+
+            # Add tool result output items.
+            for tr in tool_results:
+                fc_item: dict[str, Any] = {
+                    "type": "function_call_output",
+                    "call_id": tr["call_id"],
+                    "output": tr["output"],
+                    "status": "completed" if tr.get("success", True) else "failed",
+                }
+                all_output.append(fc_item)
+                yield build_output_item_done(fc_item, len(all_output) - 1)
+
+            # Build continuation request for the next iteration.
+            request = _build_continuation_request(request, function_calls, tool_results)
+        else:
+            logger.warning(
+                "Agent loop reached max iterations request_id={} iterations={}",
+                response_id,
+                max_iterations,
+            )
+
+        # Yield final completed event.
+        completed_at = int(time.time())
+        yield build_response_completed(
+            response_id=response_id,
+            created_at=created_at,
+            completed_at=completed_at,
+            model=request.model,
+            output=all_output,
+            usage=all_usage,
+            instructions=request.instructions,
+            metadata=request.metadata or {},
+            tools=tools_payload,
+            tool_choice=tool_choice_payload,
+            temperature=float(request.temperature or 1.0),
+            top_p=float(request.top_p or 1.0),
+            parallel_tool_calls=bool(request.parallel_tool_calls),
+            previous_response_id=request.previous_response_id,
+            store=bool(request.store),
+            user=request.user,
+            status="completed" if exit_code == "completed" else "failed",
+            error=iteration_error,
+        )
+
+        self._store.put(
+            StoredResponse(
+                id=response_id,
+                created_at=created_at,
+                completed_at=completed_at,
+                model=request.model,
+                status="completed" if exit_code == "completed" else "failed",
+                output=all_output,
+                usage=all_usage,
+                error=iteration_error,
+                instructions=request.instructions,
+                metadata=request.metadata or {},
+                tools=tools_payload,
+                tool_choice=tool_choice_payload,
+                temperature=float(request.temperature or 1.0),
+                top_p=float(request.top_p or 1.0),
+                parallel_tool_calls=bool(request.parallel_tool_calls),
+                previous_response_id=request.previous_response_id,
+                store=bool(request.store),
+                user=request.user,
+                input_items=_input_items_to_storage(request),
+            )
+        )
+
+    async def _execute_tool_calls_with_registry(
+        self, tool_calls: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Execute tool calls using the local tool registry."""
+        registry = self._tool_registry
+        if registry is None:
+            return await self._execute_tool_calls(tool_calls)
+
+        results: list[dict[str, Any]] = []
+        for tc in tool_calls:
+            name = tc.get("name", "")
+            arguments_raw = tc.get("arguments", "{}")
+            try:
+                arguments = json.loads(arguments_raw) if arguments_raw else {}
+            except json.JSONDecodeError:
+                arguments = {}
+            result = await registry.dispatch(name, arguments)
             results.append(
                 {
                     "call_id": tc.get("call_id", ""),
@@ -844,13 +1074,11 @@ def _expand_namespace_tools(tools: Sequence[Any]) -> list[dict[str, Any]]:
 
 
 _NATIVE_TOOL_DEFS: dict[str, dict[str, Any]] = {
-    "apply_patch": {
-        "description": (
-            "Create, update, or delete files using structured V4A diffs. "
-            "Use this for ALL file editing operations — creating new files, "
-            "modifying existing files, or deleting files. "
-        ),
-    },
+    "apply_patch": APPLY_PATCH_TOOL,
+    "shell_command": SHELL_COMMAND_TOOL,
+    "exec_command": EXEC_COMMAND_TOOL,
+    "view_image": VIEW_IMAGE_TOOL,
+    "write_stdin": WRITE_STDIN_TOOL,
 }
 
 
@@ -860,33 +1088,13 @@ def _convert_native_tool(raw: dict[str, Any]) -> dict[str, Any]:
     OpenAI-native tool types such as ``{"type": "apply_patch"}`` are not
     understood by non-OpenAI providers.  This function rewrites them into
     equivalent ``type: "function"`` definitions so the downstream model
-    can still emit ``apply_patch`` function calls that Codex CLI knows how
-    to handle.
+    can still emit tool calls that Codex CLI knows how to handle.
     """
     tool_type = raw.get("type")
     if tool_type not in _NATIVE_TOOL_DEFS:
         return raw
 
-    defs = _NATIVE_TOOL_DEFS[tool_type]
-    return {
-        "type": "function",
-        "name": tool_type,
-        "description": defs["description"],
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "cmd": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": (
-                        f"The {tool_type} command array. "
-                        f'Format: ["{tool_type}", "*** Begin Patch\\\\n...\\\\n*** End Patch"]'
-                    ),
-                },
-            },
-            "required": ["cmd"],
-        },
-    }
+    return dict(_NATIVE_TOOL_DEFS[tool_type])
 
 
 def _tool_to_payload(tool: Any) -> dict[str, Any]:
@@ -1015,6 +1223,26 @@ def _stored_to_response(stored: StoredResponse) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Agent loop helpers
 # ---------------------------------------------------------------------------
+
+
+_LIFECYCLE_EVENTS = frozenset(
+    {
+        "response.created",
+        "response.in_progress",
+        "response.completed",
+        "response.incomplete",
+    }
+)
+
+
+def _is_lifecycle_event(sse_event: str) -> bool:
+    """Return True if the SSE event is a response lifecycle event."""
+    for line in sse_event.splitlines():
+        if line.startswith("event:"):
+            event_type = line[len("event:") :].strip()
+            if event_type in _LIFECYCLE_EVENTS:
+                return True
+    return False
 
 
 def _parse_failover_models(raw: str) -> list[str]:

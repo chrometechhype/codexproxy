@@ -26,6 +26,7 @@ from api.responses_service import ResponsesService
 from config.settings import Settings
 from core.responses.sse import RESPONSES_SSE_RESPONSE_HEADERS
 from core.tools.executor import ToolExecutor
+from core.tools.registry import ToolRegistry, build_default_registry
 from providers.registry import ProviderRegistry
 
 router = APIRouter()
@@ -57,6 +58,16 @@ def _build_tool_executor(settings: Settings) -> ToolExecutor | None:
     )
 
 
+def _build_tool_registry(settings: Settings) -> ToolRegistry | None:
+    if not settings.enable_local_tool_execution:
+        return None
+    return build_default_registry(
+        workspace=settings.codex_workspace,
+        sandbox_mode=settings.tool_execution_sandbox_mode,
+        shell_timeout=settings.tool_execution_shell_timeout,
+    )
+
+
 def get_responses_service(
     request: Request,
     settings: Settings = Depends(get_settings),
@@ -75,6 +86,7 @@ def get_responses_service(
         ),
         store=store,
         tool_executor=_build_tool_executor(settings),
+        tool_registry=_build_tool_registry(settings),
     )
 
 
