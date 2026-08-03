@@ -11,8 +11,13 @@ _ADAPTER = OpenAIResponsesAdapter()
 _CONVERSION_ERROR = OpenAIResponsesAdapter.ConversionError
 
 
-def _to_anthropic_payload(request: dict[str, Any]) -> dict[str, Any]:
-    return _ADAPTER.to_anthropic_payload(OpenAIResponsesRequest.model_validate(request))
+def _to_anthropic_payload(
+    request: dict[str, Any], *, base_system_prompt: str | None = None
+) -> dict[str, Any]:
+    return _ADAPTER.to_anthropic_payload(
+        OpenAIResponsesRequest.model_validate(request),
+        base_system_prompt=base_system_prompt,
+    )
 
 
 def test_responses_string_input_converts_to_anthropic_message() -> None:
@@ -682,3 +687,41 @@ def test_responses_malformed_only_function_call_still_has_no_routable_message() 
                 ],
             }
         )
+
+
+def test_responses_base_system_prompt_prepended_before_instructions() -> None:
+    payload = _to_anthropic_payload(
+        {
+            "model": "nvidia_nim/test-model",
+            "instructions": "Client instructions",
+            "input": "Hello",
+        },
+        base_system_prompt="Proxy base prompt",
+    )
+
+    assert payload["system"] == "Proxy base prompt\n\nClient instructions"
+
+
+def test_responses_base_system_prompt_used_without_instructions() -> None:
+    payload = _to_anthropic_payload(
+        {
+            "model": "nvidia_nim/test-model",
+            "input": "Hello",
+        },
+        base_system_prompt="Proxy base prompt",
+    )
+
+    assert payload["system"] == "Proxy base prompt"
+
+
+def test_responses_base_system_prompt_none_keeps_instructions_only() -> None:
+    payload = _to_anthropic_payload(
+        {
+            "model": "nvidia_nim/test-model",
+            "instructions": "Client instructions",
+            "input": "Hello",
+        },
+        base_system_prompt=None,
+    )
+
+    assert payload["system"] == "Client instructions"

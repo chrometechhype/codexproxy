@@ -290,6 +290,19 @@ class Settings(BaseSettings):
         default=False, validation_alias="DEBUG_SUBAGENT_STACK"
     )
 
+    # ==================== Codex System Prompt ====================
+    # How the proxy-level Codex system prompt is applied:
+    #   "default" — prepend the built-in CODEX_SYSTEM_PROMPT to each /v1/responses request
+    #   "custom"  — prepend your own text from SYSTEM_PROMPT_CUSTOM
+    #   "none"    — pass the client's instructions through unchanged
+    system_prompt_mode: str = Field(
+        default="default", validation_alias="SYSTEM_PROMPT_MODE"
+    )
+    # Custom system prompt text (only used when SYSTEM_PROMPT_MODE="custom").
+    system_prompt_custom: str = Field(
+        default="", validation_alias="SYSTEM_PROMPT_CUSTOM"
+    )
+
     # ==================== NIM Settings ====================
     nim: NimSettings = Field(default_factory=NimSettings)
 

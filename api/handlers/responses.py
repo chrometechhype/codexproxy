@@ -22,6 +22,7 @@ from core.anthropic import MessagesRequest
 from core.diagnostics import safe_exception_message
 from core.failures import ExecutionFailure, find_execution_failure
 from core.openai_responses import (
+    CODEX_SYSTEM_PROMPT,
     OpenAIResponsesAdapter,
     OpenAIResponsesRequest,
     openai_error_type_for_failure,
@@ -51,6 +52,16 @@ class ResponsesHandler:
             log_raw_payloads=settings.log_raw_api_payloads,
         )
 
+    def _effective_system_prompt(self) -> str | None:
+        """Return the proxy-level base system prompt based on settings."""
+        mode = self._settings.system_prompt_mode
+        if mode == "none":
+            return None
+        if mode == "custom":
+            custom = self._settings.system_prompt_custom
+            return custom if custom else None
+        return CODEX_SYSTEM_PROMPT
+
     async def create(
         self, request_data: OpenAIResponsesRequest, *, request_id: str | None = None
     ) -> object:
@@ -64,7 +75,7 @@ class ResponsesHandler:
 
         try:
             anthropic_payload = self._responses_adapter.to_anthropic_payload(
-                request_data
+                request_data, base_system_prompt=self._effective_system_prompt()
             )
             response_request = MessagesRequest(**anthropic_payload)
             require_non_empty_messages(response_request.messages)

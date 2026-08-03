@@ -49,10 +49,18 @@ class _PendingReasoning:
 
 def convert_request_to_anthropic_payload(
     request: OpenAIResponsesRequest,
+    *,
+    base_system_prompt: str | None = None,
 ) -> dict[str, Any]:
-    """Convert an OpenAI Responses request into an Anthropic Messages payload."""
+    """Convert an OpenAI Responses request into an Anthropic Messages payload.
+
+    ``base_system_prompt`` is prepended to the request's own instructions,
+    mirroring the proxy-level system prompt behavior.
+    """
 
     system_parts: list[str] = []
+    if base_system_prompt:
+        system_parts.append(base_system_prompt)
     if instructions := request.instructions:
         system_parts.append(instructions)
 

@@ -19,8 +19,15 @@ class OpenAIResponsesAdapter:
     ConversionError: ClassVar[type[ResponsesConversionError]] = ResponsesConversionError
     sse_headers: ClassVar[dict[str, str]] = OPENAI_RESPONSES_SSE_HEADERS
 
-    def to_anthropic_payload(self, request: OpenAIResponsesRequest) -> dict[str, Any]:
-        return convert_request_to_anthropic_payload(request)
+    def to_anthropic_payload(
+        self,
+        request: OpenAIResponsesRequest,
+        *,
+        base_system_prompt: str | None = None,
+    ) -> dict[str, Any]:
+        return convert_request_to_anthropic_payload(
+            request, base_system_prompt=base_system_prompt
+        )
 
     def iter_sse_from_anthropic(
         self,
