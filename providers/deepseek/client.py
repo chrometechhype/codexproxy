@@ -1,51 +1,55 @@
-"""DeepSeek provider implementation (native Anthropic-compatible Messages)."""
-
-from __future__ import annotations
+"""DeepSeek provider implementation (OpenAI-compatible Chat Completions)."""
 
 from typing import Any
 
-import httpx
-
-from providers.anthropic_messages import AnthropicMessagesTransport
+from core.anthropic.models import MessagesRequest
+from core.reasoning import DEFAULT_REASONING_POLICY, ReasoningPolicy
+from providers.admission import ProviderAdmissionController
 from providers.base import ProviderConfig
-from providers.defaults import DEEPSEEK_ANTHROPIC_DEFAULT_BASE
+from providers.openai_chat import (
+    NO_REASONING,
+    OpenAIChatProfile,
+    OpenAIChatProvider,
+    usage_int,
+)
 
-from .request import build_request_body
+from .compat import DEEPSEEK_REQUEST_POLICY, build_deepseek_request_body
+
+_PROFILE = OpenAIChatProfile(
+    DEEPSEEK_REQUEST_POLICY,
+    NO_REASONING,
+)
 
 
-class DeepSeekProvider(AnthropicMessagesTransport):
-    """DeepSeek using ``https://api.deepseek.com/anthropic`` (Anthropic Messages API)."""
+class DeepSeekProvider(OpenAIChatProvider):
+    """DeepSeek using ``https://api.deepseek.com`` Chat Completions."""
 
-    def __init__(self, config: ProviderConfig):
+    def __init__(
+        self, config: ProviderConfig, *, admission: ProviderAdmissionController
+    ):
         super().__init__(
             config,
-            provider_name="DEEPSEEK",
-            default_base_url=DEEPSEEK_ANTHROPIC_DEFAULT_BASE,
+            profile=_PROFILE,
+            admission=admission,
         )
 
     def _build_request_body(
-        self, request: Any, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy = DEFAULT_REASONING_POLICY,
     ) -> dict:
-        return build_request_body(
+        return build_deepseek_request_body(
             request,
-            thinking_enabled=self._is_thinking_enabled(request, thinking_enabled),
+            reasoning=reasoning,
         )
 
-    def _request_headers(self) -> dict[str, str]:
-        return {
-            "Accept": "text/event-stream",
-            "Content-Type": "application/json",
-            "x-api-key": self._api_key,
-        }
-
-    async def _send_model_list_request(self) -> httpx.Response:
-        """DeepSeek lists models from the OpenAI-format root, not /anthropic."""
-        url = str(
-            httpx.URL(self._base_url).copy_with(
-                path="/models", query=None, fragment=None
-            )
-        )
-        return await self._client.get(url, headers=self._model_list_headers())
-
-    def _model_list_headers(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._api_key}"}
+    def _anthropic_usage_fields(self, usage_info: Any) -> dict[str, int]:
+        usage_fields: dict[str, int] = {}
+        cache_hit_tokens = usage_int(usage_info, "prompt_cache_hit_tokens")
+        if cache_hit_tokens is not None:
+            usage_fields["cache_read_input_tokens"] = cache_hit_tokens
+        cache_miss_tokens = usage_int(usage_info, "prompt_cache_miss_tokens")
+        if cache_miss_tokens is not None:
+            usage_fields["cache_creation_input_tokens"] = cache_miss_tokens
+        return usage_fields

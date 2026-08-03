@@ -7,8 +7,6 @@ on a free port, points ``cdx-codex`` at it, and verifies the config.toml the
 launcher produced.
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import subprocess

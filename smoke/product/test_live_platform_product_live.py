@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 import time
 
@@ -27,10 +25,11 @@ def test_telegram_live_permissions_e2e(smoke_config: SmokeConfig) -> None:
     )
     if not chat_id:
         pytest.skip(
-            "missing_env: CODEX_PROXY_SMOKE_TELEGRAM_CHAT_ID or ALLOWED_TELEGRAM_USER_ID required"
+            "missing_env: CODEX_PROXY_SMOKE_TELEGRAM_CHAT_ID or "
+            "ALLOWED_TELEGRAM_USER_ID required"
         )
 
-    marker = f"FCC product smoke {int(time.time())}"
+    marker = f"CodexProxy product smoke {int(time.time())}"
     sent = httpx.post(
         f"{base_url}/sendMessage",
         json={"chat_id": chat_id, "text": marker},
@@ -64,7 +63,8 @@ def test_discord_live_permissions_e2e(smoke_config: SmokeConfig) -> None:
         pytest.skip("missing_env: DISCORD_BOT_TOKEN is not configured")
     if not channel_id:
         pytest.skip(
-            "missing_env: CODEX_PROXY_SMOKE_DISCORD_CHANNEL_ID or ALLOWED_DISCORD_CHANNELS required"
+            "missing_env: CODEX_PROXY_SMOKE_DISCORD_CHANNEL_ID or "
+            "ALLOWED_DISCORD_CHANNELS required"
         )
 
     headers = {"authorization": f"Bot {token}"}
@@ -77,7 +77,7 @@ def test_discord_live_permissions_e2e(smoke_config: SmokeConfig) -> None:
     )
     assert channel.status_code == 200, channel.text
 
-    marker = f"FCC product smoke {int(time.time())}"
+    marker = f"CodexProxy product smoke {int(time.time())}"
     sent = httpx.post(
         f"{base_url}/channels/{channel_id}/messages",
         headers=headers,

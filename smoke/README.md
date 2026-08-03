@@ -1,4 +1,4 @@
-# Product E2E Smoke Tests
+﻿# Product E2E Smoke Tests
 
 `smoke/` is local-only. It can launch subprocesses, call real providers, touch
 local model servers, and optionally send/delete bot messages. Hermetic contracts
@@ -41,7 +41,7 @@ uv run pytest smoke -n auto --dist=loadgroup -s --tb=short
 ```
 
 Provider product E2E runs once per configured provider, independent of `MODEL`,
-`MODEL_OPUS`, `MODEL_SONNET`, and `MODEL_HAIKU`. Defaults come from the provider
+`MODEL_FABLE`, `MODEL_OPUS`, `MODEL_SONNET`, and `MODEL_HAIKU`. Defaults come from the provider
 catalog/docs and can be overridden with `CODEX_PROXY_SMOKE_MODEL_<PROVIDER>`, for example
 `CODEX_PROXY_SMOKE_MODEL_DEEPSEEK=deepseek-v4-pro` (or `deepseek-v4-flash`). If no provider smoke model is
 configured, live product smoke fails as `missing_env` unless you explicitly set
@@ -54,18 +54,18 @@ Default targets do not send real bot messages or load voice backends:
 | Target | Product scenarios | Required environment |
 | --- | --- | --- |
 | `api` | messages, count_tokens full payload, errors, `/stop`, optimizations | configured provider only for streaming messages |
-| `auth` | x-api-key, bearer, anthropic-auth-token, invalid/missing auth | none; test sets an isolated token |
-| `cli` | `cdx-init`, server entrypoint, Claude CLI adaptive thinking, session cleanup | Claude CLI binary and provider only for real CLI |
+| `auth` | canonical bearer auth, conflicting legacy headers, invalid/missing auth | none; test sets an isolated token |
+| `cli` | server entrypoint, Claude CLI adaptive thinking, session cleanup | Claude CLI binary and provider only for real CLI |
 | `clients` | VS Code and JetBrains protocol payloads | configured provider |
 | `config` | env precedence, removed-env migration, proxy/timeouts | none |
-| `extensibility` | provider registry and platform factory construction | none |
-| `messaging` | fake Discord/Telegram full flow, commands, trees, persistence, voice cancel | none |
+| `extensibility` | provider runtime and platform factory construction | none |
+| `messaging` | fake Discord/Telegram full flow, literal clear scopes, trees, persistence, voice cancel | none |
 | `providers` | multi-turn text, adaptive thinking history, tools, disconnect, errors | configured providers, optional `CODEX_PROXY_SMOKE_MODEL_*` |
 | `tools` | forced tool_use and tool_result continuation | tool-capable configured provider |
 | `rate_limit` | disconnect cleanup and follow-up request | configured provider |
-| `lmstudio` | local `/models` plus native `/messages` through proxy | running LM Studio server |
-| `llamacpp` | local `/models` plus native `/messages` through proxy | running llama-server |
-| `ollama` | local `/api/tags` plus native Anthropic messages through proxy | running Ollama server |
+| `lmstudio` | local `/models` plus OpenAI-chat-backed Messages through proxy | running LM Studio server |
+| `llamacpp` | local `/models` plus OpenAI-chat-backed Messages through proxy | running llama-server |
+| `ollama` | local `/v1/models` plus OpenAI-chat-backed Messages through proxy | running Ollama server |
 
 Heavy/side-effectful targets are opt-in:
 
@@ -102,7 +102,7 @@ uv run pytest smoke/product -n 0 -s --tb=short
 ```powershell
 $env:CODEX_PROXY_LIVE_SMOKE = "1"
 $env:CODEX_PROXY_SMOKE_TARGETS = "nvidia_nim_cli"
-$env:CODEX_PROXY_SMOKE_NIM_MODELS = "z-ai/glm-5.1,moonshotai/kimi-k2.6,minimaxai/minimax-m2.7,nvidia/nemotron-3-super-120b-a12b,deepseek-ai/deepseek-v4-pro,deepseek-ai/deepseek-v4-flash"
+$env:CODEX_PROXY_SMOKE_NIM_MODELS = "z-ai/glm-5.2,moonshotai/kimi-k2.6,minimaxai/minimax-m2.7,minimaxai/minimax-m3,nvidia/nemotron-3-super-120b-a12b,deepseek-ai/deepseek-v4-pro,deepseek-ai/deepseek-v4-flash"
 uv run pytest smoke/product -n 0 -s --tb=short
 ```
 
@@ -121,21 +121,17 @@ uv run pytest smoke/product -n 0 -s --tb=short
 
 ## Environment
 
-- `CDX_ENV_FILE`: explicit dotenv path for startup/config scenarios.
+- `CODEX_PROXY_ENV_FILE`: explicit dotenv path for startup/config scenarios.
 - `CODEX_PROXY_LIVE_SMOKE=1`: enables live smoke execution.
 - `CODEX_PROXY_ALLOW_NO_PROVIDER_SMOKE=1`: permits no-provider live smoke for harness work.
 - `CODEX_PROXY_SMOKE_TARGETS`: comma-separated targets, or `all`.
 - `CODEX_PROXY_SMOKE_PROVIDER_MATRIX`: comma-separated provider prefixes to require.
-- `CODEX_PROXY_SMOKE_MODEL_NVIDIA_NIM`, `CODEX_PROXY_SMOKE_MODEL_OPEN_ROUTER`,
-  `CODEX_PROXY_SMOKE_MODEL_MISTRAL`, `CODEX_PROXY_SMOKE_MODEL_MISTRAL_CODESTRAL`,
-  `CODEX_PROXY_SMOKE_MODEL_DEEPSEEK`, `CODEX_PROXY_SMOKE_MODEL_KIMI`,
-  `CODEX_PROXY_SMOKE_MODEL_WAFER`, `CODEX_PROXY_SMOKE_MODEL_OPENCODE`, `CODEX_PROXY_SMOKE_MODEL_OPENCODE_GO`,
-  `CODEX_PROXY_SMOKE_MODEL_ZAI`, `CODEX_PROXY_SMOKE_MODEL_FIREWORKS`,   `CODEX_PROXY_SMOKE_MODEL_GEMINI`,
-  `CODEX_PROXY_SMOKE_MODEL_GROQ`, `CODEX_PROXY_SMOKE_MODEL_CEREBRAS`,
-  `CODEX_PROXY_SMOKE_MODEL_LMSTUDIO`,
-  `CODEX_PROXY_SMOKE_MODEL_LLAMACPP`, `CODEX_PROXY_SMOKE_MODEL_OLLAMA`: optional per-provider
-  smoke model overrides. Values may include the provider prefix or just the model
-  name for that provider.
+- `CODEX_PROXY_SMOKE_MODEL_<PROVIDER>`: optional per-provider smoke model override.
+  Use the uppercase provider ID, such as `CODEX_PROXY_SMOKE_MODEL_KILO`; the complete
+  variable inventory is in [.env.example](../.env.example). Values may include
+  the provider prefix or just the model name for that provider.
+- `CODEX_PROXY_SMOKE_MODEL_MISTRAL_REASONING`: optional override for the dedicated
+  Mistral native reasoning smoke, default `mistral/mistral-medium-3-5`.
 - `CODEX_PROXY_SMOKE_NIM_MODELS`: optional comma-separated NVIDIA NIM CLI matrix models
   that replace the default characterization set.
 - `CODEX_PROXY_SMOKE_NIM_EXTRA_MODELS`: optional comma-separated NVIDIA NIM CLI matrix
@@ -155,7 +151,7 @@ uv run pytest smoke/product -n 0 -s --tb=short
 
 Run smoke the same way you run tests (`uv run pytest smoke` from the repo). Child
 processes use the **same Python interpreter** as the test runner, not nested
-`uv run`, so Windows does not try to replace `codexproxy.exe` while it is
+`uv run`, so Windows does not try to replace `cdx-server.exe` while it is
 locked.
 
 ## Failure Classes
@@ -178,5 +174,3 @@ names contain `KEY`, `TOKEN`, `SECRET`, `WEBHOOK`, or `AUTH`.
 `upstream_unavailable`, and `probe_timeout` are skips except when the user
 explicitly selected a provider in `CODEX_PROXY_SMOKE_PROVIDER_MATRIX`;
 selected-but-missing providers fail.
-
-

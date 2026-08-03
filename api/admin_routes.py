@@ -1,35 +1,30 @@
 """Local admin UI routes and APIs."""
 
-from __future__ import annotations
-
-import inspect
 import ipaddress
-import os
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from cli.process_registry import register_pid
-from config.settings import Settings
-from config.settings import get_settings as get_cached_settings
-from providers.registry import ProviderRegistry
-
-from .admin_config import (
-    FIELD_BY_KEY,
-    load_config_response,
-    provider_config_status,
-    validate_updates,
-    write_managed_env,
+from application.connected_accounts import (
+    ConnectedAccountLoginMode,
 )
-from .admin_urls import local_admin_url, local_proxy_root_url
+from application.model_metadata import ProviderModelRefreshResult
+from config.admin.manifest import FIELD_BY_KEY
+from config.admin.persistence import validate_updates
+from config.admin.values import load_config_response
+from config.model_refs import configured_chat_model_refs
+from config.provider_catalog import (
+    PROVIDER_CATALOG,
+    ProviderAuthKind,
+)
+
+from .dependencies import get_services
+from .ports import ApiServices
 
 router = APIRouter()
 
@@ -45,6 +40,12 @@ class AdminConfigPayload(BaseModel):
     """Partial config update submitted by the admin UI."""
 
     values: dict[str, Any] = Field(default_factory=dict)
+
+
+class ConnectedAccountLoginPayload(BaseModel):
+    """Interactive connected-account login selection."""
+
+    mode: ConnectedAccountLoginMode = ConnectedAccountLoginMode.BROWSER
 
 
 def _is_loopback_host(host: str | None) -> bool:
@@ -116,50 +117,23 @@ async def apply_admin_config(
     payload: AdminConfigPayload,
     request: Request,
     background_tasks: BackgroundTasks,
+    services: ApiServices = Depends(get_services),
 ):
     require_loopback_admin(request)
-    result = write_managed_env(_filtered_values(payload.values))
-    if not result["applied"]:
-        return result
-
-    get_cached_settings.cache_clear()
-    restart = _restart_metadata(result["pending_fields"], request)
-    result["restart"] = restart
-    if restart["required"] and restart["automatic"]:
-        callback = request.app.state.admin_restart_callback
-        background_tasks.add_task(_invoke_admin_restart_callback, callback)
-        request.app.state.admin_pending_fields = []
-        return result
-
-    old_registry = getattr(request.app.state, "provider_registry", None)
-    if isinstance(old_registry, ProviderRegistry):
-        await old_registry.cleanup()
-    request.app.state.provider_registry = ProviderRegistry()
-    request.app.state.admin_pending_fields = result["pending_fields"]
+    result = await services.admin.apply_admin_config(_filtered_values(payload.values))
+    restart = result.get("restart")
+    if isinstance(restart, dict) and restart.get("automatic"):
+        background_tasks.add_task(services.admin.request_restart)
     return result
 
 
 @router.get("/admin/api/status")
-async def admin_status(request: Request):
+async def admin_status(
+    request: Request,
+    services: ApiServices = Depends(get_services),
+):
     require_loopback_admin(request)
-    settings = get_cached_settings()
-    registry = getattr(request.app.state, "provider_registry", None)
-    cached_models: dict[str, list[str]] = {}
-    if isinstance(registry, ProviderRegistry):
-        cached_models = {
-            provider_id: sorted(model_ids)
-            for provider_id, model_ids in registry.cached_model_ids().items()
-        }
-    return {
-        "status": "running",
-        "host": settings.host,
-        "port": settings.port,
-        "model": settings.model,
-        "provider": settings.provider_type,
-        "pending_fields": getattr(request.app.state, "admin_pending_fields", []),
-        "provider_status": provider_config_status(),
-        "cached_models": cached_models,
-    }
+    return services.admin.admin_status()
 
 
 @router.get("/admin/api/providers/local-status")
@@ -175,187 +149,114 @@ async def local_provider_status(request: Request):
 
 
 @router.post("/admin/api/providers/{provider_id}/test")
-async def test_provider(provider_id: str, request: Request):
+async def test_provider(
+    provider_id: str,
+    request: Request,
+    services: ApiServices = Depends(get_services),
+):
     require_loopback_admin(request)
-    settings = get_cached_settings()
-    registry = getattr(request.app.state, "provider_registry", None)
-    if not isinstance(registry, ProviderRegistry):
-        registry = ProviderRegistry()
-        request.app.state.provider_registry = registry
+    return await services.admin.test_provider(provider_id)
+
+
+@router.get("/admin/api/providers/{provider_id}/auth")
+async def connected_account_status(
+    provider_id: str,
+    request: Request,
+    services: ApiServices = Depends(get_services),
+):
+    require_loopback_admin(request)
+    _require_connected_account_provider(provider_id)
+    status = await services.admin.connected_account_status(provider_id)
+    return _no_store(status.as_dict())
+
+
+@router.post("/admin/api/providers/{provider_id}/auth/login")
+async def start_connected_account_login(
+    provider_id: str,
+    payload: ConnectedAccountLoginPayload,
+    request: Request,
+    services: ApiServices = Depends(get_services),
+):
+    require_loopback_admin(request)
+    _require_connected_account_provider(provider_id)
     try:
-        provider = registry.get(provider_id, settings)
-        infos = await provider.list_model_infos()
+        status = await services.admin.start_connected_account_login(
+            provider_id, payload.mode
+        )
     except Exception as exc:
-        return {
-            "provider_id": provider_id,
-            "ok": False,
-            "error_type": type(exc).__name__,
-        }
-    registry.cache_model_infos(provider_id, infos)
-    return {
-        "provider_id": provider_id,
-        "ok": True,
-        "models": sorted(info.model_id for info in infos),
-    }
+        raise HTTPException(
+            status_code=502,
+            detail=(f"Could not start connected-account login ({type(exc).__name__})."),
+        ) from exc
+    return _no_store(status.as_dict())
+
+
+@router.post("/admin/api/providers/{provider_id}/auth/cancel")
+async def cancel_connected_account_login(
+    provider_id: str,
+    request: Request,
+    services: ApiServices = Depends(get_services),
+):
+    require_loopback_admin(request)
+    _require_connected_account_provider(provider_id)
+    status = await services.admin.cancel_connected_account_login(provider_id)
+    return _no_store(status.as_dict())
+
+
+@router.delete("/admin/api/providers/{provider_id}/auth")
+async def disconnect_connected_account(
+    provider_id: str,
+    request: Request,
+    services: ApiServices = Depends(get_services),
+):
+    require_loopback_admin(request)
+    _require_connected_account_provider(provider_id)
+    status = await services.admin.disconnect_connected_account(provider_id)
+    return _no_store(status.as_dict())
+
+
+@router.get("/admin/api/models")
+async def models(
+    request: Request,
+    services: ApiServices = Depends(get_services),
+):
+    require_loopback_admin(request)
+    return _model_options(services)
 
 
 @router.post("/admin/api/models/refresh")
-async def refresh_models(request: Request):
+async def refresh_models(
+    request: Request,
+    services: ApiServices = Depends(get_services),
+):
     require_loopback_admin(request)
-    settings = get_cached_settings()
-    registry = getattr(request.app.state, "provider_registry", None)
-    if not isinstance(registry, ProviderRegistry):
-        registry = ProviderRegistry()
-        request.app.state.provider_registry = registry
-    await registry.refresh_model_list_cache(settings)
-    return {
-        "cached_models": {
-            provider_id: sorted(model_ids)
-            for provider_id, model_ids in registry.cached_model_ids().items()
-        }
+    result = await services.admin.refresh_models()
+    return _model_options(services, refresh_result=result)
+
+
+def _model_options(
+    services: ApiServices,
+    *,
+    refresh_result: ProviderModelRefreshResult | None = None,
+) -> dict[str, list[str]]:
+    configured = {
+        ref.model_ref
+        for ref in configured_chat_model_refs(services.requests.current_settings())
     }
-
-
-@router.get("/admin/api/codex/status")
-async def codex_status(request: Request):
-    """Return the current Codex integration state for the admin UI."""
-    require_loopback_admin(request)
-    from cli.entrypoints import (
-        _codex_config_backup_path,
-        _codex_config_path_alt,
+    discovered = {
+        info.model_id for info in services.requests.cached_prefixed_model_infos()
+    }
+    failed_provider_ids = (
+        refresh_result.failed_provider_ids if refresh_result is not None else ()
     )
-
-    config_path = _codex_config_path_alt()
-    backup_path = _codex_config_backup_path(config_path)
-    legacy_backup = config_path.with_name(f"{config_path.name}.backup_pre_cdx")
-    proxy_url = local_proxy_root_url(get_cached_settings())
     return {
-        "proxy_url": proxy_url,
-        "config_path": str(config_path),
-        "config_exists": config_path.is_file(),
-        "backup_path": str(backup_path),
-        "backup_exists": backup_path.is_file(),
-        "legacy_backup_exists": legacy_backup.is_file(),
-        "codex_cli_available": shutil.which("codex") is not None,
-        "codex_app_installed": _codex_app_install_path() is not None,
-        "codex_app_path": _codex_app_install_path(),
+        "models": sorted(configured | discovered, key=str.casefold),
+        "failed_providers": list(failed_provider_ids),
     }
-
-
-@router.post("/admin/api/codex/launch-cli")
-async def codex_launch_cli(request: Request):
-    """Configure proxy, then spawn ``codex`` interactive TUI in a new console."""
-    require_loopback_admin(request)
-    codex_path = shutil.which("codex")
-    if codex_path is None:
-        raise HTTPException(status_code=404, detail="Codex CLI not found on PATH")
-    flags = await _flags_from_launch_request(request, default_flags=())
-    try:
-        from cli.entrypoints import _configure_codex_for_api
-
-        config_info = _configure_codex_for_api(skip_preflight=True)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    env = {
-        **os.environ,
-        "OPENAI_BASE_URL": config_info["base_url"],
-        "OPENAI_API_KEY": config_info["api_key"],
-    }
-    settings = get_cached_settings()
-    proxy_url = local_proxy_root_url(settings)
-    try:
-        process = _spawn_with_new_console(
-            [codex_path, *flags],
-            env=env,
-        )
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to launch: {exc}") from exc
-    if process.pid:
-        register_pid(process.pid)
-    return {
-        "pid": process.pid,
-        "command": [codex_path, *flags],
-        "proxy_url": proxy_url,
-    }
-
-
-@router.post("/admin/api/codex/launch-app")
-async def codex_launch_app(request: Request):
-    """Configure proxy in config.toml, then spawn the Codex Desktop App."""
-    require_loopback_admin(request)
-    app_path = _codex_app_install_path()
-    if app_path is None:
-        raise HTTPException(status_code=404, detail="Codex Desktop App not installed")
-    try:
-        from cli.entrypoints import _configure_codex_for_api
-
-        _configure_codex_for_api(skip_preflight=True)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    settings = get_cached_settings()
-    proxy_url = local_proxy_root_url(settings)
-    try:
-        if "WindowsApps" in app_path:
-            aumid = _store_codex_aumid()
-            if aumid is None:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Store app detected but AUMID not found",
-                )
-            process = _spawn_detached(["explorer.exe", f"shell:AppsFolder\\{aumid}"])
-        else:
-            process = _spawn_detached([str(app_path)])
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to launch: {exc}") from exc
-    if process.pid:
-        register_pid(process.pid)
-    return {
-        "pid": process.pid,
-        "command": [str(app_path)],
-        "proxy_url": proxy_url,
-    }
-
-
-@router.post("/admin/api/codex/restore-default")
-async def codex_restore_default(request: Request):
-    """Restore the user's pre-CodexProxy ``config.toml`` and ``auth.json``."""
-    require_loopback_admin(request)
-    from cli.entrypoints import restore_codex_defaults
-
-    result = restore_codex_defaults()
-    return result
 
 
 def _filtered_values(values: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if key in FIELD_BY_KEY}
-
-
-async def _invoke_admin_restart_callback(callback: Any) -> None:
-    result = callback()
-    if inspect.isawaitable(result):
-        await result
-
-
-def _restart_metadata(fields: list[str], request: Request) -> dict[str, Any]:
-    callback = getattr(request.app.state, "admin_restart_callback", None)
-    automatic = bool(fields and callable(callback))
-    return {
-        "required": bool(fields),
-        "automatic": automatic,
-        "admin_url": _next_admin_url() if automatic else None,
-        "fields": fields,
-    }
-
-
-def _next_admin_url() -> str:
-    fields = {
-        field["key"]: field["value"] for field in load_config_response()["fields"]
-    }
-    settings = Settings.model_construct(
-        host=fields.get("HOST") or "0.0.0.0",
-        port=int(fields.get("PORT") or 8083),
-    )
-    return local_admin_url(settings)
 
 
 def _local_provider_url(provider_id: str, values: dict[str, str]) -> str:
@@ -366,194 +267,6 @@ def _local_provider_url(provider_id: str, values: dict[str, str]) -> str:
     if provider_id == "ollama":
         return values.get("OLLAMA_BASE_URL", "")
     return ""
-
-
-def _codex_app_install_path() -> str | None:
-    """Return the path to the Codex Desktop App on Windows, or None."""
-    if sys.platform != "win32":
-        return shutil.which("codex-desktop") or shutil.which("Codex")
-    candidates = [
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Codex" / "Codex.exe",
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Codex" / "Codex.exe",
-    ]
-    programs = os.environ.get("PROGRAMFILES", r"C:\Program Files")
-    candidates.append(Path(programs) / "Codex" / "Codex.exe")
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate)
-    store_path = _find_store_codex_exe()
-    if store_path is not None:
-        return store_path
-    fallback = shutil.which("Codex")
-    if fallback and fallback.lower().endswith(".exe"):
-        return fallback
-    return None
-
-
-_store_codex_cache: dict[str, str | None] = {}
-
-
-def _find_store_codex_exe() -> str | None:
-    """Detect Windows Store (AppX) Codex installation and return the .exe path."""
-    cached = _store_codex_cache.get("exe")
-    if cached is not None:
-        return cached if cached else None
-    try:
-        result = subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                "$pkg = Get-AppxPackage -Name '*Codex*';if ($pkg) { $pkg.InstallLocation }",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        install = result.stdout.strip()
-        if install:
-            exe = Path(install) / "app" / "Codex.exe"
-            if exe.is_file():
-                path = str(exe)
-                _store_codex_cache["exe"] = path
-                return path
-    except Exception:
-        pass
-    _store_codex_cache["exe"] = ""
-    return None
-
-
-def _store_codex_aumid() -> str | None:
-    """Return the AUMID for the Windows Store Codex app, or None."""
-    cached = _store_codex_cache.get("aumid")
-    if cached is not None:
-        return cached if cached else None
-    try:
-        result = subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                "$pkg = Get-AppxPackage -Name '*Codex*';if ($pkg) { $pkg.PackageFamilyName }",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        family = result.stdout.strip()
-        if family:
-            aumid = f"{family}!App"
-            _store_codex_cache["aumid"] = aumid
-            return aumid
-    except Exception:
-        pass
-    _store_codex_cache["aumid"] = ""
-    return None
-
-
-_LINUX_TERMINAL_CANDIDATES = [
-    "x-terminal-emulator",
-    "gnome-terminal",
-    "xterm",
-    "konsole",
-    "xfce4-terminal",
-    "lxterminal",
-    "mate-terminal",
-    "alacritty",
-    "kitty",
-    "terminator",
-    "tilix",
-    "urxvt",
-    "rxvt",
-]
-
-
-def _find_terminal_emulator() -> str | None:
-    """Find a usable terminal emulator on Linux, or None."""
-    for candidate in _LINUX_TERMINAL_CANDIDATES:
-        path = shutil.which(candidate)
-        if path:
-            return path
-    return None
-
-
-def _spawn_with_new_console(
-    args: list[str], env: dict[str, str] | None = None
-) -> subprocess.Popen[bytes]:
-    """Spawn a console application in a new console window (cross-platform)."""
-    if sys.platform == "win32":
-        creationflags = (
-            subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NEW_CONSOLE
-        )
-        return subprocess.Popen(
-            args,
-            close_fds=True,
-            creationflags=creationflags,
-            env=env,
-        )
-
-    terminal = _find_terminal_emulator()
-    if terminal is None:
-        raise OSError("No terminal emulator found. Launch the CLI manually: cdx-codex")
-    terminal_name = os.path.basename(terminal)
-    if terminal_name == "gnome-terminal":
-        full_args = [terminal, "--", *args]
-    elif terminal_name == "konsole":
-        full_args = [terminal, "--hold", "-e", *args]
-    else:
-        full_args = [terminal, "-e", *args]
-    return subprocess.Popen(
-        full_args,
-        close_fds=True,
-        start_new_session=True,
-        env=env,
-    )
-
-
-def _spawn_detached(
-    args: list[str], env: dict[str, str] | None = None
-) -> subprocess.Popen[bytes]:
-    """Spawn a process detached from the current console (Windows-aware)."""
-    if sys.platform == "win32":
-        creationflags = (
-            subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_BREAKAWAY_FROM_JOB
-        )
-        return subprocess.Popen(
-            args,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            close_fds=True,
-            creationflags=creationflags,
-            env=env,
-        )
-    return subprocess.Popen(
-        args,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        start_new_session=True,
-        env=env,
-    )
-
-
-async def _flags_from_launch_request(
-    request: Request, *, default_flags: tuple[str, ...]
-) -> list[str]:
-    """Extract optional flags from the JSON body, falling back to ``default_flags``."""
-    try:
-        body = await request.json()
-    except Exception:
-        return list(default_flags)
-    if not isinstance(body, dict):
-        return list(default_flags)
-    flags = body.get("flags")
-    if isinstance(flags, list) and all(isinstance(flag, str) for flag in flags):
-        return flags
-    return list(default_flags)
 
 
 async def _check_local_provider(
@@ -588,3 +301,19 @@ async def _check_local_provider(
             "base_url": base_url,
             "error_type": type(exc).__name__,
         }
+
+
+def _require_connected_account_provider(provider_id: str) -> None:
+    descriptor = PROVIDER_CATALOG.get(provider_id)
+    if (
+        descriptor is None
+        or descriptor.auth_kind is not ProviderAuthKind.CONNECTED_ACCOUNT
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Provider does not support connected-account login.",
+        )
+
+
+def _no_store(payload: Any) -> JSONResponse:
+    return JSONResponse(payload, headers={"Cache-Control": "no-store"})

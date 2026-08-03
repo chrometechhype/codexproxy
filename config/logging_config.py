@@ -15,6 +15,19 @@ from pathlib import Path
 from loguru import logger
 
 _configured = False
+_current_path: Path | None = None
+_current_level = "INFO"
+_current_verbose: bool | None = None
+_sink_id: int | None = None
+
+_THIRD_PARTY_LOGGERS = (
+    "httpx",
+    "httpcore",
+    "httpcore.http11",
+    "httpcore.connection",
+    "telegram",
+    "telegram.ext",
+)
 
 # Loguru ``logger.bind()`` key used by structured TRACE payloads; ``core/trace.py``
 # uses the identical string constant ``TRACE_PAYLOAD_BINDING``.
@@ -104,56 +117,80 @@ class InterceptHandler(logging.Handler):
             self._local.active = False
 
 
-def configure_logging(
-    log_file: str | Path, *, force: bool = False, verbose_third_party: bool = False
-) -> None:
-    """Configure loguru with JSON output to log_file and intercept stdlib logging.
+def _set_third_party_levels(verbose: bool) -> None:
+    level = logging.NOTSET if verbose else logging.WARNING
+    for name in _THIRD_PARTY_LOGGERS:
+        logging.getLogger(name).setLevel(level)
 
-    Idempotent: skips if already configured (e.g. hot reload).
-    Use force=True to reconfigure (e.g. in tests with a different log path).
 
-    When ``verbose_third_party`` is false, noisy HTTP and Telegram loggers are capped
-    at WARNING unless explicitly configured otherwise.
-    """
-    global _configured
-    if _configured and not force:
-        return
-    _configured = True
-
-    # Remove default loguru handler (writes to stderr)
-    logger.remove()
-
+def _add_file_sink(log_file: str | Path, level: str) -> int:
     log_path = Path(log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Truncate log file on fresh start for clean debugging
-    log_path.write_text("")
-
-    # Add file sink: JSON lines, DEBUG level, context vars at top level
-    logger.add(
-        log_file,
-        level="DEBUG",
+    return logger.add(
+        log_path,
+        level=level,
         format=_serialize_with_context,
         encoding="utf-8",
         mode="a",
         rotation="50 MB",
+        retention=5,
         enqueue=True,
     )
 
-    # Intercept stdlib logging: route all root logger output to loguru
-    intercept = InterceptHandler()
-    logging.root.handlers = [intercept]
-    logging.root.setLevel(logging.DEBUG)
 
-    third_party = (
-        "httpx",
-        "httpcore",
-        "httpcore.http11",
-        "httpcore.connection",
-        "telegram",
-        "telegram.ext",
-    )
-    for name in third_party:
-        logging.getLogger(name).setLevel(
-            logging.WARNING if not verbose_third_party else logging.NOTSET
-        )
+def configure_logging(
+    log_file: str | Path,
+    *,
+    force: bool = False,
+    verbose_third_party: bool = False,
+    level: str = "INFO",
+) -> None:
+    """Configure loguru with JSON output to log_file and intercept stdlib logging.
+
+    Idempotent: skips if already configured with the same path, level, and verbosity.
+    On path or level change, replaces only the file sink without truncating.
+    On verbosity change alone, updates only the third-party logger levels.
+    Use force=True to reconfigure from scratch.
+
+    When ``verbose_third_party`` is false, noisy HTTP and Telegram loggers are
+    capped at WARNING unless explicitly configured otherwise.
+    """
+    global _configured, _current_path, _current_level, _current_verbose, _sink_id
+
+    log_path = Path(log_file).expanduser().resolve()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if (
+        _configured
+        and not force
+        and log_path == _current_path
+        and level == _current_level
+        and verbose_third_party == _current_verbose
+    ):
+        return
+
+    if not _configured or force:
+        _configured = True
+
+        logger.remove()
+
+        log_path.write_text("")
+
+        _sink_id = _add_file_sink(log_path, level)
+
+        intercept = InterceptHandler()
+        logging.root.handlers = [intercept]
+        logging.root.setLevel(logging.DEBUG)
+
+        _set_third_party_levels(verbose_third_party)
+    elif log_path != _current_path or level != _current_level:
+        if _sink_id is not None:
+            logger.remove(_sink_id)
+        _sink_id = _add_file_sink(log_path, level)
+        if verbose_third_party != _current_verbose:
+            _set_third_party_levels(verbose_third_party)
+    else:
+        _set_third_party_levels(verbose_third_party)
+
+    _current_path = log_path
+    _current_level = level
+    _current_verbose = verbose_third_party

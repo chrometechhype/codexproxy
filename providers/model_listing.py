@@ -1,41 +1,38 @@
 """Provider model-list response parsing helpers."""
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
 from typing import Any
 
-from providers.exceptions import ModelListResponseError
+from application.model_metadata import (
+    ProviderModelInfo as _ProviderModelInfo,
+)
 
 
-@dataclass(frozen=True, slots=True)
-class ProviderModelInfo:
-    """Internal provider model metadata used for gateway model-list shaping."""
+class ModelListResponseError(ValueError):
+    """A provider model-list response cannot be parsed safely."""
 
-    model_id: str
-    supports_thinking: bool | None = None
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 def model_infos_from_ids(
     model_ids: Iterable[str], *, supports_thinking: bool | None = None
-) -> frozenset[ProviderModelInfo]:
+) -> frozenset[_ProviderModelInfo]:
     """Build unknown-capability model metadata from plain provider model ids."""
     return frozenset(
-        ProviderModelInfo(model_id=model_id, supports_thinking=supports_thinking)
+        _ProviderModelInfo(model_id=model_id, supports_thinking=supports_thinking)
         for model_id in model_ids
         if model_id.strip()
     )
 
 
-def extract_openai_model_ids(payload: Any, *, provider_name: str) -> frozenset[str]:
-    """Extract model ids from an OpenAI-compatible ``/models`` response."""
-    data = _field(payload, "data")
-    if not _is_sequence(data):
-        raise _malformed(provider_name, "expected top-level data array")
-
+def extract_openai_model_infos(
+    payload: Any, *, provider_name: str
+) -> frozenset[_ProviderModelInfo]:
+    """Extract model metadata from an OpenAI-compatible ``/models`` response."""
     model_ids: set[str] = set()
-    for item in data:
+    for item in model_list_items(payload, provider_name=provider_name):
         model_id = _field(item, "id")
         if not isinstance(model_id, str) or not model_id.strip():
             raise _malformed(provider_name, "expected every data item to include id")
@@ -43,30 +40,16 @@ def extract_openai_model_ids(payload: Any, *, provider_name: str) -> frozenset[s
 
     if not model_ids:
         raise _malformed(provider_name, "response did not include any model ids")
-    return frozenset(model_ids)
+    return model_infos_from_ids(model_ids)
 
 
-def extract_openrouter_tool_model_ids(
+def extract_tool_capable_model_infos(
     payload: Any, *, provider_name: str
-) -> frozenset[str]:
-    """Extract OpenRouter model ids that advertise tool-use support."""
-    return frozenset(
-        info.model_id
-        for info in extract_openrouter_tool_model_infos(
-            payload, provider_name=provider_name
-        )
-    )
+) -> frozenset[_ProviderModelInfo]:
+    """Extract tool-capable models with ``supported_parameters`` metadata."""
+    data = model_list_items(payload, provider_name=provider_name)
 
-
-def extract_openrouter_tool_model_infos(
-    payload: Any, *, provider_name: str
-) -> frozenset[ProviderModelInfo]:
-    """Extract OpenRouter tool-capable model ids with thinking capability metadata."""
-    data = _field(payload, "data")
-    if not _is_sequence(data):
-        raise _malformed(provider_name, "expected top-level data array")
-
-    model_infos: set[ProviderModelInfo] = set()
+    model_infos: set[_ProviderModelInfo] = set()
     for item in data:
         model_id = _field(item, "id")
         if not isinstance(model_id, str) or not model_id.strip():
@@ -81,7 +64,7 @@ def extract_openrouter_tool_model_infos(
         if supported_parameter_names.isdisjoint({"tools", "tool_choice"}):
             continue
         model_infos.add(
-            ProviderModelInfo(
+            _ProviderModelInfo(
                 model_id=model_id,
                 supports_thinking="reasoning" in supported_parameter_names,
             )
@@ -90,29 +73,12 @@ def extract_openrouter_tool_model_infos(
     return frozenset(model_infos)
 
 
-def extract_ollama_model_ids(payload: Any, *, provider_name: str) -> frozenset[str]:
-    """Extract model ids from Ollama's native ``/api/tags`` response."""
-    models = _field(payload, "models")
-    if not _is_sequence(models):
-        raise _malformed(provider_name, "expected top-level models array")
-
-    model_ids: set[str] = set()
-    for item in models:
-        item_ids: list[str] = []
-        for key in ("model", "name"):
-            value = _field(item, key)
-            if isinstance(value, str) and value.strip():
-                item_ids.append(value)
-        if not item_ids:
-            raise _malformed(
-                provider_name,
-                "expected every models item to include model or name",
-            )
-        model_ids.update(item_ids)
-
-    if not model_ids:
-        raise _malformed(provider_name, "response did not include any model ids")
-    return frozenset(model_ids)
+def model_list_items(payload: Any, *, provider_name: str) -> tuple[Any, ...]:
+    """Return a validated OpenAI-shaped model-list data array."""
+    data = _field(payload, "data")
+    if not _is_sequence(data):
+        raise _malformed(provider_name, "expected top-level data array")
+    return tuple(data)
 
 
 def _field(item: Any, name: str) -> Any:

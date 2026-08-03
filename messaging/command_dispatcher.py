@@ -1,11 +1,14 @@
 """Command parsing and dispatch for messaging handlers."""
 
-from __future__ import annotations
-
-from typing import Any
-
+from .command_context import MessagingCommandContext
 from .commands import handle_clear_command, handle_stats_command, handle_stop_command
 from .models import IncomingMessage
+
+_COMMAND_HANDLERS = {
+    "/clear": handle_clear_command,
+    "/stop": handle_stop_command,
+    "/stats": handle_stats_command,
+}
 
 
 def parse_command_base(text: str | None) -> str:
@@ -15,24 +18,14 @@ def parse_command_base(text: str | None) -> str:
     return cmd.split("@", 1)[0] if cmd else ""
 
 
-def message_kind_for_command(command_base: str) -> str:
-    """Return the persistence kind for an incoming message."""
-    return "command" if command_base.startswith("/") else "content"
-
-
 async def dispatch_command(
-    handler: Any,
+    context: MessagingCommandContext,
     incoming: IncomingMessage,
     command_base: str,
 ) -> bool:
     """Dispatch a known command and return whether it was handled."""
-    commands = {
-        "/clear": handle_clear_command,
-        "/stop": handle_stop_command,
-        "/stats": handle_stats_command,
-    }
-    command = commands.get(command_base)
+    command = _COMMAND_HANDLERS.get(command_base)
     if command is None:
         return False
-    await command(handler, incoming)
+    await command(context, incoming)
     return True

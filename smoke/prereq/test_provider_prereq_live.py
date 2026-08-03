@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import time
 
 import httpx
@@ -40,7 +38,13 @@ def test_mixed_provider_model_mapping_when_configured(
         pytest.skip("configure MODEL_* with at least two provider prefixes")
 
     sources = {provider_model.source for provider_model in models}
-    assert sources <= {"MODEL", "MODEL_OPUS", "MODEL_SONNET", "MODEL_HAIKU"}
+    assert sources <= {
+        "MODEL",
+        "MODEL_FABLE",
+        "MODEL_OPUS",
+        "MODEL_SONNET",
+        "MODEL_HAIKU",
+    }
     assert len(providers) >= 2
 
 
@@ -71,7 +75,8 @@ def test_configured_provider_models_stream_successfully(
     except Exception as exc:
         skip_if_upstream_unavailable_exception(exc)
         raise AssertionError(
-            f"{provider_model.source}={provider_model.full_model}: {type(exc).__name__}: {exc}"
+            f"{provider_model.source}={provider_model.full_model}: "
+            f"{type(exc).__name__}: {exc}"
         ) from exc
 
 

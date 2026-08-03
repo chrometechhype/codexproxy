@@ -9,6 +9,11 @@ import uuid
 from loguru import logger
 
 from config.settings import Settings
+from core.anthropic import (
+    MessagesRequest,
+    MessagesResponse,
+    Usage,
+)
 
 from .command_utils import extract_command_prefix, extract_filepaths_from_command
 from .detection import (
@@ -18,8 +23,6 @@ from .detection import (
     is_suggestion_mode_request,
     is_title_generation_request,
 )
-from .models.anthropic import MessagesRequest
-from .models.responses import MessagesResponse, Usage
 
 
 def _text_response(
@@ -144,11 +147,16 @@ OPTIMIZATION_HANDLERS = [
 
 
 def try_optimizations(
-    request_data: MessagesRequest, settings: Settings
+    request_data: MessagesRequest,
+    settings: Settings,
+    *,
+    response_model: str | None = None,
 ) -> MessagesResponse | None:
     """Run optimization handlers in order. Returns first match or None."""
     for handler in OPTIMIZATION_HANDLERS:
         result = handler(request_data, settings)
         if result is not None:
-            return result
+            if response_model is None:
+                return result
+            return result.model_copy(update={"model": response_model})
     return None

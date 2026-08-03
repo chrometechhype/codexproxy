@@ -4,58 +4,61 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codexproxy"
-version = "1.12.0"
-description = "Middleware between OpenAI Codex CLI (Responses API) and 17 provider backends"
+version = "4.16.5"
+description = "Use the OpenAI Codex CLI and any OpenAI Responses client through your own provider-agnostic proxy to 31 cloud and local providers"
 readme = "README.md"
 requires-python = ">=3.14.0"
 dependencies = [
-    "fastapi[standard]>=0.136.3",
-    "uvicorn>=0.48.0",
+    "fastapi[standard]>=0.139.2",
+    "uvicorn>=0.51.0",
     "httpx[socks]>=0.28.1",
     "markdown-it-py>=4.2.0",
     "pydantic>=2.13.4",
     "python-dotenv>=1.2.2",
     "tiktoken>=0.13.0",
-    "python-telegram-bot>=22.7",
+    "python-telegram-bot>=22.8",
     "discord.py>=2.7.1",
-    "pydantic-settings>=2.14.1",
-    "openai>=2.38.0",
+    "pydantic-settings>=2.14.2",
+    "openai>=2.46.0",
     "loguru>=0.7.0",
-    "aiohttp>=3.13.4",
+    "aiohttp>=3.14.1",
     "jsonschema>=4.25.0",
+    "google-auth[requests]>=2.40.0",
+    "requests[socks]>=2.32.0",
+    "pystray>=0.19.5; sys_platform == 'win32' or sys_platform == 'darwin'",
+    "Pillow>=12.0.0; sys_platform == 'win32' or sys_platform == 'darwin'",
 ]
 
 [project.scripts]
 cdx-server = "cli.entrypoints:serve"
 codexproxy = "cli.entrypoints:serve"
-cdx-delete = "cli.delete:main"
-cdx-init = "cli.entrypoints:init"
-cdx-codex = "cli.entrypoints:launch_codex"
-cdx-codex-config = "cli.entrypoints:configure_codex"
-cdx-codex-app = "cli.entrypoints:launch_codex_app"
-cdx-restore = "cli.entrypoints:restore"
+cdx-codex = "cli.launchers.codex:launch"
+cdx-claude = "cli.launchers.claude:launch"
+cdx-pi = "cli.launchers.pi:launch"
+cdx-desktop = "cli.desktop_entrypoint:launch"
 
 [project.optional-dependencies]
 voice = [
-    "grpcio>=1.80.0",
-    "grpcio-tools>=1.80.0",
+    "grpcio>=1.82.1",
+    "grpcio-tools>=1.81.1",
     "nvidia-riva-client>=2.26.0",
 ]
 voice_local = [
-    "torch>=2.12.0",
-    "transformers>=5.9.0",
-    "accelerate>=1.13.0",
+    "torch>=2.13.0",
+    "transformers>=5.14.1",
+    "accelerate>=1.14.0",
     "librosa>=0.10.0",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["api", "cli", "config", "core", "messaging", "providers"]
+packages = ["api", "application", "cli", "config", "core", "messaging", "providers", "runtime"]
 
 [tool.hatch.build.targets.wheel.force-include]
-".env.example" = "cli/env.example"
+".env.example" = "config/env.example"
+"assets" = "assets"
 
 [tool.uv]
-required-version = ">=0.11.0"
+required-version = ">=0.11.16"
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu130" }
@@ -67,11 +70,11 @@ explicit = true
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.3",
+    "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
-    "ty>=0.0.40",
-    "ruff>=0.15.15",
+    "ty>=0.0.60",
+    "ruff>=0.15.22",
     "pytest-xdist>=3.8.0",
 ]
 
@@ -99,7 +102,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["api", "cli", "config", "core", "messaging", "providers", "smoke"]
+known-first-party = ["api", "application", "cli", "config", "core", "messaging", "providers", "runtime", "smoke"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -130,5 +133,11 @@ python-version = "3.14"
 [tool.ty.analysis]
 # Optional voice_local extra: torch, transformers, librosa for local whisper transcription
 # Optional voice extra: nvidia-riva-client for nvidia_nim transcription provider
-allowed-unresolved-imports = ["torch", "transformers", "librosa", "riva.client"]
-
+allowed-unresolved-imports = [
+    "torch",
+    "transformers",
+    "librosa",
+    "riva.client",
+    "pystray",
+    "PIL",
+]

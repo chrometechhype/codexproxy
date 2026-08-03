@@ -1,7 +1,7 @@
-from __future__ import annotations
-
 import json
+import subprocess
 from pathlib import Path
+from typing import cast
 
 from config.settings import Settings
 from smoke.lib.claude_cli_matrix import (
@@ -10,9 +10,11 @@ from smoke.lib.claude_cli_matrix import (
     _subagent_probe_options,
     make_outcome,
     regression_failures,
+    run_claude_cli,
     write_matrix_report,
 )
 from smoke.lib.config import DEFAULT_TARGETS, SmokeConfig
+from smoke.lib.server import RunningServer
 
 
 def _smoke_config(tmp_path: Path) -> SmokeConfig:
@@ -38,16 +40,16 @@ def test_nvidia_nim_cli_matrix_report_shape_and_redaction(
     run = ClaudeCliRun(
         command=("claude", "-p", "redacted"),
         returncode=0,
-        stdout="CDX_NIM_BASIC secret-nim-key",
+        stdout="CODEX_PROXY_NIM_BASIC secret-nim-key",
         stderr="",
         duration_s=1.25,
     )
     outcome = make_outcome(
-        model="z-ai/glm-5.1",
-        full_model="nvidia_nim/z-ai/glm-5.1",
+        model="z-ai/glm-5.2",
+        full_model="nvidia_nim/z-ai/glm-5.2",
         source="nvidia_nim_cli_default",
         feature="basic_text",
-        marker="CDX_NIM_BASIC",
+        marker="CODEX_PROXY_NIM_BASIC",
         run=run,
         log_delta='POST /v1/messages HTTP/1.1" 200 OK secret-nim-key',
         log_path=tmp_path / "server.log",
@@ -63,7 +65,7 @@ def test_nvidia_nim_cli_matrix_report_shape_and_redaction(
 
     assert path.name.startswith("nvidia-nim-cli-matrix-test-worker-")
     assert payload["target"] == "nvidia_nim_cli"
-    assert payload["models"] == ["nvidia_nim/z-ai/glm-5.1"]
+    assert payload["models"] == ["nvidia_nim/z-ai/glm-5.2"]
     saved = payload["outcomes"][0]
     assert saved["feature"] == "basic_text"
     assert saved["classification"] == "passed"
@@ -75,6 +77,59 @@ def test_nvidia_nim_cli_matrix_report_shape_and_redaction(
     assert "secret-nim-key" not in path.read_text(encoding="utf-8")
 
 
+def test_cli_matrix_normalizes_missing_captured_output(
+    tmp_path: Path, monkeypatch
+) -> None:
+    def fake_run_captured_text(
+        command: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        return cast(
+            subprocess.CompletedProcess[str],
+            subprocess.CompletedProcess(
+                args=command,
+                returncode=0,
+                stdout=None,
+                stderr=None,
+            ),
+        )
+
+    monkeypatch.setattr(
+        "smoke.lib.claude_cli_matrix.run_captured_text",
+        fake_run_captured_text,
+    )
+    server = RunningServer(
+        base_url="http://127.0.0.1:9999",
+        port=9999,
+        log_path=tmp_path / "server.log",
+        process=cast(subprocess.Popen[bytes], object()),
+    )
+
+    run = run_claude_cli(
+        claude_bin="claude",
+        server=server,
+        config=_smoke_config(tmp_path),
+        cwd=tmp_path / "workspace",
+        prompt="hello",
+        tools="",
+    )
+    outcome = make_outcome(
+        model="z-ai/glm-5.2",
+        full_model="nvidia_nim/z-ai/glm-5.2",
+        source="nvidia_nim_cli_default",
+        feature="basic_text",
+        marker="CODEX_PROXY_NIM_BASIC",
+        run=run,
+        log_delta='POST /v1/messages HTTP/1.1" 200 OK',
+        log_path=tmp_path / "server.log",
+    )
+
+    assert run.stdout == ""
+    assert run.stderr == ""
+    assert outcome.stdout_excerpt == ""
+    assert outcome.stderr_excerpt == ""
+
+
 def test_openrouter_free_cli_matrix_report_shape_and_redaction(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -82,7 +137,7 @@ def test_openrouter_free_cli_matrix_report_shape_and_redaction(
     run = ClaudeCliRun(
         command=("claude", "-p", "redacted"),
         returncode=0,
-        stdout="CDX_OPENROUTER_FREE_BASIC secret-openrouter-key",
+        stdout="CODEX_PROXY_OPENROUTER_FREE_BASIC secret-openrouter-key",
         stderr="",
         duration_s=1.25,
     )
@@ -91,7 +146,7 @@ def test_openrouter_free_cli_matrix_report_shape_and_redaction(
         full_model="open_router/openai/gpt-oss-120b:free",
         source="openrouter_free_cli_default",
         feature="basic_text",
-        marker="CDX_OPENROUTER_FREE_BASIC",
+        marker="CODEX_PROXY_OPENROUTER_FREE_BASIC",
         run=run,
         log_delta='POST /v1/messages HTTP/1.1" 200 OK secret-openrouter-key',
         log_path=tmp_path / "server.log",
@@ -128,11 +183,11 @@ def test_nvidia_nim_cli_matrix_regression_detection(tmp_path: Path) -> None:
         duration_s=0.1,
     )
     outcome = make_outcome(
-        model="z-ai/glm-5.1",
-        full_model="nvidia_nim/z-ai/glm-5.1",
+        model="z-ai/glm-5.2",
+        full_model="nvidia_nim/z-ai/glm-5.2",
         source="nvidia_nim_cli_default",
         feature="basic_text",
-        marker="CDX_NIM_BASIC",
+        marker="CODEX_PROXY_NIM_BASIC",
         run=run,
         log_delta='POST /v1/messages HTTP/1.1" 500 Internal Server Error',
         log_path=tmp_path / "server.log",
@@ -140,7 +195,7 @@ def test_nvidia_nim_cli_matrix_regression_detection(tmp_path: Path) -> None:
 
     assert outcome.classification == "product_failure"
     assert regression_failures([outcome]) == [
-        "nvidia_nim/z-ai/glm-5.1 basic_text: product_failure"
+        "nvidia_nim/z-ai/glm-5.2 basic_text: product_failure"
     ]
 
 
@@ -155,11 +210,11 @@ def test_nvidia_nim_cli_matrix_model_feature_failures_do_not_regress(
         duration_s=0.1,
     )
     outcome = make_outcome(
-        model="z-ai/glm-5.1",
-        full_model="nvidia_nim/z-ai/glm-5.1",
+        model="z-ai/glm-5.2",
+        full_model="nvidia_nim/z-ai/glm-5.2",
         source="nvidia_nim_cli_default",
         feature="tool_use_roundtrip",
-        marker="CDX_NIM_TOOL",
+        marker="CODEX_PROXY_NIM_TOOL",
         run=run,
         log_delta='POST /v1/messages HTTP/1.1" 200 OK',
         log_path=tmp_path / "server.log",
@@ -181,13 +236,13 @@ def test_nvidia_nim_cli_raw_payload_log_counts_as_proxy_request(
         duration_s=0.1,
     )
     outcome = make_outcome(
-        model="z-ai/glm-5.1",
-        full_model="nvidia_nim/z-ai/glm-5.1",
+        model="z-ai/glm-5.2",
+        full_model="nvidia_nim/z-ai/glm-5.2",
         source="nvidia_nim_cli_default",
         feature="subagent_task",
-        marker="CDX_NIM_TASK",
+        marker="CODEX_PROXY_NIM_TASK",
         run=run,
-        log_delta="API_REQUEST: request_id=req_1 model=z-ai/glm-5.1 messages=2",
+        log_delta="API_REQUEST: request_id=req_1 model=z-ai/glm-5.2 messages=2",
         log_path=tmp_path / "server.log",
         requires_task=True,
     )
@@ -210,7 +265,7 @@ def test_cli_matrix_missing_agent_catalog_is_harness_bug(tmp_path: Path) -> None
         full_model="open_router/openai/gpt-oss-120b:free",
         source="openrouter_free_cli_default",
         feature="subagent_task",
-        marker="CDX_OPENROUTER_FREE_TASK",
+        marker="CODEX_PROXY_OPENROUTER_FREE_TASK",
         run=run,
         log_delta=(
             "API_REQUEST: request_id=req_1 model=openai/gpt-oss-120b:free "
@@ -229,7 +284,7 @@ def test_cli_matrix_missing_agent_catalog_is_harness_bug(tmp_path: Path) -> None
 def test_cli_matrix_agent_catalog_without_agent_use_is_model_feature_failure(
     tmp_path: Path,
 ) -> None:
-    marker = "CDX_OPENROUTER_FREE_TASK"
+    marker = "CODEX_PROXY_OPENROUTER_FREE_TASK"
     run = ClaudeCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
@@ -263,7 +318,7 @@ def test_cli_matrix_agent_catalog_without_agent_use_is_model_feature_failure(
 
 
 def test_cli_matrix_agent_use_result_and_marker_pass(tmp_path: Path) -> None:
-    marker = "CDX_OPENROUTER_FREE_TASK"
+    marker = "CODEX_PROXY_OPENROUTER_FREE_TASK"
     run = ClaudeCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
@@ -301,7 +356,7 @@ def test_cli_matrix_agent_use_result_and_marker_pass(tmp_path: Path) -> None:
 def test_cli_matrix_agent_prompt_text_without_tool_evidence_does_not_pass(
     tmp_path: Path,
 ) -> None:
-    marker = "CDX_OPENROUTER_FREE_TASK"
+    marker = "CODEX_PROXY_OPENROUTER_FREE_TASK"
     run = ClaudeCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
@@ -346,7 +401,7 @@ def test_cli_matrix_structured_provider_error_is_upstream_unavailable(
         full_model="open_router/poolside/laguna-m.1:free",
         source="openrouter_free_cli_default",
         feature="tool_use_roundtrip",
-        marker="CDX_OPENROUTER_FREE_TOOL",
+        marker="CODEX_PROXY_OPENROUTER_FREE_TOOL",
         run=run,
         log_delta=(
             '{"event": "api.request.received", "http_method": "POST", '
@@ -367,19 +422,19 @@ def test_nvidia_nim_cli_timeout_is_not_model_missing(
     run = ClaudeCliRun(
         command=("claude", "-p", "x"),
         returncode=None,
-        stdout='{"type":"assistant","content":[{"type":"text","text":"CDX_NIM_TOOL"}]}',
+        stdout='{"type":"assistant","content":[{"type":"text","text":"CODEX_PROXY_NIM_TOOL"}]}',
         stderr="",
         duration_s=45.0,
         timed_out=True,
     )
     outcome = make_outcome(
-        model="z-ai/glm-5.1",
-        full_model="nvidia_nim/z-ai/glm-5.1",
+        model="z-ai/glm-5.2",
+        full_model="nvidia_nim/z-ai/glm-5.2",
         source="nvidia_nim_cli_default",
         feature="tool_use_roundtrip",
-        marker="CDX_NIM_TOOL",
+        marker="CODEX_PROXY_NIM_TOOL",
         run=run,
-        log_delta="API_REQUEST: request_id=req_1 model=z-ai/glm-5.1 messages=2",
+        log_delta="API_REQUEST: request_id=req_1 model=z-ai/glm-5.2 messages=2",
         log_path=tmp_path / "server.log",
     )
 
@@ -392,19 +447,20 @@ def test_nvidia_nim_cli_success_beats_verbose_timeout_words(tmp_path: Path) -> N
     run = ClaudeCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
-        stdout="CDX_NIM_THINK",
+        stdout="CODEX_PROXY_NIM_THINK",
         stderr="",
         duration_s=0.1,
     )
     outcome = make_outcome(
-        model="z-ai/glm-5.1",
-        full_model="nvidia_nim/z-ai/glm-5.1",
+        model="z-ai/glm-5.2",
+        full_model="nvidia_nim/z-ai/glm-5.2",
         source="nvidia_nim_cli_default",
         feature="thinking",
-        marker="CDX_NIM_THINK",
+        marker="CODEX_PROXY_NIM_THINK",
         run=run,
         log_delta=(
-            "API_REQUEST: request_id=req_1 model=z-ai/glm-5.1 messages=1 read_timeout_s=300"
+            "API_REQUEST: request_id=req_1 model=z-ai/glm-5.2 messages=1 "
+            "read_timeout_s=300"
         ),
         log_path=tmp_path / "server.log",
     )
@@ -428,7 +484,7 @@ def test_cli_matrix_uuid_429_does_not_count_as_upstream_unavailable(
         full_model="open_router/openai/gpt-oss-120b:free",
         source="openrouter_free_cli_default",
         feature="subagent_task",
-        marker="CDX_OPENROUTER_FREE_TASK",
+        marker="CODEX_PROXY_OPENROUTER_FREE_TASK",
         run=run,
         log_delta="API_REQUEST: request_id=req_1 model=openai/gpt-oss-120b:free messages=2",
         log_path=tmp_path / "server.log",
@@ -453,7 +509,7 @@ def test_cli_matrix_real_http_429_counts_as_upstream_unavailable(
         full_model="open_router/openai/gpt-oss-120b:free",
         source="openrouter_free_cli_default",
         feature="subagent_task",
-        marker="CDX_OPENROUTER_FREE_TASK",
+        marker="CODEX_PROXY_OPENROUTER_FREE_TASK",
         run=run,
         log_delta=(
             "API_REQUEST: request_id=req_1 model=openai/gpt-oss-120b:free "

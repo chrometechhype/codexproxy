@@ -1,17 +1,19 @@
-"""Structured TRACE events for end-to-end request / CLI / provider logging.
+"""Structured DEBUG traces for end-to-end request / CLI / provider logging.
 
 Emitted lines are merged into JSON log rows by ``config.logging_config``.
 Conversation and Claude Code prompts are logged verbatim unless values live under
-sanitized credential keys (e.g. ``api_key``, ``authorization``).
+sanitized credential keys (e.g. ``api_key``, ``authorization``). The default
+INFO log level excludes these detailed request traces.
 """
 
-from __future__ import annotations
-
 import asyncio
-from collections.abc import AsyncIterator, Mapping
+import sys
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from typing import Any
 
 from loguru import logger
+
+from core.async_iterators import try_close_async_iterator
 
 TRACE_PAYLOAD_BINDING = "trace_payload"
 
@@ -32,7 +34,7 @@ _SECRET_VALUE_KEYS = frozenset(
 )
 
 
-def _sanitize_trace_value(obj: Any) -> Any:
+def sanitize_trace_value(obj: Any) -> Any:
     """Recursively copy JSON-like structures redacting credential-shaped keys."""
     if isinstance(obj, Mapping):
         out: dict[str, Any] = {}
@@ -40,16 +42,16 @@ def _sanitize_trace_value(obj: Any) -> Any:
             if str(k).lower() in _SECRET_VALUE_KEYS:
                 out[str(k)] = "<redacted>"
             else:
-                out[str(k)] = _sanitize_trace_value(v)
+                out[str(k)] = sanitize_trace_value(v)
         return out
     if isinstance(obj, tuple | list):
-        return [_sanitize_trace_value(x) for x in obj]
+        return [sanitize_trace_value(x) for x in obj]
     return obj
 
 
 def trace_event(*, stage: str, event: str, source: str, **fields: Any) -> None:
-    """Emit one structured TRACE row (merged into JSON by the log sink)."""
-    payload = _sanitize_trace_value(
+    """Emit one structured DEBUG trace row merged into JSON by the log sink."""
+    payload = sanitize_trace_value(
         {
             "stage": stage,
             "event": event,
@@ -57,38 +59,30 @@ def trace_event(*, stage: str, event: str, source: str, **fields: Any) -> None:
             **fields,
         },
     )
-    logger.bind(trace_payload=payload).info("TRACE {}", event)
+    logger.bind(trace_payload=payload).debug("TRACE {}", event)
 
 
-def api_messages_request_snapshot(req: Any) -> dict[str, Any]:
-    """Return a sanitized snapshot of an Anthropic ``MessagesRequest``-like body."""
-    if hasattr(req, "model_dump"):
-        data = req.model_dump(mode="python")
-    elif isinstance(req, Mapping):
-        data = dict(req)
-    else:
-        data = {}
-
-    snapshot: dict[str, Any] = {}
-    for key in (
-        "model",
-        "messages",
-        "system",
-        "tools",
-        "tool_choice",
-        "max_tokens",
-        "thinking",
-        "temperature",
-        "top_p",
-        "top_k",
-        "stop_sequences",
-        "metadata",
-        "stream",
-        "thinking_enabled",
-    ):
-        if key in data and data[key] is not None:
-            snapshot[key] = data[key]
-    return _sanitize_trace_value(snapshot)
+async def close_stream_input(
+    iterator: object,
+    *,
+    owner: str,
+    source: str,
+    preserved_error: BaseException | None,
+) -> None:
+    """Close one transform input and observe cleanup failure without raising it."""
+    close_error = await try_close_async_iterator(iterator)
+    if close_error is None:
+        return
+    trace_event(
+        stage="lifecycle",
+        event="stream.input.close_failed",
+        source=source,
+        owner=owner,
+        close_exc_type=type(close_error).__name__,
+        preserved_exc_type=(
+            type(preserved_error).__name__ if preserved_error is not None else None
+        ),
+    )
 
 
 def extract_claude_session_id_from_headers(headers: Mapping[str, str]) -> str | None:
@@ -116,7 +110,7 @@ async def traced_async_stream(
     chunk_event: str | None = None,
     chunk_interval: int = 250,
     extra: Mapping[str, Any] | None = None,
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str]:
     """Emit TRACE rows when a text stream completes, fails, cancels, or periodically."""
     common = dict(extra or {})
     count = 0
@@ -136,6 +130,8 @@ async def traced_async_stream(
                     **common,
                 )
             yield chunk
+    except GeneratorExit:
+        raise
     except asyncio.CancelledError:
         interrupted = True
         trace_event(
@@ -161,7 +157,7 @@ async def traced_async_stream(
             **common,
         )
         raise
-    except BaseException as exc:
+    except Exception as exc:
         interrupted = True
         trace_event(
             stage=stage,
@@ -174,6 +170,13 @@ async def traced_async_stream(
             **common,
         )
         raise
+    finally:
+        await close_stream_input(
+            agen,
+            owner="traced_async_stream",
+            source=source,
+            preserved_error=sys.exception(),
+        )
 
     if not interrupted:
         trace_event(
@@ -191,24 +194,4 @@ def provider_chat_body_snapshot(body: Mapping[str, Any]) -> dict[str, Any]:
     """Sanitized OpenAI-compat chat body subset for traces (conversation text verbatim)."""
     keys = ("model", "messages", "tools", "tool_choice", "temperature", "max_tokens")
     snap = {k: body[k] for k in keys if k in body and body[k] is not None}
-    return _sanitize_trace_value(snap)
-
-
-def provider_native_messages_body_snapshot(body: Mapping[str, Any]) -> dict[str, Any]:
-    """Sanitized Anthropic Messages API body subset for traces."""
-    keys = (
-        "model",
-        "messages",
-        "system",
-        "tools",
-        "tool_choice",
-        "max_tokens",
-        "thinking",
-        "metadata",
-        "temperature",
-        "top_p",
-        "top_k",
-        "stop_sequences",
-    )
-    snap = {k: body[k] for k in keys if k in body and body[k] is not None}
-    return _sanitize_trace_value(snap)
+    return sanitize_trace_value(snap)

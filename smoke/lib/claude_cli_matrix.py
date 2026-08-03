@@ -1,7 +1,5 @@
 """Claude Code CLI characterization helpers for provider smoke matrices."""
 
-from __future__ import annotations
-
 import json
 import os
 import re
@@ -12,6 +10,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from cli.claude_env import build_claude_proxy_env
+from smoke.lib.child_process import run_captured_text
 from smoke.lib.config import ProviderModel, SmokeConfig, redacted
 from smoke.lib.server import RunningServer
 
@@ -48,7 +48,10 @@ _MISSING_ENV_MARKERS = (
     "permission denied",
 )
 _EMPTY_MCP_CONFIG = '{"mcpServers":{}}'
-_SUBAGENT_SYSTEM_PROMPT = "You are a deterministic smoke-test coordinator. Use Agent when asked to use a subagent."
+_SUBAGENT_SYSTEM_PROMPT = (
+    "You are a deterministic smoke-test coordinator. Use Agent when asked to "
+    "use a subagent."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,26 +118,21 @@ def run_claude_cli(
         )
     )
 
-    env = os.environ.copy()
-    env["ANTHROPIC_BASE_URL"] = server.base_url
-    env["ANTHROPIC_API_URL"] = f"{server.base_url}/v1"
-    env.pop("ANTHROPIC_API_KEY", None)
-    if config.settings.anthropic_auth_token:
-        env["ANTHROPIC_AUTH_TOKEN"] = config.settings.anthropic_auth_token
-    else:
-        env.pop("ANTHROPIC_AUTH_TOKEN", None)
+    env = build_claude_proxy_env(
+        proxy_root_url=server.base_url,
+        auth_token=config.settings.anthropic_auth_token,
+        base_env=os.environ,
+    )
     env["TERM"] = "dumb"
     env["NO_COLOR"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
 
     started = time.monotonic()
     try:
-        result = subprocess.run(
+        result = run_captured_text(
             cmd,
             cwd=cwd,
             env=env,
-            capture_output=True,
-            text=True,
             timeout=config.timeout_s,
             check=False,
         )
@@ -151,8 +149,8 @@ def run_claude_cli(
     return ClaudeCliRun(
         command=tuple(cmd),
         returncode=result.returncode,
-        stdout=result.stdout,
-        stderr=result.stderr,
+        stdout=_coerce_timeout_text(result.stdout),
+        stderr=_coerce_timeout_text(result.stderr),
         duration_s=time.monotonic() - started,
     )
 
@@ -535,7 +533,8 @@ def _subagent_task(
             "smoke_reader": {
                 "description": "Reads one requested file and returns its token.",
                 "prompt": (
-                    "Read the requested file with Read and return only the token inside it."
+                    "Read the requested file with Read and return only the token "
+                    "inside it."
                 ),
                 "tools": ["Read"],
                 "permissionMode": "bypassPermissions",
@@ -766,10 +765,12 @@ def _request_count(log_delta: str) -> int:
 
 
 def _marker(scope: str, prefix: str) -> str:
-    return f"CDX_{scope}_{prefix}_{uuid.uuid4().hex[:8].upper()}"
+    return f"CODEX_PROXY_{scope}_{prefix}_{uuid.uuid4().hex[:8].upper()}"
 
 
-def _excerpt(value: str, *, max_chars: int = 2400) -> str:
+def _excerpt(value: str | None, *, max_chars: int = 2400) -> str:
+    if value is None:
+        value = ""
     if len(value) <= max_chars:
         return redacted(value)
     return redacted(value[-max_chars:])

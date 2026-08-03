@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 import httpx
@@ -37,21 +35,30 @@ def test_local_provider_openai_models_returns_first_id(monkeypatch) -> None:
     assert calls == [("http://127.0.0.1:1234/v1/models", 1.5)]
 
 
-def test_local_provider_ollama_tags_returns_first_name(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("provider", "port", "model_id"),
+    [
+        ("llamacpp", 8080, "local-model"),
+        ("ollama", 11434, "llama3.1"),
+    ],
+)
+def test_local_provider_root_url_targets_openai_v1_models(
+    monkeypatch, provider: str, port: int, model_id: str
+) -> None:
     def fake_get(url: str, *, timeout: float) -> FakeResponse:
-        assert url == "http://127.0.0.1:11434/api/tags"
+        assert url == f"http://127.0.0.1:{port}/v1/models"
         assert timeout == 1.5
-        return FakeResponse(200, {"models": [{"name": "llama3.1"}]})
+        return FakeResponse(200, {"data": [{"id": model_id}]})
 
     monkeypatch.setattr("smoke.lib.local_providers.httpx.get", fake_get)
 
     assert (
         first_local_provider_model_id(
-            "ollama",
-            "http://127.0.0.1:11434",
+            provider,
+            f"http://127.0.0.1:{port}",
             timeout_s=45,
         )
-        == "llama3.1"
+        == model_id
     )
 
 

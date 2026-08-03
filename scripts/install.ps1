@@ -11,18 +11,36 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
 
-$RepoGitUrl = "git+https://github.com/chrometechhype/codexproxy.git"
-$PythonVersion = "3.14.0"
-$MinUvVersion = "0.11.0"
+$RepoArchiveUrl = "https://github.com/Alishahryar1/codexproxy/archive/refs/heads/main.zip"
+# Windows on ARM emulates x64, whose Python package ecosystem has broader wheel support.
+$PythonRequest = "cpython-3.14.0-windows-x86_64-none"
+$MinUvVersion = "0.11.16"
+$ClaudeInstallUrl = "https://claude.ai/install.ps1"
+$CodexInstallUrl = "https://chatgpt.com/codex/install.ps1"
+$PiInstallUrl = "https://pi.dev/install.ps1"
 $UvInstallUrl = "https://astral.sh/uv/install.ps1"
-$PackageName = "codexproxy"
+$script:InstallClaudeCode = $true
+$script:InstallCodex = $true
+$script:InstallPi = $true
+$script:PiAvailable = $false
+$FccCommands = @(
+    # Include retired entry points so updates reject older CodexProxy processes before replacement.
+    "cdx-desktop",
+    "cdx-server",
+    "cdx-claude",
+    "cdx-codex",
+    "cdx-pi",
+    "cdx-init",
+    "codexproxy"
+)
 
 function Show-Usage {
     @"
 Usage: install.ps1 [options]
 
-Installs Codex CLI if missing, installs or updates uv, Python 3.14.0, and CodexProxy.
+Installs or updates CodexProxy and lets you choose which coding agents to install or verify.
 
 Options:
   -VoiceNim              Install NVIDIA NIM voice transcription support.
@@ -41,37 +59,135 @@ function Write-Step {
     Write-Host "==> $Message"
 }
 
+function Test-InteractiveInstaller {
+    return (-not [Console]::IsInputRedirected) -and (-not [Console]::IsOutputRedirected)
+}
+
+function Read-YesNo {
+    param([string] $Prompt)
+
+    while ($true) {
+        $answer = ([string] (Read-Host "$Prompt [Y/n]")).Trim().ToLowerInvariant()
+        if ($answer -in @("", "y", "yes")) {
+            return $true
+        }
+        if ($answer -in @("n", "no")) {
+            return $false
+        }
+        Write-Host "Please answer Y or N."
+    }
+}
+
+function Select-CodingAgents {
+    while ($true) {
+        $script:InstallClaudeCode = Read-YesNo "Install or verify Claude Code for cdx-claude?"
+        $script:InstallCodex = Read-YesNo "Install or verify Codex for cdx-codex?"
+        $script:InstallPi = Read-YesNo "Install or verify Pi for cdx-pi?"
+
+        if ($script:InstallClaudeCode -or $script:InstallCodex -or $script:InstallPi) {
+            return
+        }
+        Write-Host "Select at least one coding agent."
+        Write-Host ""
+    }
+}
+
 function Format-Argument {
     param([string] $Value)
 
-    if ($Value -match '^[A-Za-z0-9_./:@%+=,\[\]-]+$') {
+    if ($Value -match '^[A-Za-z0-9_./:@%+=,\[\]\\-]+$') {
         return $Value
     }
 
     return "'" + ($Value -replace "'", "''") + "'"
 }
 
-function Invoke-InstallCommand {
+function Format-Command {
     param(
         [string] $FilePath,
         [string[]] $Arguments = @()
     )
 
     $parts = @($FilePath) + $Arguments
-    $commandText = ($parts | ForEach-Object { Format-Argument ([string] $_) }) -join " "
-    Write-Host "+ $commandText"
+    return ($parts | ForEach-Object { Format-Argument ([string] $_) }) -join " "
+}
 
-    if (-not $DryRun) {
-        & $FilePath @Arguments
+function Invoke-NativeCommand {
+    param(
+        [string] $FilePath,
+        [string[]] $Arguments = @()
+    )
+
+    $commandText = Format-Command -FilePath $FilePath -Arguments $Arguments
+    Write-Host "+ $commandText"
+    if ($DryRun) {
+        return
+    }
+
+    $global:LASTEXITCODE = 0
+    & $FilePath @Arguments
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "Command failed with exit code ${exitCode}: $commandText"
     }
 }
 
-function Invoke-UvInstaller {
-    Write-Host "+ irm $UvInstallUrl | iex"
+function Invoke-Utf8NativeCapture {
+    param(
+        [string] $FilePath,
+        [string[]] $Arguments = @()
+    )
 
-    if (-not $DryRun) {
-        Invoke-RestMethod $UvInstallUrl | Invoke-Expression
+    $commandText = Format-Command -FilePath $FilePath -Arguments $Arguments
+    Write-Host "+ $commandText"
+    $originalOutputEncoding = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+        $global:LASTEXITCODE = 0
+        $output = & $FilePath @Arguments
+        $exitCode = $LASTEXITCODE
     }
+    finally {
+        [Console]::OutputEncoding = $originalOutputEncoding
+    }
+    if ($exitCode -ne 0) {
+        throw "Command failed with exit code ${exitCode}: $commandText"
+    }
+
+    return ($output | Out-String).Trim()
+}
+
+function Get-ApplicationCommand {
+    param([string] $Name)
+
+    $commands = @(Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue)
+    if ($commands.Count -eq 0) {
+        return $null
+    }
+
+    return $commands[0]
+}
+
+function Get-PowerShellExecutable {
+    param([string] $PowerShellHome = $PSHOME)
+
+    $executableName = if ($PSVersionTable.PSEdition -eq "Core") {
+        "pwsh.exe"
+    }
+    else {
+        "powershell.exe"
+    }
+    $bundledExecutable = Join-Path $PowerShellHome $executableName
+    if (Test-Path -LiteralPath $bundledExecutable -PathType Leaf) {
+        return $bundledExecutable
+    }
+
+    $pathCommand = Get-ApplicationCommand ([IO.Path]::GetFileNameWithoutExtension($executableName))
+    if ($pathCommand) {
+        return $pathCommand.Source
+    }
+
+    throw "Unable to locate a PowerShell executable for the downloaded installer."
 }
 
 function Add-PathEntry {
@@ -92,224 +208,340 @@ function Add-PathEntry {
     }
 }
 
-function Add-UvToPath {
-    Add-PathEntry (Join-Path $HOME ".local\bin")
-    Add-PathEntry (Join-Path $HOME ".cargo\bin")
-}
-
-function Assert-CommandAvailable {
-    param([string] $Name)
-
-    if ((-not $DryRun) -and (-not (Get-Command $Name -ErrorAction SilentlyContinue))) {
-        throw "$Name is required. Install it first, then rerun this installer."
+function Add-KnownBinDirectories {
+    if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        Add-PathEntry (Join-Path $env:USERPROFILE ".local\bin")
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        Add-PathEntry (Join-Path $env:LOCALAPPDATA "Programs\OpenAI\Codex\bin")
+        Add-PathEntry (Join-Path $env:LOCALAPPDATA "pi-node\current")
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:APPDATA)) {
+        Add-PathEntry (Join-Path $env:APPDATA "npm")
     }
 }
 
-function Invoke-ProbeCommand {
-    param(
-        [string] $FilePath,
-        [string[]] $Arguments = @()
-    )
+function Add-PiBinDirectories {
+    if ($DryRun) {
+        return
+    }
 
-    $previousErrorActionPreference = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
+    Add-KnownBinDirectories
+    $npm = Get-ApplicationCommand "npm"
+    if (-not $npm) {
+        return
+    }
 
-    try {
-        $output = & $FilePath @Arguments 2>$null
-        return [pscustomobject] @{
-            ExitCode = $LASTEXITCODE
-            Output = ($output | Out-String)
+    $prefix = (& $npm.Source prefix -g 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($prefix)) {
+        $prefix = (& $npm.Source config get prefix 2>$null | Out-String).Trim()
+    }
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($prefix)) {
+        Add-PathEntry $prefix
+    }
+}
+
+function Assert-NoFccProcessesRunning {
+    $running = @()
+    foreach ($commandName in $FccCommands) {
+        $processes = @(Get-Process -Name $commandName -ErrorAction SilentlyContinue)
+        foreach ($process in $processes) {
+            $running += "$commandName (PID $($process.Id))"
         }
     }
-    catch {
-        return [pscustomobject] @{
-            ExitCode = 1
-            Output = ""
+
+    if ($running.Count -gt 0) {
+        throw "CodexProxy is still running ($($running -join ', ')). Stop those processes, then rerun the installer."
+    }
+}
+
+function Invoke-DownloadedPowerShellInstaller {
+    param(
+        [string] $Url,
+        [string] $Name,
+        [switch] $NonInteractive
+    )
+
+    if ($DryRun) {
+        Write-Host "+ irm $Url -OutFile <temporary-script>"
+        $prefix = if ($NonInteractive) { "CODEX_NON_INTERACTIVE=1 " } else { "" }
+        Write-Host "+ ${prefix}powershell -NoProfile -ExecutionPolicy Bypass -File <temporary-script>"
+        return
+    }
+
+    $temporaryScript = Join-Path ([IO.Path]::GetTempPath()) ("cdx-install-" + [guid]::NewGuid().ToString("N") + ".ps1")
+    try {
+        Write-Host "+ irm $Url -OutFile $(Format-Argument $temporaryScript)"
+        Invoke-RestMethod -Uri $Url -OutFile $temporaryScript -ErrorAction Stop
+        if ((-not (Test-Path -LiteralPath $temporaryScript)) -or ((Get-Item -LiteralPath $temporaryScript).Length -eq 0)) {
+            throw "The downloaded $Name installer was empty."
+        }
+
+        $tokens = $null
+        $parseErrors = $null
+        [System.Management.Automation.Language.Parser]::ParseFile(
+            $temporaryScript,
+            [ref] $tokens,
+            [ref] $parseErrors
+        ) | Out-Null
+        if ($parseErrors.Count -gt 0) {
+            throw "The downloaded $Name installer from '$Url' is not valid PowerShell. A network proxy or filter may have replaced it with an HTML response."
+        }
+
+        $powerShellPath = Get-PowerShellExecutable
+
+        $hadNonInteractive = Test-Path Env:CODEX_NON_INTERACTIVE
+        $previousNonInteractive = $env:CODEX_NON_INTERACTIVE
+        try {
+            if ($NonInteractive) {
+                $env:CODEX_NON_INTERACTIVE = "1"
+            }
+            Invoke-NativeCommand -FilePath $powerShellPath -Arguments @(
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                $temporaryScript
+            )
+        }
+        finally {
+            if ($hadNonInteractive) {
+                $env:CODEX_NON_INTERACTIVE = $previousNonInteractive
+            }
+            else {
+                Remove-Item Env:CODEX_NON_INTERACTIVE -ErrorAction SilentlyContinue
+            }
         }
     }
     finally {
-        $ErrorActionPreference = $previousErrorActionPreference
+        Remove-Item -LiteralPath $temporaryScript -Force -ErrorAction SilentlyContinue
     }
 }
 
-function Get-InstalledUvVersion {
-    $version = ""
+function Confirm-Application {
+    param(
+        [string] $CommandName,
+        [string] $DisplayName
+    )
 
-    $selfVersionProbe = Invoke-ProbeCommand -FilePath "uv" -Arguments @("self", "version", "--short")
-    if ($selfVersionProbe.ExitCode -eq 0) {
-        $version = $selfVersionProbe.Output.Trim()
+    if ($DryRun) {
+        Write-Host "+ $CommandName --version"
+        return
     }
 
-    if ([string]::IsNullOrWhiteSpace($version)) {
-        $versionProbe = Invoke-ProbeCommand -FilePath "uv" -Arguments @("--version")
-        if (($versionProbe.ExitCode -eq 0) -and ($versionProbe.Output -match '^uv\s+([^\s]+)')) {
-            $version = $Matches[1]
+    $command = Get-ApplicationCommand $CommandName
+    if (-not $command) {
+        throw "$DisplayName was installed, but '$CommandName' is not available on PATH."
+    }
+    Invoke-NativeCommand -FilePath $command.Source -Arguments @("--version")
+}
+
+function Test-PiApplication {
+    param($Command)
+
+    try {
+        $helpOutput = (& $Command.Source --help 2>$null | Out-String)
+    }
+    catch {
+        return $false
+    }
+    return (
+        $LASTEXITCODE -eq 0 -and
+        $helpOutput.Contains("--extension") -and
+        $helpOutput.Contains("--models")
+    )
+}
+
+function Confirm-PiApplication {
+    if ($DryRun) {
+        Write-Host "+ pi --help (verify --extension and --models support)"
+        Write-Host "+ pi --version"
+        return
+    }
+
+    $command = Get-ApplicationCommand "pi"
+    if (-not $command) {
+        throw "Pi was installed, but 'pi' is not available on PATH."
+    }
+    if (-not (Test-PiApplication $command)) {
+        throw "The 'pi' command at '$($command.Source)' is not a compatible Pi Coding Agent."
+    }
+    Invoke-NativeCommand -FilePath $command.Source -Arguments @("--version")
+}
+
+function Ensure-ClaudeCode {
+    if (Get-ApplicationCommand "claude") {
+        Write-Host "Claude Code already found on PATH; verifying it."
+    }
+    else {
+        Invoke-DownloadedPowerShellInstaller -Url $ClaudeInstallUrl -Name "Claude Code"
+        Add-KnownBinDirectories
+    }
+
+    Confirm-Application -CommandName "claude" -DisplayName "Claude Code"
+}
+
+function Ensure-Codex {
+    if (Get-ApplicationCommand "codex") {
+        Write-Host "Codex already found on PATH; verifying it."
+    }
+    else {
+        Invoke-DownloadedPowerShellInstaller -Url $CodexInstallUrl -Name "Codex" -NonInteractive
+        Add-KnownBinDirectories
+    }
+
+    Confirm-Application -CommandName "codex" -DisplayName "Codex"
+}
+
+function Ensure-Pi {
+    $script:PiAvailable = $false
+    Add-PiBinDirectories
+    $existingPi = Get-ApplicationCommand "pi"
+    if ($existingPi -and ($DryRun -or (Test-PiApplication $existingPi))) {
+        Write-Host "Pi already found on PATH; verifying it."
+    }
+    else {
+        if ($existingPi) {
+            Write-Host "The existing 'pi' command at '$($existingPi.Source)' is not Pi Coding Agent; installing Pi."
+        }
+        Invoke-DownloadedPowerShellInstaller -Url $PiInstallUrl -Name "Pi"
+        Add-PiBinDirectories
+
+        if (-not $DryRun) {
+            $currentPi = Get-ApplicationCommand "pi"
+            $unchangedIncompatiblePi = (
+                $currentPi -and
+                $existingPi -and
+                $currentPi.Source -eq $existingPi.Source -and
+                -not (Test-PiApplication $currentPi)
+            )
+            if ((-not $currentPi) -or $unchangedIncompatiblePi) {
+                Write-Host "Pi was not installed; continuing without it."
+                return
+            }
         }
     }
 
+    Confirm-PiApplication
+    $script:PiAvailable = $true
+}
+
+function Ensure-SelectedCodingAgents {
+    if ($script:InstallClaudeCode) {
+        Write-Step "Ensuring Claude Code is installed"
+        Ensure-ClaudeCode
+    }
+
+    if ($script:InstallCodex) {
+        Write-Step "Ensuring Codex is installed"
+        Ensure-Codex
+    }
+
+    if ($script:InstallPi) {
+        Write-Step "Checking or installing Pi"
+        Ensure-Pi
+    }
+
+    if ((-not $script:InstallClaudeCode) -and (-not $script:InstallCodex) -and (-not $script:PiAvailable)) {
+        throw "No selected coding agent was installed. Re-run the installer and choose at least one."
+    }
+}
+
+function Convert-UvVersionOutput {
+    param([string] $Output)
+
+    if ([string]::IsNullOrWhiteSpace($Output)) {
+        return ""
+    }
+
+    if ($Output -match '(?m)(?:^|\s)(?:uv\s+)?(?<version>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?)\b') {
+        return $Matches["version"]
+    }
+
+    return ""
+}
+
+function Get-UvVersion {
+    param([string] $UvPath)
+
+    $output = Invoke-Utf8NativeCapture -FilePath $UvPath -Arguments @("--version")
+    $version = Convert-UvVersionOutput $output
     if ([string]::IsNullOrWhiteSpace($version)) {
-        throw "Unable to determine uv version."
+        throw "uv is present, but 'uv --version' did not return a valid version."
     }
 
     return $version
 }
 
-function Test-UvVersionAtLeast {
+function Test-SupportedUvVersion {
     param(
         [string] $Version,
         [string] $Minimum
     )
 
-    $normalizedVersion = $Version -replace '[-+].*$', ''
-    $normalizedMinimum = $Minimum -replace '[-+].*$', ''
+    $parsedVersion = Convert-UvVersionOutput $Version
+    $parsedMinimum = Convert-UvVersionOutput $Minimum
+    if ([string]::IsNullOrWhiteSpace($parsedVersion) -or [string]::IsNullOrWhiteSpace($parsedMinimum)) {
+        throw "Unable to compare uv versions."
+    }
+    if ($parsedVersion.Contains("-")) {
+        return $false
+    }
+
+    $normalizedVersion = $parsedVersion -replace '\+.*$', ''
+    $normalizedMinimum = $parsedMinimum -replace '\+.*$', ''
+
     return ([version] $normalizedVersion) -ge ([version] $normalizedMinimum)
 }
 
-function Test-UvVersionSatisfiesMinimum {
-    $version = Get-InstalledUvVersion
-    return Test-UvVersionAtLeast -Version $version -Minimum $MinUvVersion
-}
-
-function Assert-MinUvVersion {
+function Confirm-Uv {
     if ($DryRun) {
+        Write-Host "+ uv --version"
         return
     }
 
-    $version = Get-InstalledUvVersion
-    if (-not (Test-UvVersionAtLeast -Version $version -Minimum $MinUvVersion)) {
-        throw "uv $MinUvVersion or newer is required; found uv $version. Upgrade uv with its installer or package manager, then rerun this installer."
-    }
-}
-
-function Test-UvSelfUpdateSupported {
-    $probe = Invoke-ProbeCommand -FilePath "uv" -Arguments @("self", "update", "--dry-run")
-    return $probe.ExitCode -eq 0
-}
-
-function Test-UvInstalledByScoop {
-    if (-not (Get-Command scoop -ErrorAction SilentlyContinue)) {
-        return $false
-    }
-
-    $probe = Invoke-ProbeCommand -FilePath "scoop" -Arguments @("list", "uv")
-    return ($probe.ExitCode -eq 0) -and ($probe.Output -match '(^|\s)uv(\s|$)')
-}
-
-function Test-UvInstalledByWinget {
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        return $false
-    }
-
-    $probe = Invoke-ProbeCommand -FilePath "winget" -Arguments @("list", "--id", "astral-sh.uv", "-e")
-    return ($probe.ExitCode -eq 0) -and ($probe.Output -match 'astral-sh\.uv')
-}
-
-function Test-UvInstalledByPipx {
-    if (-not (Get-Command pipx -ErrorAction SilentlyContinue)) {
-        return $false
-    }
-
-    $probe = Invoke-ProbeCommand -FilePath "pipx" -Arguments @("list")
-    return ($probe.ExitCode -eq 0) -and ($probe.Output -match '(?m)\bpackage uv\b')
-}
-
-function Test-UvInstalledInActiveVirtualenv {
-    if ([string]::IsNullOrWhiteSpace($env:VIRTUAL_ENV)) {
-        return $false
-    }
-
-    $uvCommand = Get-Command uv -ErrorAction SilentlyContinue
+    $uvCommand = Get-ApplicationCommand "uv"
     if (-not $uvCommand) {
-        return $false
+        throw "uv was installed, but it is not available on PATH."
     }
 
-    $uvPath = [IO.Path]::GetFullPath($uvCommand.Source)
-    $venvPath = ([IO.Path]::GetFullPath($env:VIRTUAL_ENV)).TrimEnd(
-        [IO.Path]::DirectorySeparatorChar,
-        [IO.Path]::AltDirectorySeparatorChar
-    )
-    $nativePrefix = "$venvPath$([IO.Path]::DirectorySeparatorChar)"
-    $alternatePrefix = "$venvPath$([IO.Path]::AltDirectorySeparatorChar)"
-
-    return $uvPath.StartsWith($nativePrefix, [StringComparison]::OrdinalIgnoreCase) -or
-        $uvPath.StartsWith($alternatePrefix, [StringComparison]::OrdinalIgnoreCase)
+    $version = Get-UvVersion $uvCommand.Source
+    if (-not (Test-SupportedUvVersion -Version $version -Minimum $MinUvVersion)) {
+        throw "Stable uv $MinUvVersion or newer is required; found uv $version after installation."
+    }
+    Write-Host "Verified uv $version."
 }
 
-function Update-ExistingUv {
-    if (Test-UvSelfUpdateSupported) {
-        Invoke-InstallCommand -FilePath "uv" -Arguments @("self", "update")
+function Ensure-Uv {
+    if ($DryRun) {
+        if (Get-ApplicationCommand "uv") {
+            Write-Host "+ uv --version"
+            Write-Host "A compatible existing uv will be left unchanged; an obsolete one will be replaced by the standalone installer."
+        }
+        else {
+            Write-Host "uv is not installed; the current standalone uv would be installed."
+            Invoke-DownloadedPowerShellInstaller -Url $UvInstallUrl -Name "uv"
+            Confirm-Uv
+        }
         return
     }
 
-    if (Test-UvInstalledByScoop) {
-        Invoke-InstallCommand -FilePath "scoop" -Arguments @("update", "uv")
-        return
+    $uvCommand = Get-ApplicationCommand "uv"
+    if ($uvCommand) {
+        $version = Get-UvVersion $uvCommand.Source
+        if (Test-SupportedUvVersion -Version $version -Minimum $MinUvVersion) {
+            Write-Host "uv $version already satisfies >=$MinUvVersion; leaving it unchanged."
+            return
+        }
+        Write-Host "uv $version does not satisfy stable >=$MinUvVersion; installing the current standalone uv."
+    }
+    else {
+        Write-Host "uv is not installed; installing the current standalone uv."
     }
 
-    if (Test-UvInstalledByWinget) {
-        Invoke-InstallCommand -FilePath "winget" -Arguments @(
-            "upgrade",
-            "--id",
-            "astral-sh.uv",
-            "-e",
-            "--accept-package-agreements",
-            "--accept-source-agreements"
-        )
-        return
-    }
-
-    if (Test-UvInstalledByPipx) {
-        Invoke-InstallCommand -FilePath "pipx" -Arguments @("upgrade", "uv")
-        return
-    }
-
-    if (Test-UvInstalledInActiveVirtualenv) {
-        Invoke-InstallCommand -FilePath "python" -Arguments @("-m", "pip", "install", "--upgrade", "uv")
-        return
-    }
-
-    if (Test-UvVersionSatisfiesMinimum) {
-        Write-Host "uv is already installed and satisfies >=$MinUvVersion; skipping automatic uv update because the install source was not detected."
-        return
-    }
-
-    $version = "unknown"
-    try {
-        $version = Get-InstalledUvVersion
-    }
-    catch {
-        $version = "unknown"
-    }
-    throw "uv $MinUvVersion or newer is required; found uv $version. The existing uv install source was not detected. Upgrade uv manually with the package manager that installed it, then rerun this installer."
-}
-
-function Install-CodexIfMissing {
-    if (Get-Command codex -ErrorAction SilentlyContinue) {
-        Write-Host "Codex CLI already found on PATH; skipping install."
-        return
-    }
-
-    Assert-CommandAvailable "npm"
-    Invoke-InstallCommand -FilePath "npm" -Arguments @("install", "-g", "@openai/codex")
-}
-
-function Install-OrUpdateUv {
-    Add-UvToPath
-
-    if (Get-Command uv -ErrorAction SilentlyContinue) {
-        Update-ExistingUv
-        Assert-MinUvVersion
-        return
-    }
-
-    Invoke-UvInstaller
-    Add-UvToPath
-
-    if ((-not $DryRun) -and (-not (Get-Command uv -ErrorAction SilentlyContinue))) {
-        throw "uv was installed, but it is not available on PATH. Open a new terminal or add uv's bin directory to PATH."
-    }
-
-    Assert-MinUvVersion
+    Invoke-DownloadedPowerShellInstaller -Url $UvInstallUrl -Name "uv"
+    Add-KnownBinDirectories
+    Confirm-Uv
 }
 
 function Get-PackageSpec {
@@ -321,37 +553,197 @@ function Get-PackageSpec {
         $includeLocal = $true
     }
 
-    if ((-not [string]::IsNullOrWhiteSpace($TorchBackend)) -and (-not $includeLocal)) {
-        throw "-TorchBackend requires -VoiceLocal or -VoiceAll."
-    }
-
     if ($includeNim -and $includeLocal) {
-        return "$PackageName[voice,voice_local] @ $RepoGitUrl"
+        return "codexproxy[voice,voice_local] @ $RepoArchiveUrl"
     }
-
     if ($includeNim) {
-        return "$PackageName[voice] @ $RepoGitUrl"
+        return "codexproxy[voice] @ $RepoArchiveUrl"
     }
-
     if ($includeLocal) {
-        return "$PackageName[voice_local] @ $RepoGitUrl"
+        return "codexproxy[voice_local] @ $RepoArchiveUrl"
     }
-
-    return $RepoGitUrl
+    return "codexproxy @ $RepoArchiveUrl"
 }
 
-function Install-CodexProxy {
+function Install-FreeClaudeCode {
+    Assert-NoFccProcessesRunning
     $packageSpec = Get-PackageSpec
-    $toolArgs = @("tool", "install", "--force")
-
+    $arguments = @(
+        "tool",
+        "install",
+        "--force",
+        "--refresh-package",
+        "codexproxy",
+        "--python",
+        $PythonRequest
+    )
     if (-not [string]::IsNullOrWhiteSpace($TorchBackend)) {
-        $toolArgs += @("--torch-backend", $TorchBackend)
+        $arguments += @("--torch-backend", $TorchBackend)
+    }
+    $arguments += $packageSpec
+
+    $uvPath = "uv"
+    if (-not $DryRun) {
+        $uvCommand = Get-ApplicationCommand "uv"
+        if (-not $uvCommand) {
+            throw "uv is not available for the CodexProxy installation."
+        }
+        $uvPath = $uvCommand.Source
+    }
+    Invoke-NativeCommand -FilePath $uvPath -Arguments $arguments
+}
+
+function Export-FccDesktopIcon {
+    param(
+        [string] $DesktopCommand,
+        [string] $IconPath
+    )
+
+    $arguments = @("--export-icon", $IconPath)
+    $commandText = Format-Command -FilePath $DesktopCommand -Arguments $arguments
+    Write-Host "+ $commandText"
+    if ($DryRun) {
+        return
     }
 
-    $toolArgs += $packageSpec
-    Invoke-InstallCommand -FilePath "uv" -Arguments $toolArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to install codexproxy package (uv exited with code $LASTEXITCODE)"
+    # PowerShell does not wait when directly invoking a Windows GUI executable.
+    $process = Start-Process `
+        -FilePath $DesktopCommand `
+        -ArgumentList @("--export-icon", ('"' + $IconPath + '"')) `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+    try {
+        $exitCode = $process.ExitCode
+    }
+    finally {
+        $process.Dispose()
+    }
+    if ($exitCode -ne 0) {
+        throw "Command failed with exit code ${exitCode}: $commandText"
+    }
+    if (-not (Test-Path -LiteralPath $IconPath -PathType Leaf)) {
+        throw "CodexProxy did not export its Windows app icon to '$IconPath'."
+    }
+}
+
+function Configure-AndConfirmFreeClaudeCode {
+    $iconPath = Join-Path $env:USERPROFILE ".codexproxy\app-icon.ico"
+    if ($DryRun) {
+        Write-Host "+ uv tool update-shell"
+        Write-Host "+ uv tool dir --bin"
+        Write-Host "+ verify cdx-desktop, cdx-server, cdx-claude, cdx-codex, and cdx-pi in the uv tool bin directory"
+        Write-Host "+ cdx-server --version"
+        Export-FccDesktopIcon `
+            -DesktopCommand "<uv-tool-bin>\cdx-desktop.exe" `
+            -IconPath $iconPath
+        Install-FccDesktopShortcuts `
+            -DesktopCommand "<uv-tool-bin>\cdx-desktop.exe" `
+            -IconPath $iconPath
+        return
+    }
+
+    $uvCommand = Get-ApplicationCommand "uv"
+    if (-not $uvCommand) {
+        throw "uv is not available for PATH configuration."
+    }
+    Invoke-NativeCommand -FilePath $uvCommand.Source -Arguments @("tool", "update-shell")
+    $toolBin = Invoke-Utf8NativeCapture -FilePath $uvCommand.Source -Arguments @("tool", "dir", "--bin")
+    if ([string]::IsNullOrWhiteSpace($toolBin)) {
+        throw "uv returned an empty tool bin directory."
+    }
+
+    Add-PathEntry $toolBin
+    $toolBinPath = ([IO.Path]::GetFullPath($toolBin)).TrimEnd(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar
+    )
+    $installedCommands = @{}
+    foreach ($commandName in @("cdx-desktop", "cdx-server", "cdx-claude", "cdx-codex", "cdx-pi")) {
+        $command = Get-ApplicationCommand $commandName
+        if (-not $command) {
+            throw "CodexProxy installation did not create '$commandName'."
+        }
+        $commandDirectory = ([IO.Path]::GetFullPath((Split-Path -Parent $command.Source))).TrimEnd(
+            [IO.Path]::DirectorySeparatorChar,
+            [IO.Path]::AltDirectorySeparatorChar
+        )
+        if (-not $commandDirectory.Equals($toolBinPath, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "'$commandName' resolved outside the uv tool bin directory: $($command.Source)"
+        }
+        $installedCommands[$commandName] = $command.Source
+    }
+
+    Invoke-NativeCommand -FilePath $installedCommands["cdx-server"] -Arguments @("--version")
+    Export-FccDesktopIcon `
+        -DesktopCommand $installedCommands["cdx-desktop"] `
+        -IconPath $iconPath
+    Install-FccDesktopShortcuts `
+        -DesktopCommand $installedCommands["cdx-desktop"] `
+        -IconPath $iconPath
+}
+
+function Test-EquivalentPath {
+    param(
+        [string] $Left,
+        [string] $Right
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Left) -or [string]::IsNullOrWhiteSpace($Right)) {
+        return $false
+    }
+    try {
+        return [string]::Equals(
+            [IO.Path]::GetFullPath($Left),
+            [IO.Path]::GetFullPath($Right),
+            [StringComparison]::OrdinalIgnoreCase
+        )
+    }
+    catch {
+        return $false
+    }
+}
+
+function Install-FccDesktopShortcuts {
+    param(
+        [string] $DesktopCommand,
+        [string] $IconPath
+    )
+
+    $shortcutPaths = @(
+        (Join-Path $env:USERPROFILE "Desktop\CodexProxy.lnk"),
+        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\CodexProxy.lnk")
+    )
+    foreach ($shortcutPath in $shortcutPaths) {
+        Write-Host "+ create shortcut $(Format-Argument $shortcutPath) -> $(Format-Argument $DesktopCommand)"
+    }
+    if ($DryRun) {
+        return
+    }
+
+    $shell = New-Object -ComObject WScript.Shell
+    foreach ($shortcutPath in $shortcutPaths) {
+        if (Test-Path -LiteralPath $shortcutPath) {
+            try {
+                $existingShortcut = $shell.CreateShortcut($shortcutPath)
+                $isFccShortcut = Test-EquivalentPath -Left $existingShortcut.TargetPath -Right $DesktopCommand
+            }
+            catch {
+                $isFccShortcut = $false
+            }
+            if (-not $isFccShortcut) {
+                Write-Host "A shortcut not managed by CodexProxy already exists at $shortcutPath; leaving it unchanged."
+                continue
+            }
+        }
+        $parent = Split-Path -Parent $shortcutPath
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = $DesktopCommand
+        $shortcut.WorkingDirectory = $env:USERPROFILE
+        $shortcut.IconLocation = "$IconPath,0"
+        $shortcut.Description = "Run CodexProxy in the background"
+        $shortcut.Save()
     }
 }
 
@@ -369,18 +761,41 @@ if ((-not [string]::IsNullOrWhiteSpace($TorchBackend)) -and (-not ($VoiceLocal -
     throw "-TorchBackend requires -VoiceLocal or -VoiceAll."
 }
 
-Write-Step "Installing Codex CLI if missing"
-Install-CodexIfMissing
+Add-KnownBinDirectories
 
-Write-Step "Installing uv if missing, updating if present"
-Install-OrUpdateUv
+Write-Step "Checking for running CodexProxy processes"
+Assert-NoFccProcessesRunning
 
-Write-Step "Installing Python $PythonVersion"
-Invoke-InstallCommand -FilePath "uv" -Arguments @("python", "install", $PythonVersion)
+if (Test-InteractiveInstaller) {
+    Write-Step "Choosing coding agents"
+    Select-CodingAgents
+}
+
+Ensure-SelectedCodingAgents
+
+Write-Step "Ensuring uv $MinUvVersion or newer is installed"
+Ensure-Uv
 
 Write-Step "Installing or updating CodexProxy"
-Install-CodexProxy
+Install-FreeClaudeCode
+
+Write-Step "Configuring PATH and verifying CodexProxy"
+Configure-AndConfirmFreeClaudeCode
 
 Write-Host ""
-Write-Host "CodexProxy is installed. Start the proxy with: cdx-server"
-Write-Host "Launch the Codex CLI through the proxy with: cdx-codex"
+if ($DryRun) {
+    Write-Host "Dry run complete. No changes were made."
+}
+else {
+    Write-Host "CodexProxy is installed and verified. Open the CodexProxy desktop shortcut to run it in the background."
+    Write-Host "For terminal use, start the proxy with: cdx-server"
+    if ($script:InstallClaudeCode) {
+        Write-Host "Run Claude Code with: cdx-claude"
+    }
+    if ($script:InstallCodex) {
+        Write-Host "Run Codex with: cdx-codex"
+    }
+    if ($script:PiAvailable) {
+        Write-Host "Run Pi with: cdx-pi"
+    }
+}

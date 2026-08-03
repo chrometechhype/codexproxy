@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from config.settings import Settings
+from tests.providers.support import immediate_admission
 
 # Set mock environment BEFORE any imports that use Settings
 os.environ.setdefault("NVIDIA_NIM_API_KEY", "test_key")
@@ -45,14 +46,18 @@ def nim_provider(provider_config):
     from config.nim import NimSettings
     from providers.nvidia_nim import NvidiaNimProvider
 
-    return NvidiaNimProvider(provider_config, nim_settings=NimSettings())
+    return NvidiaNimProvider(
+        provider_config,
+        nim_settings=NimSettings(),
+        admission=immediate_admission(),
+    )
 
 
 @pytest.fixture
 def open_router_provider(provider_config):
     from providers.open_router import OpenRouterProvider
 
-    return OpenRouterProvider(provider_config)
+    return OpenRouterProvider(provider_config, admission=immediate_admission())
 
 
 @pytest.fixture
@@ -66,13 +71,13 @@ def lmstudio_provider(provider_config):
         rate_limit=provider_config.rate_limit,
         rate_window=provider_config.rate_window,
     )
-    return LMStudioProvider(lmstudio_config)
+    return LMStudioProvider(lmstudio_config, admission=immediate_admission())
 
 
 @pytest.fixture
 def llamacpp_provider(provider_config):
     from providers.base import ProviderConfig
-    from providers.llamacpp import LlamaCppProvider
+    from providers.openai_chat import create_openai_chat_provider
 
     llamacpp_config = ProviderConfig(
         api_key="llamacpp",
@@ -80,14 +85,20 @@ def llamacpp_provider(provider_config):
         rate_limit=10,
         rate_window=60,
     )
-    return LlamaCppProvider(llamacpp_config)
+    return create_openai_chat_provider(
+        "llamacpp",
+        llamacpp_config,
+        immediate_admission(),
+    )
 
 
 @pytest.fixture
 def mock_cli_session():
-    from messaging.platforms.base import CLISession
+    from messaging.managed_protocols import (
+        ManagedClaudeSessionProtocol,
+    )
 
-    session = MagicMock(spec=CLISession)
+    session = MagicMock(spec=ManagedClaudeSessionProtocol)
     session.start_task = MagicMock()  # This will return an async generator
     session.is_busy = False
     return session
@@ -95,9 +106,11 @@ def mock_cli_session():
 
 @pytest.fixture
 def mock_cli_manager():
-    from messaging.platforms.base import SessionManagerInterface
+    from messaging.managed_protocols import (
+        ManagedClaudeSessionManagerProtocol,
+    )
 
-    manager = MagicMock(spec=SessionManagerInterface)
+    manager = MagicMock(spec=ManagedClaudeSessionManagerProtocol)
     manager.get_or_create_session = AsyncMock()
     manager.register_real_session_id = AsyncMock(return_value=True)
     manager.stop_all = AsyncMock()
@@ -108,24 +121,18 @@ def mock_cli_manager():
 
 @pytest.fixture
 def mock_platform():
-    from messaging.platforms.base import MessagingPlatform
+    from messaging.platforms.ports import OutboundMessenger
 
-    platform = MagicMock(spec=MessagingPlatform)
+    platform = MagicMock(spec=OutboundMessenger)
     platform.send_message = AsyncMock(return_value="msg_123")
     platform.edit_message = AsyncMock()
     platform.delete_message = AsyncMock()
     platform.queue_send_message = AsyncMock(return_value="msg_123")
     platform.queue_edit_message = AsyncMock()
-    platform.queue_delete_message = AsyncMock()
-
-    async def _queue_delete_messages(
-        chat_id: str, message_ids: list[str], *, fire_and_forget: bool = True
-    ) -> None:
-        qdm = platform.queue_delete_message
-        for mid in message_ids:
-            await qdm(chat_id, mid, fire_and_forget=fire_and_forget)
-
-    platform.queue_delete_messages = AsyncMock(side_effect=_queue_delete_messages)
+    platform.queue_delete_messages = AsyncMock()
+    platform.cancel_pending_voice = AsyncMock(return_value=None)
+    platform.cancel_all_pending_voices = AsyncMock(return_value=())
+    platform.cancel_pending_voices_in_scope = AsyncMock(return_value=())
 
     def _fire_and_forget(task):
         if asyncio.iscoroutine(task):
@@ -145,9 +152,10 @@ def mock_session_store():
     store.save_tree = MagicMock()
     store.get_tree = MagicMock(return_value=None)
     store.register_node = MagicMock()
-    store.clear_all = MagicMock()
     store.record_message_id = MagicMock()
-    store.get_message_ids_for_chat = MagicMock(return_value=[])
+    store.get_tracked_message_ids_for_chat = MagicMock(return_value=[])
+    store.forget_tracked_message_ids = MagicMock()
+    store.clear_scope = MagicMock()
     return store
 
 

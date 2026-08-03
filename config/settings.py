@@ -1,82 +1,32 @@
-"""Centralized configuration using Pydantic Settings."""
+"""Flat application settings schema loaded by Pydantic Settings."""
 
-import os
-from collections.abc import Mapping
-from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
-from dotenv import dotenv_values
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .constants import HTTP_CONNECT_TIMEOUT_DEFAULT
+from .env_files import (
+    ANTHROPIC_AUTH_TOKEN_ENV,
+    env_file_override,
+    settings_env_files,
+)
 from .nim import NimSettings
-from .paths import default_codex_workspace_path, managed_env_path
-from .provider_ids import SUPPORTED_PROVIDER_IDS
-
-
-@dataclass(frozen=True, slots=True)
-class ConfiguredChatModelRef:
-    """A unique configured chat model reference and the env keys that set it."""
-
-    model_ref: str
-    provider_id: str
-    model_id: str
-    sources: tuple[str, ...]
-
-
-def _env_files() -> tuple[Path, ...]:
-    """Return env file paths in priority order (later overrides earlier)."""
-    files: list[Path] = [
-        Path(".env"),
-        managed_env_path(),
-    ]
-    explicit = os.environ.get("CODEX_PROXY_ENV_FILE") or os.environ.get("CDX_ENV_FILE")
-    if explicit:
-        files.append(Path(explicit))
-    return tuple(files)
-
-
-def _configured_env_files(model_config: Mapping[str, Any]) -> tuple[Path, ...]:
-    """Return the currently configured env files for Settings."""
-    configured = model_config.get("env_file")
-    if configured is None:
-        return ()
-    if isinstance(configured, (str, Path)):
-        return (Path(configured),)
-    return tuple(Path(item) for item in configured)
-
-
-def _env_file_value(path: Path, key: str) -> str | None:
-    """Return a dotenv value when the file explicitly defines the key."""
-    if not path.is_file():
-        return None
-
-    try:
-        values = dotenv_values(path)
-    except OSError:
-        return None
-
-    if key not in values:
-        return None
-    value = values[key]
-    return "" if value is None else value
-
-
-def _env_file_override(model_config: Mapping[str, Any], key: str) -> str | None:
-    """Return the last configured dotenv value that explicitly defines a key."""
-    configured_value: str | None = None
-    for env_file in _configured_env_files(model_config):
-        value = _env_file_value(env_file, key)
-        if value is not None:
-            configured_value = value
-    return configured_value
+from .provider_catalog import BEDROCK_DEFAULT_BASE, SUPPORTED_PROVIDER_IDS
+from .reasoning import ReasoningPreference
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    # ==================== Azure OpenAI ====================
+    azure_openai_api_key: str = Field(
+        default="", validation_alias="AZURE_OPENAI_API_KEY"
+    )
+    azure_openai_base_url: str = Field(
+        default="", validation_alias="AZURE_OPENAI_BASE_URL"
+    )
 
     # ==================== OpenRouter Config ====================
     open_router_api_key: str = Field(default="", validation_alias="OPENROUTER_API_KEY")
@@ -93,12 +43,47 @@ class Settings(BaseSettings):
     # ==================== Kimi Config ====================
     kimi_api_key: str = Field(default="", validation_alias="KIMI_API_KEY")
 
+    # ==================== Kimi Code Subscription ====================
+    kimi_code_api_key: str = Field(default="", validation_alias="KIMI_CODE_API_KEY")
+
     # ==================== Wafer Config ====================
     wafer_api_key: str = Field(default="", validation_alias="WAFER_API_KEY")
+
+    # ==================== MiniMax Config ====================
+    minimax_api_key: str = Field(default="", validation_alias="MINIMAX_API_KEY")
 
     # ==================== OpenCode Zen / OpenCode Go ====================
     # Same key from opencode.ai/auth; zen uses prefix ``opencode/``, Go uses ``opencode_go/``.
     opencode_api_key: str = Field(default="", validation_alias="OPENCODE_API_KEY")
+
+    # ==================== Vercel AI Gateway ====================
+    vercel_ai_gateway_api_key: str = Field(
+        default="", validation_alias="AI_GATEWAY_API_KEY"
+    )
+
+    # ==================== Amazon Bedrock Mantle ====================
+    bedrock_api_key: str = Field(
+        default="", validation_alias="AWS_BEARER_TOKEN_BEDROCK"
+    )
+    bedrock_base_url: str = Field(
+        default=BEDROCK_DEFAULT_BASE,
+        validation_alias="BEDROCK_BASE_URL",
+    )
+
+    # ==================== Hugging Face Inference Providers ====================
+    huggingface_api_key: str = Field(default="", validation_alias="HUGGINGFACE_API_KEY")
+
+    # ==================== Cohere Compatibility API ====================
+    cohere_api_key: str = Field(default="", validation_alias="COHERE_API_KEY")
+
+    # ==================== GitHub Models ====================
+    github_models_token: str = Field(default="", validation_alias="GITHUB_MODELS_TOKEN")
+
+    # ==================== SambaNova Cloud ====================
+    sambanova_api_key: str = Field(default="", validation_alias="SAMBANOVA_API_KEY")
+
+    # ==================== Kilo.ai Config ====================
+    kilo_api_key: str = Field(default="", validation_alias="KILO_API_KEY")
 
     # ==================== Z.ai Config ====================
     zai_api_key: str = Field(default="", validation_alias="ZAI_API_KEY")
@@ -106,14 +91,29 @@ class Settings(BaseSettings):
     # ==================== Fireworks AI Config ====================
     fireworks_api_key: str = Field(default="", validation_alias="FIREWORKS_API_KEY")
 
+    # ==================== Cloudflare Workers AI Config ====================
+    cloudflare_api_token: str = Field(
+        default="", validation_alias="CLOUDFLARE_API_TOKEN"
+    )
+    cloudflare_account_id: str = Field(
+        default="", validation_alias="CLOUDFLARE_ACCOUNT_ID"
+    )
+
     # ==================== Google Gemini (Google AI Studio) ====================
     gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")
+
+    # ==================== Google Vertex AI ====================
+    vertex_project_id: str = Field(default="", validation_alias="VERTEX_PROJECT_ID")
+    vertex_location: str = Field(default="global", validation_alias="VERTEX_LOCATION")
 
     # ==================== Groq (OpenAI-compatible) ====================
     groq_api_key: str = Field(default="", validation_alias="GROQ_API_KEY")
 
     # ==================== Cerebras Inference (OpenAI-compatible) ====================
     cerebras_api_key: str = Field(default="", validation_alias="CEREBRAS_API_KEY")
+
+    # ==================== Ollama Cloud ====================
+    ollama_api_key: str = Field(default="", validation_alias="OLLAMA_API_KEY")
 
     # ==================== Messaging Platform Selection ====================
     # Valid: "telegram" | "discord" | "none"
@@ -149,11 +149,20 @@ class Settings(BaseSettings):
     )
 
     # ==================== Model ====================
-    # Default provider/model used for all Codex Responses requests.
+    # All Claude model requests are mapped to this single model (fallback)
     # Format: provider_type/model/name
     model: str = "nvidia_nim/nvidia/nemotron-3-super-120b-a12b"
 
+    # Per-model overrides (optional, falls back to MODEL)
+    # Each can use a different provider
+    model_fable: str | None = Field(default=None, validation_alias="MODEL_FABLE")
+    model_opus: str | None = Field(default=None, validation_alias="MODEL_OPUS")
+    model_sonnet: str | None = Field(default=None, validation_alias="MODEL_SONNET")
+    model_haiku: str | None = Field(default=None, validation_alias="MODEL_HAIKU")
+
     # ==================== Per-Provider Proxy ====================
+    openai_proxy: str = Field(default="", validation_alias="OPENAI_PROXY")
+    azure_openai_proxy: str = Field(default="", validation_alias="AZURE_OPENAI_PROXY")
     nvidia_nim_proxy: str = Field(default="", validation_alias="NVIDIA_NIM_PROXY")
     open_router_proxy: str = Field(default="", validation_alias="OPENROUTER_PROXY")
     mistral_proxy: str = Field(default="", validation_alias="MISTRAL_PROXY")
@@ -161,14 +170,28 @@ class Settings(BaseSettings):
     lmstudio_proxy: str = Field(default="", validation_alias="LMSTUDIO_PROXY")
     llamacpp_proxy: str = Field(default="", validation_alias="LLAMACPP_PROXY")
     kimi_proxy: str = Field(default="", validation_alias="KIMI_PROXY")
+    kimi_code_proxy: str = Field(default="", validation_alias="KIMI_CODE_PROXY")
     wafer_proxy: str = Field(default="", validation_alias="WAFER_PROXY")
+    minimax_proxy: str = Field(default="", validation_alias="MINIMAX_PROXY")
     opencode_proxy: str = Field(default="", validation_alias="OPENCODE_PROXY")
     opencode_go_proxy: str = Field(default="", validation_alias="OPENCODE_GO_PROXY")
+    vercel_ai_gateway_proxy: str = Field(
+        default="", validation_alias="VERCEL_AI_GATEWAY_PROXY"
+    )
+    bedrock_proxy: str = Field(default="", validation_alias="BEDROCK_PROXY")
+    huggingface_proxy: str = Field(default="", validation_alias="HUGGINGFACE_PROXY")
+    cohere_proxy: str = Field(default="", validation_alias="COHERE_PROXY")
+    github_models_proxy: str = Field(default="", validation_alias="GITHUB_MODELS_PROXY")
+    sambanova_proxy: str = Field(default="", validation_alias="SAMBANOVA_PROXY")
+    kilo_proxy: str = Field(default="", validation_alias="KILO_PROXY")
     zai_proxy: str = Field(default="", validation_alias="ZAI_PROXY")
     fireworks_proxy: str = Field(default="", validation_alias="FIREWORKS_PROXY")
+    cloudflare_proxy: str = Field(default="", validation_alias="CLOUDFLARE_PROXY")
     gemini_proxy: str = Field(default="", validation_alias="GEMINI_PROXY")
+    vertex_proxy: str = Field(default="", validation_alias="VERTEX_PROXY")
     groq_proxy: str = Field(default="", validation_alias="GROQ_PROXY")
     cerebras_proxy: str = Field(default="", validation_alias="CEREBRAS_PROXY")
+    ollama_cloud_proxy: str = Field(default="", validation_alias="OLLAMA_CLOUD_PROXY")
 
     # ==================== Provider Rate Limiting ====================
     provider_rate_limit: int = Field(default=40, validation_alias="PROVIDER_RATE_LIMIT")
@@ -178,13 +201,30 @@ class Settings(BaseSettings):
     provider_max_concurrency: int = Field(
         default=5, validation_alias="PROVIDER_MAX_CONCURRENCY"
     )
-    enable_model_thinking: bool = Field(
-        default=True, validation_alias="ENABLE_MODEL_THINKING"
+    reasoning_policy: ReasoningPreference = Field(
+        default=ReasoningPreference.CLIENT,
+        validation_alias="REASONING_POLICY",
+    )
+    reasoning_fable: ReasoningPreference = Field(
+        default=ReasoningPreference.INHERIT,
+        validation_alias="REASONING_FABLE",
+    )
+    reasoning_opus: ReasoningPreference = Field(
+        default=ReasoningPreference.INHERIT,
+        validation_alias="REASONING_OPUS",
+    )
+    reasoning_sonnet: ReasoningPreference = Field(
+        default=ReasoningPreference.INHERIT,
+        validation_alias="REASONING_SONNET",
+    )
+    reasoning_haiku: ReasoningPreference = Field(
+        default=ReasoningPreference.INHERIT,
+        validation_alias="REASONING_HAIKU",
     )
 
     # ==================== HTTP Client Timeouts ====================
     http_read_timeout: float = Field(
-        default=300.0, validation_alias="HTTP_READ_TIMEOUT"
+        default=120.0, validation_alias="HTTP_READ_TIMEOUT"
     )
     http_write_timeout: float = Field(
         default=10.0, validation_alias="HTTP_WRITE_TIMEOUT"
@@ -203,7 +243,23 @@ class Settings(BaseSettings):
     enable_suggestion_mode_skip: bool = True
     enable_filepath_extraction_mock: bool = True
 
+    # ==================== Local web server tools (web_search / web_fetch) ====================
+    # Off by default: these tools perform outbound HTTP from the proxy (SSRF risk).
+    enable_web_server_tools: bool = Field(
+        default=False, validation_alias="ENABLE_WEB_SERVER_TOOLS"
+    )
+    # Comma-separated URL schemes allowed for web_fetch (default: http,https).
+    web_fetch_allowed_schemes: str = Field(
+        default="http,https", validation_alias="WEB_FETCH_ALLOWED_SCHEMES"
+    )
+    # When true, skip private/loopback/link-local IP blocking for web_fetch (lab only).
+    web_fetch_allow_private_networks: bool = Field(
+        default=False, validation_alias="WEB_FETCH_ALLOW_PRIVATE_NETWORKS"
+    )
+
     # ==================== Debug / diagnostic logging (avoid sensitive content) ====================
+    # Minimum log level for the JSON file sink (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+    log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     # When false (default), API and SSE helpers log only metadata (counts, lengths, ids).
     log_raw_api_payloads: bool = Field(
         default=False, validation_alias="LOG_RAW_API_PAYLOADS"
@@ -249,12 +305,10 @@ class Settings(BaseSettings):
     # Local Whisper: "tiny", "base", "small", "medium", "large-v2", "large-v3", "large-v3-turbo"
     # NVIDIA NIM: "nvidia/parakeet-ctc-1.1b-asr", "openai/whisper-large-v3", etc.
     whisper_model: str = Field(default="base", validation_alias="WHISPER_MODEL")
-    # Hugging Face token for faster model downloads (optional, for local Whisper)
-    hf_token: str = Field(default="", validation_alias="HF_TOKEN")
-
     # ==================== Bot Wrapper Config ====================
     telegram_bot_token: str | None = None
     allowed_telegram_user_id: str | None = None
+    telegram_proxy_url: str = Field(default="", validation_alias="TELEGRAM_PROXY_URL")
     discord_bot_token: str | None = Field(
         default=None, validation_alias="DISCORD_BOT_TOKEN"
     )
@@ -267,102 +321,15 @@ class Settings(BaseSettings):
     )
 
     # ==================== Server ====================
-    host: str = Field(default="0.0.0.0", validation_alias="CODEX_PROXY_HOST")
-    port: int = Field(default=8083, validation_alias="CODEX_PROXY_PORT")
-    # Optional server API key to protect endpoints (Codex/Responses-style).
-    # Set via env `CODEX_PROXY_AUTH_TOKEN`. When empty, no auth is required.
-    codex_proxy_auth_token: str = Field(
-        default="", validation_alias="CODEX_PROXY_AUTH_TOKEN"
+    host: str = "0.0.0.0"
+    port: int = 8082
+    open_admin_browser: bool = Field(
+        default=True, validation_alias="CODEX_PROXY_OPEN_BROWSER"
     )
-    # Deprecated alias retained for one release. Reads fall back to
-    # ANTHROPIC_AUTH_TOKEN when CODEX_PROXY_AUTH_TOKEN is unset.
+    # Optional proxy bearer token protecting public API endpoints.
+    # Set via env `ANTHROPIC_AUTH_TOKEN`. When empty, no auth is required.
     anthropic_auth_token: str = Field(
         default="", validation_alias="ANTHROPIC_AUTH_TOKEN"
-    )
-
-    # ==================== Codex Desktop App ====================
-    # Sandbox mode written to ~/.codex/config.toml: "workspace-write", "write", or "none".
-    codex_sandbox_mode: str = Field(
-        default="workspace-write", validation_alias="CODEX_SANDBOX_MODE"
-    )
-
-    # ==================== Responses API ====================
-    # Comma-separated list of additional model ids to advertise on
-    # ``GET /v1/models`` alongside the default ``MODEL``. Useful when the
-    # configured MODEL is a single alias but you want Codex CLI to pick from
-    # several providers.
-    responses_extra_model_ids: str = Field(
-        default="", validation_alias="CODEX_PROXY_EXTRA_MODEL_IDS"
-    )
-    # Set to ``false`` to disable prompt caching for Responses requests.
-    responses_prompt_caching: bool = Field(
-        default=True, validation_alias="CODEX_PROXY_PROMPT_CACHING"
-    )
-    # When true, route the Responses request to the ``previous_response_id``
-    # chain when the model / provider support it. Default is ``true`` (best
-    # effort, no-op for providers that don't implement conversation threads).
-    responses_use_previous_response_id: bool = Field(
-        default=True, validation_alias="CODEX_PROXY_USE_PREVIOUS_RESPONSE_ID"
-    )
-
-    # ==================== Response Store ====================
-    # Backend for the response store: "memory" (in-process dict) or "sqlite".
-    responses_store_backend: str = Field(
-        default="memory", validation_alias="RESPONSES_STORE_BACKEND"
-    )
-    # SQLite database path (only used when RESPONSES_STORE_BACKEND=sqlite).
-    responses_store_path: str = Field(
-        default="responses.db", validation_alias="RESPONSES_STORE_PATH"
-    )
-
-    # ==================== Local Tool Execution ====================
-    # When true, the proxy can execute apply_patch, shell, read, write,
-    # and run_tests locally (agent loop). Default is false for safety.
-    enable_local_tool_execution: bool = Field(
-        default=False, validation_alias="ENABLE_LOCAL_TOOL_EXECUTION"
-    )
-    # Comma-separated list of allowed shell commands (lowercase).
-    # Empty means all commands are blocked (if allowed_commands is empty).
-    tool_execution_allowed_commands: str = Field(
-        default="", validation_alias="TOOL_EXECUTION_ALLOWED_COMMANDS"
-    )
-    # Comma-separated list of allowed path prefixes for file operations.
-    # Empty means only the workspace directory is allowed.
-    tool_execution_allowed_paths: str = Field(
-        default="", validation_alias="TOOL_EXECUTION_ALLOWED_PATHS"
-    )
-    # Sandbox mode: "none" (no restriction), "restrictive" (allowlist-based), "isolated" (no network)
-    tool_execution_sandbox_mode: str = Field(
-        default="restrictive", validation_alias="TOOL_EXECUTION_SANDBOX_MODE"
-    )
-    # Timeout in seconds for shell commands invoked by the tool executor.
-    tool_execution_shell_timeout: int = Field(
-        default=60, validation_alias="TOOL_EXECUTION_SHELL_TIMEOUT"
-    )
-    # Maximum number of tool execution iterations in the agent loop.
-    agent_max_iterations: int = Field(
-        default=10, validation_alias="AGENT_MAX_ITERATIONS"
-    )
-
-    # ==================== Provider Failover ====================
-    # Comma-separated list of fallback model refs (provider/model) to try
-    # when the primary provider fails. Example:
-    # "open_router/gpt-4o,gemini/gemini-2.0-flash"
-    failover_models: str = Field(
-        default="", validation_alias="CODEX_PROXY_FAILOVER_MODELS"
-    )
-
-    # ==================== System Prompt ====================
-    # Controls the default system prompt sent to the provider.
-    # "default" — use the built-in CodexProxy prompt
-    # "custom" — use SYSTEM_PROMPT_CUSTOM
-    # "none"   — no proxy-level system prompt (only per-request instructions)
-    system_prompt_mode: str = Field(
-        default="default", validation_alias="SYSTEM_PROMPT_MODE"
-    )
-    # Custom system prompt text (only used when SYSTEM_PROMPT_MODE="custom").
-    system_prompt_custom: str = Field(
-        default="", validation_alias="SYSTEM_PROMPT_CUSTOM"
     )
 
     # Handle empty strings for optional string fields
@@ -371,6 +338,10 @@ class Settings(BaseSettings):
         "allowed_telegram_user_id",
         "discord_bot_token",
         "allowed_discord_channels",
+        "model_fable",
+        "model_opus",
+        "model_sonnet",
+        "model_haiku",
         mode="before",
     )
     @classmethod
@@ -386,35 +357,23 @@ class Settings(BaseSettings):
             return None
         return v
 
-    @property
-    def codex_workspace(self) -> str:
-        """Return the fixed Codex data workspace path."""
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        valid = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        upper = v.upper()
+        if upper not in valid:
+            raise ValueError(f"LOG_LEVEL must be one of {sorted(valid)}, got {v!r}")
+        return upper
 
-        return str(default_codex_workspace_path())
-
-    @property
-    def codex_cli_bin(self) -> str:
-        """Return the fixed Codex CLI binary name."""
-
-        return "codex"
-
-    @property
-    def claude_workspace(self) -> str:
-        """Deprecated alias for :attr:`codex_workspace`."""
-
-        return self.codex_workspace
-
-    @property
-    def claude_cli_bin(self) -> str:
-        """Deprecated alias for :attr:`codex_cli_bin`."""
-
-        return self.codex_cli_bin
-
-    @property
-    def effective_auth_token(self) -> str:
-        """Return the configured auth token (Codex first, then legacy Anthropic)."""
-
-        return self.codex_proxy_auth_token.strip() or self.anthropic_auth_token.strip()
+    @field_validator("reasoning_policy")
+    @classmethod
+    def validate_root_reasoning_policy(
+        cls, value: ReasoningPreference
+    ) -> ReasoningPreference:
+        if value is ReasoningPreference.INHERIT:
+            raise ValueError("REASONING_POLICY cannot inherit")
+        return value
 
     @field_validator("whisper_device")
     @classmethod
@@ -448,35 +407,22 @@ class Settings(BaseSettings):
             raise ValueError("messaging_rate_window must be > 0")
         return float(v)
 
-    @field_validator("ollama_base_url")
+    @field_validator("web_fetch_allowed_schemes")
     @classmethod
-    def validate_ollama_base_url(cls, v: str) -> str:
-        if v.rstrip("/").endswith("/v1"):
-            raise ValueError(
-                "OLLAMA_BASE_URL must be the Ollama root URL for native Anthropic "
-                "messages, e.g. http://localhost:11434 (without /v1)."
-            )
-        return v
+    def validate_web_fetch_allowed_schemes(cls, v: str) -> str:
+        schemes = [part.strip().lower() for part in v.split(",") if part.strip()]
+        if not schemes:
+            raise ValueError("web_fetch_allowed_schemes must list at least one scheme")
+        for scheme in schemes:
+            if not scheme.isascii() or not scheme.isalpha():
+                raise ValueError(
+                    f"Invalid URL scheme in web_fetch_allowed_schemes: {scheme!r}"
+                )
+        return ",".join(schemes)
 
-    @field_validator("responses_store_backend")
-    @classmethod
-    def validate_responses_store_backend(cls, v: str) -> str:
-        if v not in ("memory", "sqlite"):
-            raise ValueError(
-                f"responses_store_backend must be 'memory' or 'sqlite', got {v!r}"
-            )
-        return v
-
-    @field_validator("tool_execution_sandbox_mode")
-    @classmethod
-    def validate_tool_execution_sandbox_mode(cls, v: str) -> str:
-        if v not in ("none", "restrictive", "isolated"):
-            raise ValueError(
-                f"tool_execution_sandbox_mode must be 'none', 'restrictive', or 'isolated', got {v!r}"
-            )
-        return v
-
-    @field_validator("model")
+    @field_validator(
+        "model", "model_fable", "model_opus", "model_sonnet", "model_haiku"
+    )
     @classmethod
     def validate_model_format(cls, v: str | None) -> str | None:
         if v is None:
@@ -509,63 +455,13 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def prefer_dotenv_anthropic_auth_token(self) -> Settings:
         """Let explicit .env auth config override stale shell/client tokens."""
-        dotenv_value = _env_file_override(self.model_config, "ANTHROPIC_AUTH_TOKEN")
+        dotenv_value = env_file_override(self.model_config, ANTHROPIC_AUTH_TOKEN_ENV)
         if dotenv_value is not None:
             self.anthropic_auth_token = dotenv_value
         return self
 
-    def uses_process_anthropic_auth_token(self) -> bool:
-        """Return whether proxy auth came from process env, not dotenv config."""
-        if _env_file_override(self.model_config, "ANTHROPIC_AUTH_TOKEN") is not None:
-            return False
-        return bool(os.environ.get("ANTHROPIC_AUTH_TOKEN"))
-
-    @property
-    def provider_type(self) -> str:
-        """Extract provider type from the default model string."""
-        return Settings.parse_provider_type(self.model)
-
-    @property
-    def model_name(self) -> str:
-        """Extract the actual model name from the default model string."""
-        return Settings.parse_model_name(self.model)
-
-    def resolve_model(self, _claude_model_name: str) -> str:
-        """Return the configured default model.
-
-        Codex CLI sends ``model`` on every request and the proxy forwards
-        the resolved route; per-tier overrides are intentionally removed
-        in ``codexproxy`` (kept only the single default ``MODEL``).
-        """
-        return self.model
-
-    def configured_chat_model_refs(self) -> tuple[ConfiguredChatModelRef, ...]:
-        """Return the configured chat provider/model ref with source env key."""
-        return (
-            ConfiguredChatModelRef(
-                model_ref=self.model,
-                provider_id=Settings.parse_provider_type(self.model),
-                model_id=Settings.parse_model_name(self.model),
-                sources=("MODEL",),
-            ),
-        )
-
-    def resolve_thinking(self, _claude_model_name: str) -> bool:
-        """Return whether thinking is enabled for Codex Responses requests."""
-        return self.enable_model_thinking
-
-    @staticmethod
-    def parse_provider_type(model_string: str) -> str:
-        """Extract provider type from any 'provider/model' string."""
-        return model_string.split("/", 1)[0]
-
-    @staticmethod
-    def parse_model_name(model_string: str) -> str:
-        """Extract model name from any 'provider/model' string."""
-        return model_string.split("/", 1)[1]
-
     model_config = SettingsConfigDict(
-        env_file=_env_files(),
+        env_file=settings_env_files(),
         env_file_encoding="utf-8",
         extra="ignore",
     )

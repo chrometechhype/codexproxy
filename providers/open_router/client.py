@@ -1,121 +1,53 @@
 """OpenRouter provider implementation."""
 
-from __future__ import annotations
-
-from collections.abc import Iterator
-from typing import Any
-
-from core.anthropic import iter_provider_stream_error_sse_events
-from core.anthropic.native_sse_block_policy import (
-    NativeSseBlockPolicyState,
-    is_terminal_openrouter_done_event,
-    parse_native_sse_event,
-    transform_native_sse_block_event,
-)
-from providers.anthropic_messages import AnthropicMessagesTransport, StreamChunkMode
+from application.model_metadata import ProviderModelInfo
+from config.constants import ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS
+from core.anthropic import ReasoningReplayMode
+from core.reasoning import ReasoningEffort
+from providers.admission import ProviderAdmissionController
 from providers.base import ProviderConfig
-from providers.defaults import OPENROUTER_DEFAULT_BASE
-from providers.model_listing import (
-    ProviderModelInfo,
-    extract_openrouter_tool_model_ids,
-    extract_openrouter_tool_model_infos,
+from providers.model_listing import extract_tool_capable_model_infos
+from providers.openai_chat import (
+    OpenAIChatProfile,
+    OpenAIChatProvider,
+    OpenAIChatRequestPolicy,
+    ReasoningObject,
+    apply_reasoning_details_replay,
+    validate_extra_body_does_not_override_canonical_fields,
 )
 
-from .request import build_request_body
+_REQUEST_POLICY = OpenAIChatRequestPolicy(
+    provider_name="OPENROUTER",
+    reasoning_replay=ReasoningReplayMode.REASONING_CONTENT,
+    include_extra_body=True,
+    extra_body_validator=validate_extra_body_does_not_override_canonical_fields,
+    default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
+)
 
-_ANTHROPIC_VERSION = "2023-06-01"
 
+class OpenRouterProvider(OpenAIChatProvider):
+    """OpenRouter provider using the OpenAI-compatible Chat Completions API."""
 
-class OpenRouterProvider(AnthropicMessagesTransport):
-    """OpenRouter provider using the native Anthropic-compatible messages API."""
-
-    stream_chunk_mode: StreamChunkMode = "event"
-
-    def __init__(self, config: ProviderConfig):
+    def __init__(
+        self, config: ProviderConfig, *, admission: ProviderAdmissionController
+    ):
         super().__init__(
             config,
-            provider_name="OPENROUTER",
-            default_base_url=OPENROUTER_DEFAULT_BASE,
+            profile=_PROFILE,
+            admission=admission,
         )
 
-    def _build_request_body(
-        self, request: Any, thinking_enabled: bool | None = None
-    ) -> dict:
-        """Internal helper for tests and direct request dispatch."""
-        return build_request_body(
-            request,
-            thinking_enabled=self._is_thinking_enabled(request, thinking_enabled),
-        )
-
-    def _request_headers(self) -> dict[str, str]:
-        """Return OpenRouter's Anthropic-compatible messages headers."""
-        return {
-            "Accept": "text/event-stream",
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-            "anthropic-version": _ANTHROPIC_VERSION,
-        }
-
-    def _model_list_headers(self) -> dict[str, str]:
-        """Return OpenRouter's OpenAI-compatible model-list headers."""
-        return {"Authorization": f"Bearer {self._api_key}"}
-
-    def _extract_model_ids_from_model_list_payload(
-        self, payload: Any
-    ) -> frozenset[str]:
-        """Only advertise OpenRouter models that can run Claude Code tools."""
-        return extract_openrouter_tool_model_ids(
-            payload, provider_name=self._provider_name
-        )
-
-    def _extract_model_infos_from_model_list_payload(
-        self, payload: Any
-    ) -> frozenset[ProviderModelInfo]:
+    async def list_model_infos(self) -> frozenset[ProviderModelInfo]:
         """Advertise OpenRouter tool models with reasoning capability metadata."""
-        return extract_openrouter_tool_model_infos(
+        payload = await self._list_models_payload()
+        return extract_tool_capable_model_infos(
             payload, provider_name=self._provider_name
         )
 
-    def _new_stream_state(self, request: Any, *, thinking_enabled: bool) -> Any:
-        """Create per-stream state for thinking block filtering."""
-        return NativeSseBlockPolicyState()
 
-    def _transform_stream_event(
-        self,
-        event: str,
-        state: Any,
-        *,
-        thinking_enabled: bool,
-    ) -> str | None:
-        """Drop provider-specific terminal noise and hidden thinking events."""
-        if isinstance(state, NativeSseBlockPolicyState):
-            event_name, data_text = parse_native_sse_event(event)
-            if state.message_stopped or is_terminal_openrouter_done_event(
-                event_name, data_text
-            ):
-                return None
-            if event_name == "message_stop":
-                state.message_stopped = True
-
-        if isinstance(state, NativeSseBlockPolicyState):
-            return transform_native_sse_block_event(
-                event, state, thinking_enabled=thinking_enabled
-            )
-        return event
-
-    def _emit_error_events(
-        self,
-        *,
-        request: Any,
-        input_tokens: int,
-        error_message: str,
-        sent_any_event: bool,
-    ) -> Iterator[str]:
-        """Emit the Anthropic SSE error shape expected by Claude clients."""
-        yield from iter_provider_stream_error_sse_events(
-            request=request,
-            input_tokens=input_tokens,
-            error_message=error_message,
-            sent_any_event=sent_any_event,
-            log_raw_sse_events=self._config.log_raw_sse_events,
-        )
+_PROFILE = OpenAIChatProfile(
+    _REQUEST_POLICY,
+    ReasoningObject(tuple((effort, effort.value) for effort in ReasoningEffort)),
+    postprocessors=(apply_reasoning_details_replay,),
+    structured_reasoning_details=True,
+)

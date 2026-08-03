@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import shutil
 from pathlib import Path
 
@@ -37,7 +35,7 @@ def test_nvidia_nim_cli_matrix_e2e(smoke_config: SmokeConfig, tmp_path: Path) ->
             env_overrides={
                 "MODEL": provider_model.full_model,
                 "MESSAGING_PLATFORM": "none",
-                "ENABLE_MODEL_THINKING": "true",
+                "REASONING_POLICY": "high",
                 "LOG_RAW_API_PAYLOADS": "true",
                 "LOG_RAW_SSE_EVENTS": "true",
             },

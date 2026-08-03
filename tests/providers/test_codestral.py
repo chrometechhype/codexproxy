@@ -1,34 +1,17 @@
 """Tests for Mistral Codestral provider."""
 
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from config.provider_catalog import CODESTRAL_DEFAULT_BASE
 from providers.base import ProviderConfig
-from providers.codestral import CODESTRAL_DEFAULT_BASE, CodestralProvider
+from tests.providers.request_factory import make_messages_request
+from tests.providers.support import immediate_admission, profiled_provider
 
 
-class MockMessage:
-    def __init__(self, role, content):
-        self.role = role
-        self.content = content
-
-
-class MockRequest:
-    def __init__(self, **kwargs):
-        self.model = "devstral-small-latest"
-        self.messages = [MockMessage("user", "Hello")]
-        self.max_tokens = 100
-        self.temperature = 0.5
-        self.top_p = 0.9
-        self.system = "System prompt"
-        self.stop_sequences = None
-        self.tools = []
-        self.thinking = MagicMock()
-        self.thinking.enabled = True
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+def make_request(**overrides):
+    return make_messages_request("devstral-small-latest", **overrides)
 
 
 @pytest.fixture
@@ -38,38 +21,24 @@ def codestral_config():
         base_url=CODESTRAL_DEFAULT_BASE,
         rate_limit=10,
         rate_window=60,
-        enable_thinking=True,
     )
-
-
-@pytest.fixture(autouse=True)
-def mock_rate_limiter():
-    """Mock the global rate limiter to prevent waiting."""
-
-    @asynccontextmanager
-    async def _slot():
-        yield
-
-    with patch("providers.openai_compat.GlobalRateLimiter") as mock:
-        instance = mock.get_scoped_instance.return_value
-
-        async def _passthrough(fn, *args, **kwargs):
-            return await fn(*args, **kwargs)
-
-        instance.execute_with_retry = AsyncMock(side_effect=_passthrough)
-        instance.concurrency_slot.side_effect = _slot
-        yield instance
 
 
 @pytest.fixture
 def codestral_provider(codestral_config):
-    return CodestralProvider(codestral_config)
+    return profiled_provider(
+        "mistral_codestral", codestral_config, admission=immediate_admission()
+    )
 
 
 def test_init(codestral_config):
     """Test provider initialization."""
-    with patch("providers.openai_compat.AsyncOpenAI") as mock_openai:
-        provider = CodestralProvider(codestral_config)
+    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+        provider = profiled_provider(
+            "mistral_codestral",
+            codestral_config,
+            admission=immediate_admission(),
+        )
         assert provider._api_key == "test_codestral_key"
         assert provider._base_url == CODESTRAL_DEFAULT_BASE
         mock_openai.assert_called_once()
@@ -81,7 +50,7 @@ def test_default_base_url():
 
 def test_build_request_body_basic(codestral_provider):
     """Basic request body conversion works for Codestral."""
-    req = MockRequest()
+    req = make_request()
     body = codestral_provider._build_request_body(req)
 
     assert body["model"] == "devstral-small-latest"
@@ -90,16 +59,17 @@ def test_build_request_body_basic(codestral_provider):
 
 def test_build_request_body_global_disable_blocks_reasoning_mapping():
     """Global disable disables reasoning replay in the converter."""
-    provider = CodestralProvider(
+    provider = profiled_provider(
+        "mistral_codestral",
         ProviderConfig(
             api_key="test_codestral_key",
             base_url=CODESTRAL_DEFAULT_BASE,
             rate_limit=10,
             rate_window=60,
-            enable_thinking=False,
-        )
+        ),
+        admission=immediate_admission(),
     )
-    req = MockRequest()
+    req = make_request()
     body = provider._build_request_body(req)
 
     roles = [m.get("role") for m in body.get("messages", [])]
@@ -109,7 +79,7 @@ def test_build_request_body_global_disable_blocks_reasoning_mapping():
 @pytest.mark.asyncio
 async def test_stream_response_text(codestral_provider):
     """Text content deltas are emitted as text blocks."""
-    req = MockRequest()
+    req = make_request()
 
     mock_chunk = MagicMock()
     mock_chunk.choices = [
@@ -142,7 +112,7 @@ async def test_stream_response_text(codestral_provider):
 @pytest.mark.asyncio
 async def test_stream_response_reasoning_content(codestral_provider):
     """reasoning_content deltas are emitted as thinking blocks."""
-    req = MockRequest()
+    req = make_request()
 
     mock_chunk = MagicMock()
     mock_chunk.choices = [

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any
 
 import httpx
@@ -26,7 +24,13 @@ def test_probe_and_models_routes(
         assert models.status_code == 200
         assert models.json()["data"]
 
-        for path in ("/", "/health", "/v1/messages", "/v1/messages/count_tokens"):
+        for path in (
+            "/",
+            "/health",
+            "/v1/messages",
+            "/v1/responses",
+            "/v1/messages/count_tokens",
+        ):
             head = client.head(path)
             assert head.status_code == 204, (path, head.status_code, head.text)
             options = client.options(path)
@@ -60,7 +64,7 @@ def test_count_tokens_accepts_thinking_tools_and_results(
                     {
                         "type": "tool_result",
                         "tool_use_id": "toolu_smoke",
-                        "content": "Free Claude Code",
+                        "content": "CodexProxy",
                     }
                 ],
             },

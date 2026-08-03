@@ -3,11 +3,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from api.app import create_app
 from api.dependencies import get_settings
+from api.ports import ApiServices
+from application.ports import StopResult
 from config.settings import Settings
+from tests.api.support import create_test_app
 
-app = create_app()
+app = create_test_app()
 
 
 @pytest.fixture
@@ -61,7 +63,10 @@ def test_create_message_quota_check_mock(client, mock_settings):
         "messages": [{"role": "user", "content": "quota check"}],
     }
 
-    with patch("api.optimization_handlers.is_quota_check_request", return_value=True):
+    with patch(
+        "api.optimization_handlers.is_quota_check_request",
+        return_value=True,
+    ):
         response = client.post("/v1/messages", json=payload)
 
     assert response.status_code == 200
@@ -80,7 +85,8 @@ def test_create_message_title_generation_skip(client, mock_settings):
     }
 
     with patch(
-        "api.optimization_handlers.is_title_generation_request", return_value=True
+        "api.optimization_handlers.is_title_generation_request",
+        return_value=True,
     ):
         response = client.post("/v1/messages", json=payload)
 
@@ -136,45 +142,45 @@ def test_count_tokens_error_returns_500(client):
         "messages": [{"role": "user", "content": "hello"}],
     }
 
-    with patch("api.routes.get_token_count", side_effect=RuntimeError("token error")):
+    with patch(
+        "api.routes.get_token_count",
+        side_effect=RuntimeError("token error"),
+    ):
         response = client.post("/v1/messages/count_tokens", json=payload)
 
     assert response.status_code == 500
     assert "token error" in response.json()["detail"]
 
 
-def test_stop_cli_with_handler(client):
-    mock_handler = MagicMock()
-    # Mock the async method to return a completed future or just mock it since TestClient
-    # will run the app in a way that respects it?
-    # Actually, we need to mock it as an async function.
-    mock_handler.stop_all_tasks = AsyncMock(return_value=3)
-    app.state.message_handler = mock_handler
+def test_stop_cli_with_messaging_workflow(client):
+    session_control = MagicMock()
+    session_control.stop_all = AsyncMock(return_value=StopResult(cancelled_count=3))
+    services = app.state.services
+    app.state.services = ApiServices(
+        requests=services.requests,
+        admin=services.admin,
+        tasks=session_control,
+    )
 
     response = client.post("/stop")
 
     assert response.status_code == 200
     assert response.json()["cancelled_count"] == 3
-    mock_handler.stop_all_tasks.assert_called_once()
-
-    # Cleanup state
-    if hasattr(app.state, "message_handler"):
-        del app.state.message_handler
+    session_control.stop_all.assert_awaited_once()
 
 
 def test_stop_cli_fallback_to_manager(client):
-    if hasattr(app.state, "message_handler"):
-        del app.state.message_handler
-
-    mock_manager = MagicMock()
-    mock_manager.stop_all = AsyncMock()
-    app.state.cli_manager = mock_manager
+    session_control = MagicMock()
+    session_control.stop_all = AsyncMock(return_value=StopResult(source="cli_manager"))
+    services = app.state.services
+    app.state.services = ApiServices(
+        requests=services.requests,
+        admin=services.admin,
+        tasks=session_control,
+    )
 
     response = client.post("/stop")
 
     assert response.status_code == 200
     assert response.json()["source"] == "cli_manager"
-    mock_manager.stop_all.assert_called_once()
-
-    if hasattr(app.state, "cli_manager"):
-        del app.state.cli_manager
+    session_control.stop_all.assert_awaited_once()

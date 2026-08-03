@@ -1,76 +1,42 @@
-"""Dependency injection for FastAPI."""
+"""FastAPI dependencies for the explicit runtime service boundary."""
 
 import secrets
 
 from fastapi import Depends, HTTPException, Request
 from loguru import logger
-from starlette.applications import Starlette
 
+from application.errors import UnknownProviderError
+from application.ports import ProviderPort, RequestRuntimeLease
+from config.provider_catalog import PROVIDER_CATALOG
 from config.settings import Settings
-from config.settings import get_settings as _get_settings
-from core.anthropic import get_user_facing_error_message
-from providers.base import BaseProvider
-from providers.exceptions import (
-    AuthenticationError,
-    ServiceUnavailableError,
-    UnknownProviderTypeError,
-)
-from providers.registry import PROVIDER_DESCRIPTORS, ProviderRegistry
 
-# Process-level cache: only for :func:`get_provider_for_type` / :func:`get_provider`
-# when there is no ``Request``/``app`` (unit tests, scripts). HTTP handlers must pass
-# ``app`` to :func:`resolve_provider` so the app-scoped registry is used.
-_providers: dict[str, BaseProvider] = {}
+from .ports import ApiServices
 
 
-def get_settings() -> Settings:
-    """Return cached :class:`~config.settings.Settings` (FastAPI-friendly alias)."""
-    return _get_settings()
+def get_services(request: Request) -> ApiServices:
+    """Return the complete services supplied when the app was constructed."""
+    return request.app.state.services
+
+
+def get_settings(services: ApiServices = Depends(get_services)) -> Settings:
+    """Return the current request-runtime settings snapshot."""
+    return services.requests.current_settings()
 
 
 def resolve_provider(
     provider_type: str,
     *,
-    app: Starlette | None,
-    settings: Settings,
-) -> BaseProvider:
-    """Resolve a provider using the app-scoped registry when ``app`` is set.
-
-    When ``app`` is not ``None``, the app-owned :attr:`app.state.provider_registry`
-    must exist (installed by :class:`~api.runtime.AppRuntime` during startup).
-    Callers that construct a bare ``FastAPI`` without lifespan must set
-    ``app.state.provider_registry`` explicitly.
-
-    When ``app`` is ``None`` (no HTTP context), uses the process-level
-    :data:`_providers` cache only.
-    """
-    if app is not None:
-        reg = getattr(app.state, "provider_registry", None)
-        if reg is None:
-            raise ServiceUnavailableError(
-                "Provider registry is not configured. Ensure AppRuntime startup ran "
-                "or assign app.state.provider_registry for test apps."
-            )
-        return _resolve_with_registry(reg, provider_type, settings)
-    return _resolve_with_registry(ProviderRegistry(_providers), provider_type, settings)
-
-
-def _resolve_with_registry(
-    registry: ProviderRegistry, provider_type: str, settings: Settings
-) -> BaseProvider:
-    should_log_init = not registry.is_cached(provider_type)
+    lease: RequestRuntimeLease,
+) -> ProviderPort:
+    """Resolve a provider through one retained generation."""
+    should_log_init = not lease.is_provider_cached(provider_type)
     try:
-        provider = registry.get(provider_type, settings)
-    except AuthenticationError as e:
-        # Provider :class:`~providers.exceptions.AuthenticationError` messages are
-        # curated configuration hints (env var names, docs links), not upstream noise.
-        detail = str(e).strip() or get_user_facing_error_message(e)
-        raise HTTPException(status_code=503, detail=detail) from e
-    except UnknownProviderTypeError:
+        provider = lease.resolve_provider(provider_type)
+    except UnknownProviderError:
         logger.error(
             "Unknown provider_type: '{}'. Supported: {}",
             provider_type,
-            ", ".join(f"'{key}'" for key in PROVIDER_DESCRIPTORS),
+            ", ".join(f"'{key}'" for key in PROVIDER_CATALOG),
         )
         raise
     if should_log_init:
@@ -78,73 +44,35 @@ def _resolve_with_registry(
     return provider
 
 
-def get_provider_for_type(provider_type: str) -> BaseProvider:
-    """Get or create a provider in the process-level cache (no ``app``/Request).
-
-    HTTP route handlers should call :func:`resolve_provider` with the active
-    :attr:`request.app` (via :class:`~api.runtime.AppRuntime`) instead of this
-    process-wide cache.
-    """
-    return resolve_provider(provider_type, app=None, settings=get_settings())
-
-
-def require_api_key(
-    request: Request, settings: Settings = Depends(get_settings)
+def require_proxy_auth(
+    request: Request,
+    settings: Settings = Depends(get_settings),
 ) -> None:
-    """Require a server API key (Codex/Responses-style).
-
-    Checks `x-api-key` header or `Authorization: Bearer ...` against
-    `Settings.effective_auth_token` (which prefers
-    ``CODEX_PROXY_AUTH_TOKEN`` and falls back to ``ANTHROPIC_AUTH_TOKEN``).
-    If both are empty, this is a no-op.
-
-    Localhost requests are allowed without a key because the proxy is
-    bound to ``127.0.0.1`` and the Codex CLI native binary does not always
-    send auth headers when ``requires_openai_auth = false``.
-    """
-    if request.client and request.client.host in ("127.0.0.1", "::1", "localhost"):
-        return
-    auth_token = settings.effective_auth_token
-    if not auth_token:
-        # No API key configured -> allow
+    """Require the configured proxy token as HTTP bearer authorization."""
+    anthropic_auth_token = settings.anthropic_auth_token.strip()
+    if not anthropic_auth_token:
         return
 
-    header = (
-        request.headers.get("x-api-key")
-        or request.headers.get("authorization")
-        or request.headers.get("anthropic-auth-token")
-    )
-    if not header:
-        raise HTTPException(status_code=401, detail="Missing API key")
+    authorization = request.headers.get("authorization")
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing proxy authentication token",
+        )
 
-    # Support both raw key in X-API-Key and Bearer token in Authorization
-    token = header.strip()
-    if header.lower().startswith("bearer "):
-        token = header.split(" ", 1)[1].strip()
+    parts = authorization.strip().split(maxsplit=1)
+    if len(parts) != 2 or parts[0].casefold() != "bearer":
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid proxy authentication token",
+        )
+    token = parts[1].strip()
 
-    # Strip anything after the first colon to handle tokens with appended model names
-    if token and ":" in token:
-        token = token.split(":", 1)[0].strip()
-
-    # Constant-time comparison to avoid leaking the configured token via
-    # response-time differences on a per-byte mismatch (CWE-208).
-    if not secrets.compare_digest(token.encode("utf-8"), auth_token.encode("utf-8")):
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
-
-def get_provider() -> BaseProvider:
-    """Get or create the default provider (``MODEL`` / ``provider_type``).
-
-    Process-cache helper for scripts, unit tests, and non-FastAPI callers. HTTP
-    handlers must use :func:`resolve_provider` with :attr:`request.app` so the
-    app-scoped :class:`~providers.registry.ProviderRegistry` is used.
-    """
-    return get_provider_for_type(get_settings().provider_type)
-
-
-async def cleanup_provider():
-    """Cleanup all provider resources."""
-    global _providers
-    await ProviderRegistry(_providers).cleanup()
-    _providers = {}
-    logger.debug("Provider cleanup completed")
+    if not token or not secrets.compare_digest(
+        token.encode("utf-8"),
+        anthropic_auth_token.encode("utf-8"),
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid proxy authentication token",
+        )

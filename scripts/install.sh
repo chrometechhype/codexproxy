@@ -1,23 +1,35 @@
 #!/bin/sh
 set -eu
 
-REPO_GIT_URL="git+https://github.com/chrometechhype/codexproxy.git"
+REPO_ARCHIVE_URL="https://github.com/Alishahryar1/codexproxy/archive/refs/heads/main.zip"
 PYTHON_VERSION="3.14.0"
-MIN_UV_VERSION="0.11.0"
+MIN_UV_VERSION="0.11.16"
+CLAUDE_INSTALL_URL="https://claude.ai/install.sh"
+CODEX_INSTALL_URL="https://chatgpt.com/codex/install.sh"
+PI_INSTALL_URL="https://pi.dev/install.sh"
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
-PACKAGE_NAME="codexproxy"
+CODEX_PROXY_MACOS_BUNDLE_ID="io.github.alishahryar1.codexproxy"
+CODEX_PROXY_MACOS_OWNER_FILE=".codexproxy-owner"
+# Include retired entry points so updates reject older CodexProxy processes before replacement.
+CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-claude cdx-codex cdx-pi cdx-init codexproxy"
 
 dry_run=0
 voice_nim=0
 voice_local=0
 voice_all=0
+install_claude=1
+install_codex=1
+install_pi=1
 torch_backend=""
+temporary_script=""
+tool_bin=""
+pi_available=0
 
 show_usage() {
     cat <<'USAGE'
 Usage: install.sh [options]
 
-Installs Codex CLI if missing, installs or updates uv, Python 3.14.0, and CodexProxy.
+Installs or updates CodexProxy and lets you choose which coding agents to install or verify.
 
 Options:
   --voice-nim              Install NVIDIA NIM voice transcription support.
@@ -32,6 +44,58 @@ USAGE
 fail() {
     printf 'error: %s\n' "$*" >&2
     exit 1
+}
+
+installer_is_interactive() {
+    [ -t 1 ] && ( : </dev/tty ) 2>/dev/null
+}
+
+prompt_yes_no() {
+    question=$1
+    while :; do
+        printf '%s [Y/n] ' "$question" >&4
+        if ! IFS= read -r answer <&3; then
+            fail "Could not read the coding agent selection."
+        fi
+        case "$answer" in
+            ""|[Yy]|[Yy][Ee][Ss]) return 0 ;;
+            [Nn]|[Nn][Oo]) return 1 ;;
+            *) printf 'Please answer Y or N.\n' >&4 ;;
+        esac
+    done
+}
+
+choose_coding_agents() {
+    selection_input=$1
+    selection_output=$2
+    exec 3<"$selection_input"
+    exec 4>"$selection_output"
+
+    while :; do
+        if prompt_yes_no "Install or verify Claude Code for cdx-claude?"; then
+            install_claude=1
+        else
+            install_claude=0
+        fi
+        if prompt_yes_no "Install or verify Codex for cdx-codex?"; then
+            install_codex=1
+        else
+            install_codex=0
+        fi
+        if prompt_yes_no "Install or verify Pi for cdx-pi?"; then
+            install_pi=1
+        else
+            install_pi=0
+        fi
+
+        if [ "$install_claude" -eq 1 ] || [ "$install_codex" -eq 1 ] || [ "$install_pi" -eq 1 ]; then
+            break
+        fi
+        printf 'Select at least one coding agent.\n\n' >&4
+    done
+
+    exec 3<&-
+    exec 4>&-
 }
 
 step() {
@@ -61,18 +125,28 @@ print_command() {
 
 run() {
     print_command "$@"
-    if [ "$dry_run" -eq 0 ]; then
-        "$@"
+    if [ "$dry_run" -eq 1 ]; then
+        return 0
+    fi
+
+    if "$@"; then
+        return 0
+    else
+        status=$?
+    fi
+
+    fail "Command failed with exit code $status: $1"
+}
+
+cleanup() {
+    if [ -n "$temporary_script" ] && [ -e "$temporary_script" ]; then
+        rm -f "$temporary_script"
     fi
 }
 
-run_uv_installer() {
-    printf '+ curl -LsSf %s | sh\n' "$UV_INSTALL_URL"
-    if [ "$dry_run" -eq 0 ]; then
-        command -v curl >/dev/null 2>&1 || fail "curl is required to install uv."
-        curl -LsSf "$UV_INSTALL_URL" | sh
-    fi
-}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' HUP TERM
 
 add_path_entry() {
     [ -n "$1" ] || return 0
@@ -82,7 +156,7 @@ add_path_entry() {
     esac
 }
 
-add_uv_to_path() {
+add_known_bin_directories() {
     if [ -n "${XDG_BIN_HOME:-}" ]; then
         add_path_entry "$XDG_BIN_HOME"
     fi
@@ -90,9 +164,71 @@ add_uv_to_path() {
     if [ -n "${HOME:-}" ]; then
         add_path_entry "$HOME/.local/bin"
         add_path_entry "$HOME/.cargo/bin"
+        add_path_entry "${XDG_DATA_HOME:-$HOME/.local/share}/pi-node/current/bin"
     fi
 
     export PATH
+    hash -r 2>/dev/null || true
+}
+
+add_pi_bin_directories() {
+    [ "$dry_run" -eq 0 ] || return 0
+    add_known_bin_directories
+    if command -v npm >/dev/null 2>&1; then
+        pi_npm_prefix=$(npm prefix -g 2>/dev/null || npm config get prefix 2>/dev/null || true)
+        if [ -n "$pi_npm_prefix" ]; then
+            add_path_entry "$pi_npm_prefix/bin"
+            export PATH
+            hash -r 2>/dev/null || true
+        fi
+    fi
+}
+
+CODEX_PROXY_process_ids() {
+    command_name=$1
+
+    if command -v pgrep >/dev/null 2>&1; then
+        {
+            pgrep -x "$command_name" 2>/dev/null || true
+            pgrep -f "(^|/)${command_name}([[:space:]]|$)" 2>/dev/null || true
+        } | sort -nu
+        return 0
+    fi
+
+    ps -A -o pid= -o args= 2>/dev/null |
+        awk -v command_name="$command_name" '
+            BEGIN {
+                pattern = "(^|/)" command_name "([[:space:]]|$)"
+            }
+            {
+                process_id = $1
+                sub(/^[[:space:]]*[0-9]+[[:space:]]+/, "")
+                if ($0 ~ pattern) {
+                    print process_id
+                }
+            }
+        ' || true
+}
+
+assert_no_CODEX_PROXY_processes_running() {
+    running=""
+    for command_name in $CODEX_PROXY_COMMANDS; do
+        process_ids=$(CODEX_PROXY_process_ids "$command_name")
+        [ -n "$process_ids" ] || continue
+
+        for process_id in $process_ids; do
+            process="$command_name (PID $process_id)"
+            if [ -n "$running" ]; then
+                running="$running, $process"
+            else
+                running=$process
+            fi
+        done
+    done
+
+    if [ -n "$running" ]; then
+        fail "CodexProxy is still running ($running). Stop those processes, then rerun the installer."
+    fi
 }
 
 require_command() {
@@ -101,19 +237,202 @@ require_command() {
     fi
 }
 
-current_uv_version() {
-    version=$(uv self version --short 2>/dev/null || true)
-    if [ -z "$version" ]; then
-        version=$(uv --version 2>/dev/null | sed 's/^uv //; s/ .*//' || true)
+download_and_run() {
+    url=$1
+    interpreter=$2
+    label=$3
+    non_interactive=${4:-0}
+
+    if [ "$dry_run" -eq 1 ]; then
+        print_command curl -fsSL "$url" -o "<temporary-script>"
+        if [ "$non_interactive" -eq 1 ]; then
+            printf '+ CODEX_NON_INTERACTIVE=1 '
+            quote_arg "$interpreter"
+            printf ' <temporary-script>\n'
+        else
+            print_command "$interpreter" "<temporary-script>"
+        fi
+        return 0
     fi
 
-    [ -n "$version" ] || return 1
-    printf '%s\n' "$version"
+    temporary_script=$(mktemp "${TMPDIR:-/tmp}/cdx-install.XXXXXX") || fail "Unable to create a temporary file for $label."
+    print_command curl -fsSL "$url" -o "$temporary_script"
+    if curl -fsSL "$url" -o "$temporary_script"; then
+        :
+    else
+        status=$?
+        fail "Could not download the $label installer (curl exit code $status)."
+    fi
+
+    if [ ! -s "$temporary_script" ]; then
+        fail "The downloaded $label installer was empty."
+    fi
+
+    if [ "$non_interactive" -eq 1 ]; then
+        printf '+ CODEX_NON_INTERACTIVE=1 '
+        quote_arg "$interpreter"
+        printf ' '
+        quote_arg "$temporary_script"
+        printf '\n'
+        if CODEX_NON_INTERACTIVE=1 "$interpreter" "$temporary_script"; then
+            :
+        else
+            status=$?
+            fail "$label installation failed with exit code $status."
+        fi
+    else
+        print_command "$interpreter" "$temporary_script"
+        if "$interpreter" "$temporary_script"; then
+            :
+        else
+            status=$?
+            fail "$label installation failed with exit code $status."
+        fi
+    fi
+
+    rm -f "$temporary_script"
+    temporary_script=""
 }
 
-version_ge() {
-    current=${1%%[-+]*}
-    minimum=${2%%[-+]*}
+verify_command() {
+    command_name=$1
+    display_name=$2
+
+    if [ "$dry_run" -eq 1 ]; then
+        print_command "$command_name" --version
+        return 0
+    fi
+
+    command_path=$(command -v "$command_name" 2>/dev/null) || fail "$display_name was installed, but '$command_name' is not available on PATH."
+    run "$command_path" --version
+}
+
+pi_command_is_compatible() {
+    pi_command_path=$(command -v pi 2>/dev/null) || return 1
+    pi_help=$("$pi_command_path" --help 2>/dev/null) || return 1
+    case "$pi_help" in
+        *--extension*) ;;
+        *) return 1 ;;
+    esac
+    case "$pi_help" in
+        *--models*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+verify_pi_command() {
+    if [ "$dry_run" -eq 1 ]; then
+        printf '+ pi --help (verify --extension and --models support)\n'
+        print_command pi --version
+        return 0
+    fi
+
+    pi_command_path=$(command -v pi 2>/dev/null) || fail "Pi was installed, but 'pi' is not available on PATH."
+    pi_command_is_compatible || fail "The 'pi' command at $pi_command_path is not a compatible Pi Coding Agent."
+    run "$pi_command_path" --version
+}
+
+ensure_claude() {
+    if command -v claude >/dev/null 2>&1; then
+        printf 'Claude Code already found on PATH; verifying it.\n'
+    else
+        download_and_run "$CLAUDE_INSTALL_URL" bash "Claude Code"
+        add_known_bin_directories
+    fi
+
+    verify_command claude "Claude Code"
+}
+
+ensure_codex() {
+    if command -v codex >/dev/null 2>&1; then
+        printf 'Codex already found on PATH; verifying it.\n'
+    else
+        download_and_run "$CODEX_INSTALL_URL" sh "Codex" 1
+        add_known_bin_directories
+    fi
+
+    verify_command codex "Codex"
+}
+
+ensure_pi() {
+    pi_available=0
+    add_pi_bin_directories
+    existing_pi_path=$(command -v pi 2>/dev/null || true)
+
+    if [ "$dry_run" -eq 1 ] && command -v pi >/dev/null 2>&1; then
+        printf 'Pi already found on PATH; verifying it.\n'
+    elif pi_command_is_compatible; then
+        printf 'Pi already found on PATH; verifying it.\n'
+    else
+        if [ -n "$existing_pi_path" ]; then
+            printf "The existing 'pi' command at %s is not Pi Coding Agent; installing Pi.\n" "$existing_pi_path"
+        fi
+        download_and_run "$PI_INSTALL_URL" sh "Pi"
+        add_pi_bin_directories
+
+        if [ "$dry_run" -eq 0 ]; then
+            current_pi_path=$(command -v pi 2>/dev/null || true)
+            if [ -z "$current_pi_path" ] ||
+                { [ -n "$existing_pi_path" ] &&
+                    [ "$current_pi_path" = "$existing_pi_path" ] &&
+                    ! pi_command_is_compatible; }; then
+                printf 'Pi was not installed; continuing without it.\n'
+                return 0
+            fi
+        fi
+    fi
+
+    verify_pi_command
+    pi_available=1
+}
+
+ensure_selected_coding_agents() {
+    if [ "$install_claude" -eq 1 ]; then
+        step "Ensuring Claude Code is installed"
+        ensure_claude
+    fi
+
+    if [ "$install_codex" -eq 1 ]; then
+        step "Ensuring Codex is installed"
+        ensure_codex
+    fi
+
+    if [ "$install_pi" -eq 1 ]; then
+        step "Checking or installing Pi"
+        ensure_pi
+    fi
+
+    if [ "$install_claude" -eq 0 ] && [ "$install_codex" -eq 0 ] && [ "$pi_available" -eq 0 ]; then
+        fail "No selected coding agent was installed. Re-run the installer and choose at least one."
+    fi
+}
+
+current_uv_version() {
+    if output=$(uv --version); then
+        :
+    else
+        return 1
+    fi
+
+    case "$output" in
+        uv\ *) version=${output#uv } ;;
+        *) version=$output ;;
+    esac
+    version=${version%% *}
+
+    case "$version" in
+        [0-9]*.[0-9]*.[0-9]*) printf '%s\n' "$version" ;;
+        *) return 1 ;;
+    esac
+}
+
+uv_version_is_supported() {
+    case "$1" in
+        *-*) return 1 ;;
+    esac
+
+    current=${1%%+*}
+    minimum=${2%%+*}
 
     old_ifs=$IFS
     IFS=.
@@ -127,6 +446,10 @@ version_ge() {
     minimum_patch=${3:-0}
     IFS=$old_ifs
 
+    case "$current_major$current_minor$current_patch$minimum_major$minimum_minor$minimum_patch" in
+        *[!0-9]*) return 1 ;;
+    esac
+
     [ "$current_major" -gt "$minimum_major" ] && return 0
     [ "$current_major" -lt "$minimum_major" ] && return 1
     [ "$current_minor" -gt "$minimum_minor" ] && return 0
@@ -134,99 +457,48 @@ version_ge() {
     [ "$current_patch" -ge "$minimum_patch" ]
 }
 
-uv_version_satisfies_minimum() {
-    version=$(current_uv_version) || return 1
-    version_ge "$version" "$MIN_UV_VERSION"
-}
-
-validate_uv_version() {
-    [ "$dry_run" -eq 1 ] && return 0
-
-    version=$(current_uv_version) || fail "Unable to determine uv version."
-    if ! version_ge "$version" "$MIN_UV_VERSION"; then
-        fail "uv $MIN_UV_VERSION or newer is required; found uv $version. Upgrade uv with its installer or package manager, then rerun this installer."
-    fi
-}
-
-uv_self_update_supported() {
-    uv self update --dry-run >/dev/null 2>&1
-}
-
-uv_installed_by_homebrew() {
-    command -v brew >/dev/null 2>&1 && brew list --versions uv >/dev/null 2>&1
-}
-
-uv_installed_by_pipx() {
-    command -v pipx >/dev/null 2>&1 && pipx list 2>/dev/null | grep -Eq '(^|[[:space:]])package uv([[:space:]]|$)'
-}
-
-uv_installed_in_active_virtualenv() {
-    [ -n "${VIRTUAL_ENV:-}" ] || return 1
-
-    uv_path=$(command -v uv)
-    case "$uv_path" in
-        "$VIRTUAL_ENV"/*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-update_existing_uv() {
-    if uv_self_update_supported; then
-        run uv self update
+verify_uv() {
+    if [ "$dry_run" -eq 1 ]; then
+        print_command uv --version
         return 0
     fi
 
-    if uv_installed_by_homebrew; then
-        run brew upgrade uv
-        return 0
+    command -v uv >/dev/null 2>&1 || fail "uv was installed, but it is not available on PATH."
+    version=$(current_uv_version) || fail "uv is present, but 'uv --version' did not return a valid version."
+    if ! uv_version_is_supported "$version" "$MIN_UV_VERSION"; then
+        fail "Stable uv $MIN_UV_VERSION or newer is required; found uv $version after installation."
     fi
 
-    if uv_installed_by_pipx; then
-        run pipx upgrade uv
-        return 0
-    fi
-
-    if uv_installed_in_active_virtualenv; then
-        run python -m pip install --upgrade uv
-        return 0
-    fi
-
-    if uv_version_satisfies_minimum; then
-        printf 'uv is already installed and satisfies >=%s; skipping automatic uv update because the install source was not detected.\n' "$MIN_UV_VERSION"
-        return 0
-    fi
-
-    version=$(current_uv_version 2>/dev/null || printf 'unknown')
-    fail "uv $MIN_UV_VERSION or newer is required; found uv $version. The existing uv install source was not detected. Upgrade uv manually with the package manager that installed it, then rerun this installer."
+    printf 'Verified uv %s.\n' "$version"
 }
 
-install_codex_if_missing() {
-    if command -v codex >/dev/null 2>&1; then
-        printf 'Codex CLI already found on PATH; skipping install.\n'
+ensure_uv() {
+    if [ "$dry_run" -eq 1 ]; then
+        if command -v uv >/dev/null 2>&1; then
+            print_command uv --version
+            printf 'A compatible existing uv will be left unchanged; an obsolete one will be replaced by the standalone installer.\n'
+        else
+            printf 'uv is not installed; the current standalone uv would be installed.\n'
+            download_and_run "$UV_INSTALL_URL" sh "uv"
+            verify_uv
+        fi
         return 0
     fi
-
-    require_command npm
-    run npm install -g @openai/codex
-}
-
-install_or_update_uv() {
-    add_uv_to_path
 
     if command -v uv >/dev/null 2>&1; then
-        update_existing_uv
-        validate_uv_version
-        return 0
+        version=$(current_uv_version) || fail "uv is present, but 'uv --version' did not return a valid version."
+        if uv_version_is_supported "$version" "$MIN_UV_VERSION"; then
+            printf 'uv %s already satisfies >=%s; leaving it unchanged.\n' "$version" "$MIN_UV_VERSION"
+            return 0
+        fi
+        printf 'uv %s does not satisfy stable >=%s; installing the current standalone uv.\n' "$version" "$MIN_UV_VERSION"
+    else
+        printf 'uv is not installed; installing the current standalone uv.\n'
     fi
 
-    run_uv_installer
-    add_uv_to_path
-
-    if [ "$dry_run" -eq 0 ] && ! command -v uv >/dev/null 2>&1; then
-        fail "uv was installed, but it is not available on PATH. Open a new terminal or add uv's bin directory to PATH."
-    fi
-
-    validate_uv_version
+    download_and_run "$UV_INSTALL_URL" sh "uv"
+    add_known_bin_directories
+    verify_uv
 }
 
 parse_args() {
@@ -244,11 +516,11 @@ parse_args() {
             --torch-backend)
                 shift
                 [ "$#" -gt 0 ] || fail "--torch-backend requires a value."
-                torch_backend="$1"
+                torch_backend=$1
                 [ -n "$torch_backend" ] || fail "--torch-backend requires a non-empty value."
                 ;;
             --torch-backend=*)
-                torch_backend="${1#*=}"
+                torch_backend=${1#*=}
                 [ -n "$torch_backend" ] || fail "--torch-backend requires a non-empty value."
                 ;;
             --dry-run)
@@ -269,7 +541,6 @@ parse_args() {
 
 validate_args() {
     include_local=$voice_local
-
     if [ "$voice_all" -eq 1 ]; then
         include_local=1
     fi
@@ -288,47 +559,199 @@ package_spec() {
         include_local=1
     fi
 
-    if [ -n "$torch_backend" ] && [ "$include_local" -ne 1 ]; then
-        fail "--torch-backend requires --voice-local or --voice-all."
-    fi
-
     if [ "$include_nim" -eq 1 ] && [ "$include_local" -eq 1 ]; then
-        printf '%s[voice,voice_local] @ %s' "$PACKAGE_NAME" "$REPO_GIT_URL"
+        printf 'codexproxy[voice,voice_local] @ %s' "$REPO_ARCHIVE_URL"
     elif [ "$include_nim" -eq 1 ]; then
-        printf '%s[voice] @ %s' "$PACKAGE_NAME" "$REPO_GIT_URL"
+        printf 'codexproxy[voice] @ %s' "$REPO_ARCHIVE_URL"
     elif [ "$include_local" -eq 1 ]; then
-        printf '%s[voice_local] @ %s' "$PACKAGE_NAME" "$REPO_GIT_URL"
+        printf 'codexproxy[voice_local] @ %s' "$REPO_ARCHIVE_URL"
     else
-        printf '%s' "$REPO_GIT_URL"
+        printf 'codexproxy @ %s' "$REPO_ARCHIVE_URL"
     fi
 }
 
-install_codexproxy() {
+install_() {
+    assert_no_CODEX_PROXY_processes_running
     spec=$(package_spec)
 
     if [ -n "$torch_backend" ]; then
-        run uv tool install --force --torch-backend "$torch_backend" "$spec"
+        run uv tool install --force --refresh-package codexproxy --python "$PYTHON_VERSION" --torch-backend "$torch_backend" "$spec"
     else
-        run uv tool install --force "$spec"
+        run uv tool install --force --refresh-package codexproxy --python "$PYTHON_VERSION" "$spec"
     fi
 }
 
+configure_and_verify_() {
+    run uv tool update-shell
 
+    if [ "$dry_run" -eq 1 ]; then
+        print_command uv tool dir --bin
+        printf '+ verify cdx-desktop, cdx-server, cdx-claude, cdx-codex, and cdx-pi in the uv tool bin directory\n'
+        print_command cdx-server --version
+        return 0
+    fi
+
+    print_command uv tool dir --bin
+    if tool_bin=$(uv tool dir --bin); then
+        :
+    else
+        status=$?
+        fail "Could not determine the uv tool bin directory (exit code $status)."
+    fi
+    [ -n "$tool_bin" ] || fail "uv returned an empty tool bin directory."
+
+    add_path_entry "$tool_bin"
+    export PATH
+    hash -r 2>/dev/null || true
+
+    for command_name in cdx-desktop cdx-server cdx-claude cdx-codex cdx-pi; do
+        [ -x "$tool_bin/$command_name" ] || fail "CodexProxy installation did not create $tool_bin/$command_name."
+    done
+
+    run "$tool_bin/cdx-server" --version
+}
+
+shell_quote() {
+    escaped=$(printf '%s' "$1" | sed "s/'/'\\\\''/g")
+    printf "'%s'" "$escaped"
+}
+
+macos_app_is_CODEX_PROXY_owned() {
+    app_dir=$1
+    owner_file="$app_dir/Contents/$CODEX_PROXY_MACOS_OWNER_FILE"
+    [ -d "$app_dir" ] &&
+        [ ! -L "$app_dir" ] &&
+        [ -f "$owner_file" ] &&
+        [ "$(cat "$owner_file")" = "$CODEX_PROXY_MACOS_BUNDLE_ID" ]
+}
+
+install_macos_desktop_app() {
+    [ "$(uname -s)" = "Darwin" ] || return 0
+
+    app_dir="$HOME/Applications/CodexProxy.app"
+    contents_dir="$app_dir/Contents"
+    owner_file="$contents_dir/$CODEX_PROXY_MACOS_OWNER_FILE"
+    executable_dir="$contents_dir/MacOS"
+    executable_path="$executable_dir/cdx-desktop"
+    resources_dir="$contents_dir/Resources"
+    icon_path="$resources_dir/AppIcon.icns"
+    desktop_dir="$HOME/Desktop"
+    desktop_link="$desktop_dir/CodexProxy.app"
+
+    if [ -e "$app_dir" ] || [ -L "$app_dir" ]; then
+        macos_app_is_CODEX_PROXY_owned "$app_dir" ||
+            fail "An app not managed by CodexProxy already exists at $app_dir. Move it, then rerun the installer."
+    fi
+
+    if [ "$dry_run" -eq 1 ]; then
+        print_command mkdir -p "$executable_dir" "$resources_dir" "$desktop_dir"
+        print_command cdx-desktop --export-icon "$icon_path"
+        printf '+ write %s, %s, and %s\n' "$owner_file" "$contents_dir/Info.plist" "$executable_path"
+        print_command ln -s "$app_dir" "$desktop_link"
+        return 0
+    fi
+
+    mkdir -p "$executable_dir" "$resources_dir" "$desktop_dir"
+    run "$tool_bin/cdx-desktop" --export-icon "$icon_path"
+    [ -f "$icon_path" ] || fail "CodexProxy did not export its macOS app icon to $icon_path."
+    printf '%s\n' "$CODEX_PROXY_MACOS_BUNDLE_ID" > "$owner_file"
+    cat > "$contents_dir/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>CodexProxy</string>
+    <key>CFBundleExecutable</key>
+    <string>cdx-desktop</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.alishahryar1.codexproxy</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleName</key>
+    <string>CodexProxy</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMultipleInstancesProhibited</key>
+    <true/>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+    desktop_command=$(shell_quote "$tool_bin/cdx-desktop")
+    {
+        printf '%s\n' '#!/bin/sh'
+        printf 'exec %s\n' "$desktop_command"
+    } > "$executable_path"
+    chmod +x "$executable_path"
+
+    if [ -L "$desktop_link" ]; then
+        if [ "$(readlink "$desktop_link")" = "$app_dir" ]; then
+            rm -f "$desktop_link"
+        else
+            printf 'A non-CodexProxy link already exists at %s; leaving it unchanged.\n' "$desktop_link"
+            return 0
+        fi
+    elif [ -e "$desktop_link" ]; then
+        printf 'A non-CodexProxy item already exists at %s; leaving it unchanged.\n' "$desktop_link"
+        return 0
+    fi
+    ln -s "$app_dir" "$desktop_link"
+}
 
 parse_args "$@"
 validate_args
+add_known_bin_directories
 
-step "Installing Codex CLI if missing"
-install_codex_if_missing
+step "Checking for running CodexProxy processes"
+assert_no_CODEX_PROXY_processes_running
 
-step "Installing uv if missing, updating if present"
-install_or_update_uv
+if installer_is_interactive; then
+    step "Choosing coding agents"
+    choose_coding_agents /dev/tty /dev/tty
+fi
 
-step "Installing Python $PYTHON_VERSION"
-run uv python install "$PYTHON_VERSION"
+step "Checking installation prerequisites"
+require_command curl
+if [ "$install_claude" -eq 1 ]; then
+    require_command bash
+fi
+require_command sh
+require_command mktemp
+
+ensure_selected_coding_agents
+
+step "Ensuring uv $MIN_UV_VERSION or newer is installed"
+ensure_uv
 
 step "Installing or updating CodexProxy"
-install_codexproxy
+install_
 
-printf '\nCodexProxy is installed. Start the proxy with: cdx-server\n'
-printf 'Launch the Codex CLI through the proxy with: cdx-codex\n'
+step "Configuring PATH and verifying CodexProxy"
+configure_and_verify_
+
+if [ "$(uname -s)" = "Darwin" ]; then
+    step "Installing the CodexProxy desktop launcher"
+    install_macos_desktop_app
+fi
+
+if [ "$dry_run" -eq 1 ]; then
+    printf '\nDry run complete. No changes were made.\n'
+else
+    if [ "$(uname -s)" = "Darwin" ]; then
+        printf '\nCodexProxy is installed and verified. Open CodexProxy from Applications or the desktop to run it in the background.\n'
+        printf 'For terminal use, start the proxy with: cdx-server\n'
+    else
+        printf '\nCodexProxy is installed and verified. Start the proxy with: cdx-server\n'
+    fi
+    if [ "$install_claude" -eq 1 ]; then
+        printf 'Run Claude Code with: cdx-claude\n'
+    fi
+    if [ "$install_codex" -eq 1 ]; then
+        printf 'Run Codex with: cdx-codex\n'
+    fi
+    if [ "$pi_available" -eq 1 ]; then
+        printf 'Run Pi with: cdx-pi\n'
+    fi
+fi
