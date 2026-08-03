@@ -272,6 +272,23 @@ Open **Admin UI → Model Config → Reasoning** and select the behavior you wan
 
 Providers that do not support a selected control retain their own behavior.
 
+### Codex System Prompt
+
+CodexProxy prepends a rich proxy-level system prompt to every `/v1/responses` request by default, giving the model coding-agent guidance tuned for CodexProxy's tool set (`shell_command`, `read`, `write`, `apply_patch`, `exec_command`, `view_image`).
+
+| `SYSTEM_PROMPT_MODE` | Behavior |
+| --- | --- |
+| **`default`** (default) | Prepend the built-in CodexProxy system prompt. |
+| **`custom`** | Prepend your own text from `SYSTEM_PROMPT_CUSTOM`. |
+| **`none`** | Pass the client's instructions through unchanged. |
+
+Example:
+
+```dotenv
+SYSTEM_PROMPT_MODE="custom"
+SYSTEM_PROMPT_CUSTOM="You are my personal coding assistant..."
+```
+
 <a id="connect-your-client"></a>
 
 ## Connect Your Client
