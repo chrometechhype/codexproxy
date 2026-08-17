@@ -95,35 +95,10 @@ in Admin.
 </div>
 
 ### 4. Run Your Coding Agent
-
-Claude Code:
-
-```bash
-cdx-claude
-```
-
 Codex:
 
 ```bash
 cdx-codex
-```
-
-Pi:
-
-```bash
-cdx-pi
-```
-
-OpenCode:
-
-```bash
-cdx-opencode
-```
-
-Cline:
-
-```bash
-cdx-cline
 ```
 
 All five launchers use the current Admin UI settings. Use the agent's model picker to choose from the models CDX exposes. Normal CLI arguments still work, for example:
