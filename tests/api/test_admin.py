@@ -5,18 +5,19 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from application.connected_accounts import (
+from codexproxy.application.connected_accounts import (
     ConnectedAccountLoginMode,
     ConnectedAccountState,
     ConnectedAccountStatus,
 )
-from application.model_metadata import (
+from codexproxy.application.model_metadata import (
     ProviderModelInfo,
     ProviderModelRefreshResult,
 )
-from config.admin.values import MASKED_SECRET
-from config.server_urls import local_admin_url
-from config.settings import Settings
+from codexproxy.config.admin.values import MASKED_SECRET
+from codexproxy.config.provider_catalog import PROVIDER_CATALOG
+from codexproxy.config.server_urls import local_admin_url
+from codexproxy.config.settings import Settings
 from tests.api.support import create_test_app, provider_manager_for_app
 
 
@@ -41,6 +42,7 @@ def _clear_process_config(monkeypatch) -> None:
         "BEDROCK_PROXY",
         "OLLAMA_API_KEY",
         "ANTHROPIC_AUTH_TOKEN",
+        "PROXY_AUTH_ENABLED",
         "TELEGRAM_PROXY_URL",
         "CODEX_PROXY_ENV_FILE",
         "CLOUDFLARE_API_TOKEN",
@@ -131,7 +133,7 @@ def test_admin_unexpected_errors_are_never_cached(monkeypatch, tmp_path):
     )
 
     with patch(
-        "api.admin_routes.load_config_response",
+        "codexproxy.api.admin_routes.load_config_response",
         side_effect=RuntimeError("test error"),
     ):
         response = client.get("/admin/api/config")
@@ -150,13 +152,17 @@ def test_admin_cache_policy_does_not_match_similar_public_paths(monkeypatch, tmp
 
 
 def test_admin_api_fetches_bypass_browser_cache():
-    script = Path("api/admin_static/admin.js").read_text(encoding="utf-8")
+    script = Path("src/codexproxy/api/admin_static/admin.js").read_text(
+        encoding="utf-8"
+    )
 
     assert 'cache: "no-store"' in script
 
 
 def test_admin_connected_account_login_preopens_sign_in_window():
-    script = Path("api/admin_static/admin.js").read_text(encoding="utf-8")
+    script = Path("src/codexproxy/api/admin_static/admin.js").read_text(
+        encoding="utf-8"
+    )
 
     assert 'window.open("about:blank", "_blank")' in script
     assert "popup.location.replace(target)" in script
@@ -164,9 +170,7 @@ def test_admin_connected_account_login_preopens_sign_in_window():
     assert '"Reconnect"' in script
     assert '"Copy code"' in script
     assert "Restart your agent to refresh its model picker." in script
-    assert (
-        'window.confirm("Disconnect this ChatGPT account from CodexProxy?")' in script
-    )
+    assert 'window.confirm("Disconnect this ChatGPT account from CDX?")' in script
 
 
 class _FakeConnectedAccount:
@@ -263,7 +267,9 @@ def test_admin_rejects_auth_routes_for_non_connected_provider(monkeypatch, tmp_p
 
 
 def test_admin_provider_cards_support_non_key_configuration():
-    script = Path("api/admin_static/admin.js").read_text(encoding="utf-8")
+    script = Path("src/codexproxy/api/admin_static/admin.js").read_text(
+        encoding="utf-8"
+    )
 
     assert '"missing_config"' in script
     assert ": provider.configuration;" in script
@@ -293,7 +299,9 @@ def test_admin_page_no_longer_renders_global_status_header(monkeypatch, tmp_path
 
 
 def test_admin_static_no_longer_fetches_global_status_header():
-    script = Path("api/admin_static/admin.js").read_text(encoding="utf-8")
+    script = Path("src/codexproxy/api/admin_static/admin.js").read_text(
+        encoding="utf-8"
+    )
 
     assert 'api("/admin/api/status")' not in script
     assert "updateHeader" not in script
@@ -303,7 +311,9 @@ def test_admin_static_no_longer_fetches_global_status_header():
 
 
 def test_admin_static_hides_managed_source_label():
-    script = Path("api/admin_static/admin.js").read_text(encoding="utf-8")
+    script = Path("src/codexproxy/api/admin_static/admin.js").read_text(
+        encoding="utf-8"
+    )
 
     assert 'managed_env: "",' in script
     assert "hasOwnProperty.call(labels, source)" in script
@@ -312,15 +322,21 @@ def test_admin_static_hides_managed_source_label():
 
 
 def test_admin_static_places_reasoning_fields_in_model_config():
-    script = Path("api/admin_static/admin.js").read_text(encoding="utf-8")
+    script = Path("src/codexproxy/api/admin_static/admin.js").read_text(
+        encoding="utf-8"
+    )
 
     assert 'sections: ["models", "reasoning", "web_tools"]' in script
     assert 'sections: ["models", "thinking", "web_tools"]' not in script
 
 
 def test_admin_static_model_combobox_owns_dropdown_and_search_behavior():
-    script = Path("api/admin_static/admin.js").read_text(encoding="utf-8")
-    styles = Path("api/admin_static/admin.css").read_text(encoding="utf-8")
+    script = Path("src/codexproxy/api/admin_static/admin.js").read_text(
+        encoding="utf-8"
+    )
+    styles = Path("src/codexproxy/api/admin_static/admin.css").read_text(
+        encoding="utf-8"
+    )
 
     assert 'api("/admin/api/models" + (refresh ? "/refresh" : "")' in script
     assert 'field.type === "model" || field.type === "optional_model"' in script
@@ -341,12 +357,14 @@ def test_admin_static_model_combobox_owns_dropdown_and_search_behavior():
 
 
 def test_admin_static_model_combobox_preserves_custom_slugs_and_none_semantics():
-    script = Path("api/admin_static/admin.js").read_text(encoding="utf-8")
+    script = Path("src/codexproxy/api/admin_static/admin.js").read_text(
+        encoding="utf-8"
+    )
 
     assert '? ["None", ...state.modelOptions]' in script
     assert "You can still enter a custom slug." in script
     assert 'input.dataset.fieldType === "optional_model"' in script
-    assert 'return "";' in script
+    assert "return null;" in script
     assert "await hydrateModelOptions();" in script
     assert "Model fields remain editable" in script
     assert "result.failed_providers || []" in script
@@ -366,6 +384,8 @@ def test_admin_config_masks_secrets_and_exposes_manifest(monkeypatch, tmp_path):
     assert "MODEL_FABLE" in keys
     assert "REASONING_FABLE" in keys
     assert "ANTHROPIC_AUTH_TOKEN" in keys
+    assert "PROXY_AUTH_ENABLED" in keys
+    assert "LOG_LEVEL" in keys
     assert "OPENROUTER_API_KEY" in keys
     assert "AWS_BEARER_TOKEN_BEDROCK" in keys
     assert "BEDROCK_BASE_URL" in keys
@@ -389,11 +409,28 @@ def test_admin_config_masks_secrets_and_exposes_manifest(monkeypatch, tmp_path):
     )
     assert auth_field["secret"] is True
     assert auth_field["value"] == MASKED_SECRET
-    assert auth_field["source"] == "template"
+    assert auth_field["source"] == "default"
+    assert auth_field["nullable"] is False
     telegram_proxy_field = next(
         field for field in body["fields"] if field["key"] == "TELEGRAM_PROXY_URL"
     )
     assert telegram_proxy_field["secret"] is True
+    assert telegram_proxy_field["value"] is None
+    assert telegram_proxy_field["configured"] is False
+    assert telegram_proxy_field["nullable"] is True
+    assert body["paths"] == {"managed": str(tmp_path / ".cdx" / ".env")}
+    catalog_smoke_keys = {
+        f"CODEX_PROXY_SMOKE_MODEL_{provider_id.upper()}"
+        for provider_id in PROVIDER_CATALOG
+    }
+    actual_smoke_keys = {
+        field["key"]
+        for field in body["fields"]
+        if field["key"].startswith("CODEX_PROXY_SMOKE_MODEL_")
+    }
+    assert actual_smoke_keys == catalog_smoke_keys | {
+        "CODEX_PROXY_SMOKE_MODEL_MISTRAL_REASONING"
+    }
     open_browser_field = next(
         field for field in body["fields"] if field["key"] == "CODEX_PROXY_OPEN_BROWSER"
     )
@@ -527,7 +564,7 @@ def test_admin_model_refresh_reports_partial_provider_failures():
 def test_admin_config_preserves_managed_env_source_contract(monkeypatch, tmp_path):
     _set_home(monkeypatch, tmp_path)
     _clear_process_config(monkeypatch)
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     env_file.parent.mkdir(parents=True)
     env_file.write_text("MODEL=open_router/managed-model\n", encoding="utf-8")
     app = create_test_app()
@@ -561,7 +598,7 @@ def test_admin_apply_persists_open_browser_for_next_launch(monkeypatch, tmp_path
         "admin_url": None,
         "fields": [],
     }
-    managed_env = tmp_path / ".codexproxy" / ".env"
+    managed_env = tmp_path / ".cdx" / ".env"
     assert "CODEX_PROXY_OPEN_BROWSER=false" in managed_env.read_text(encoding="utf-8")
 
 
@@ -581,9 +618,56 @@ def test_admin_apply_masks_telegram_proxy_credentials(monkeypatch, tmp_path):
     assert body["applied"] is True
     assert "TELEGRAM_PROXY_URL=********" in body["env_preview"]
     assert proxy_url not in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert f"TELEGRAM_PROXY_URL={proxy_url}" in text
+
+
+def test_admin_apply_null_removes_optional_secret(monkeypatch, tmp_path):
+    _set_home(monkeypatch, tmp_path)
+    _clear_process_config(monkeypatch)
+    env_file = tmp_path / ".cdx" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text(
+        "CODEX_PROXY_CONFIG_SCHEMA=1\nTELEGRAM_PROXY_URL=https://secret.invalid\n",
+        encoding="utf-8",
+    )
+    app = create_test_app()
+
+    response = _local_client(app).post(
+        "/admin/api/config/apply",
+        json={"values": {"TELEGRAM_PROXY_URL": None}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    assert "TELEGRAM_PROXY_URL=" not in env_file.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("submitted", [MASKED_SECRET, "", "   "])
+def test_admin_apply_masked_or_blank_secret_is_unchanged(
+    monkeypatch,
+    tmp_path,
+    submitted,
+):
+    _set_home(monkeypatch, tmp_path)
+    _clear_process_config(monkeypatch)
+    env_file = tmp_path / ".cdx" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text(
+        "CODEX_PROXY_CONFIG_SCHEMA=1\nOPENROUTER_API_KEY=original-secret\n",
+        encoding="utf-8",
+    )
+    app = create_test_app()
+
+    response = _local_client(app).post(
+        "/admin/api/config/apply",
+        json={"values": {"OPENROUTER_API_KEY": submitted}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    assert "OPENROUTER_API_KEY=original-secret" in env_file.read_text(encoding="utf-8")
 
 
 def test_admin_validate_rejects_bad_model_shape(monkeypatch, tmp_path):
@@ -623,11 +707,14 @@ def test_admin_apply_writes_complete_managed_env_and_masks_preview(
     body = response.json()
     assert body["applied"] is True
     assert "OPENROUTER_API_KEY=********" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text("utf-8")
     assert "MODEL=open_router/test-model" in text
     assert "OPENROUTER_API_KEY=router-secret" in text
-    assert "ANTHROPIC_AUTH_TOKEN=" in text
+    assert "ANTHROPIC_AUTH_TOKEN=" not in text
+    assert "PROXY_AUTH_ENABLED=" not in text
+    assert "HOST=" not in text
+    assert "PORT=" not in text
     assert body["restart"] == {
         "required": False,
         "automatic": False,
@@ -655,7 +742,7 @@ def test_admin_apply_writes_fireworks_key_and_masks_preview(monkeypatch, tmp_pat
     body = response.json()
     assert body["applied"] is True
     assert "FIREWORKS_API_KEY=********" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert "MODEL=fireworks/test-model" in text
     assert "FIREWORKS_API_KEY=fw-secret" in text
@@ -680,7 +767,7 @@ def test_admin_apply_writes_gemini_key_and_masks_preview(monkeypatch, tmp_path):
     body = response.json()
     assert body["applied"] is True
     assert "GEMINI_API_KEY=********" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert "MODEL=gemini/models/gemini-3.1-flash-lite" in text
     assert "GEMINI_API_KEY=gm-secret" in text
@@ -705,7 +792,7 @@ def test_admin_apply_writes_groq_key_and_masks_preview(monkeypatch, tmp_path):
     body = response.json()
     assert body["applied"] is True
     assert "GROQ_API_KEY=********" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert "MODEL=groq/llama-3.3-70b-versatile" in text
     assert "GROQ_API_KEY=gq-secret" in text
@@ -730,7 +817,7 @@ def test_admin_apply_writes_sambanova_key_and_masks_preview(monkeypatch, tmp_pat
     body = response.json()
     assert body["applied"] is True
     assert "SAMBANOVA_API_KEY=********" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert "MODEL=sambanova/Meta-Llama-3.3-70B-Instruct" in text
     assert "SAMBANOVA_API_KEY=sn-secret" in text
@@ -755,7 +842,7 @@ def test_admin_apply_writes_cerebras_key_and_masks_preview(monkeypatch, tmp_path
     body = response.json()
     assert body["applied"] is True
     assert "CEREBRAS_API_KEY=********" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert "MODEL=cerebras/llama3.1-8b" in text
     assert "CEREBRAS_API_KEY=cb-secret" in text
@@ -781,7 +868,7 @@ def test_admin_apply_writes_bedrock_region_config_and_masks_key(monkeypatch, tmp
     body = response.json()
     assert body["applied"] is True
     assert "AWS_BEARER_TOKEN_BEDROCK=********" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert "MODEL=bedrock/openai.gpt-oss-120b" in text
     assert "AWS_BEARER_TOKEN_BEDROCK=bedrock-secret" in text
@@ -809,7 +896,7 @@ def test_admin_apply_writes_cloudflare_fields_and_masks_preview(monkeypatch, tmp
     assert body["applied"] is True
     assert "CLOUDFLARE_API_TOKEN=********" in body["env_preview"]
     assert "CLOUDFLARE_ACCOUNT_ID=cf-account" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert "MODEL=cloudflare/@cf/moonshotai/kimi-k2.6" in text
     assert "CLOUDFLARE_API_TOKEN=cf-secret" in text
@@ -834,9 +921,9 @@ def test_admin_apply_writes_huggingface_key_and_masks_preview(monkeypatch, tmp_p
     assert response.status_code == 200
     body = response.json()
     assert body["applied"] is True
-    assert body["pending_fields"] == []
+    assert body["pending_fields"] == ["HUGGINGFACE_API_KEY"]
     assert "HUGGINGFACE_API_KEY=********" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert "MODEL=huggingface/openai/gpt-oss-120b:fastest" in text
     assert "HUGGINGFACE_API_KEY=hf-secret" in text
@@ -857,7 +944,7 @@ def test_admin_key_change_requires_restart_for_active_voice_backend(
 ):
     _set_home(monkeypatch, tmp_path)
     _clear_process_config(monkeypatch)
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     env_file.parent.mkdir(parents=True)
     env_file.write_text(
         "\n".join(
@@ -911,7 +998,7 @@ def test_admin_constructor_captured_setting_requires_restart(
 ):
     _set_home(monkeypatch, tmp_path)
     _clear_process_config(monkeypatch)
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     env_file.parent.mkdir(parents=True)
     env_file.write_text(f"{key}={initial}\n", encoding="utf-8")
     app = create_test_app()
@@ -952,7 +1039,7 @@ def test_admin_apply_writes_cohere_key_and_masks_preview(monkeypatch, tmp_path):
     body = response.json()
     assert body["applied"] is True
     assert "COHERE_API_KEY=********" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert "MODEL=cohere/command-a-plus-05-2026" in text
     assert "COHERE_API_KEY=cohere-secret" in text
@@ -979,7 +1066,7 @@ def test_admin_apply_writes_github_models_token_and_masks_preview(
     body = response.json()
     assert body["applied"] is True
     assert "GITHUB_MODELS_TOKEN=********" in body["env_preview"]
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     text = env_file.read_text(encoding="utf-8")
     assert "MODEL=github_models/openai/gpt-4.1" in text
     assert "GITHUB_MODELS_TOKEN=github-secret" in text
@@ -990,7 +1077,7 @@ def test_admin_apply_preserves_hidden_diagnostics_and_smoke_values(
 ):
     _set_home(monkeypatch, tmp_path)
     _clear_process_config(monkeypatch)
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     env_file.parent.mkdir(parents=True)
     env_file.write_text(
         "\n".join(
@@ -1019,10 +1106,10 @@ def test_admin_apply_preserves_hidden_diagnostics_and_smoke_values(
     assert "CODEX_PROXY_SMOKE_MODEL_ZAI=zai/smoke-model" in text
 
 
-def test_admin_apply_omits_stale_zai_base_url(monkeypatch, tmp_path):
+def test_admin_apply_preserves_unrecognized_managed_zai_base_url(monkeypatch, tmp_path):
     _set_home(monkeypatch, tmp_path)
     _clear_process_config(monkeypatch)
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     env_file.parent.mkdir(parents=True)
     env_file.write_text(
         "\n".join(
@@ -1047,13 +1134,13 @@ def test_admin_apply_omits_stale_zai_base_url(monkeypatch, tmp_path):
     assert body["applied"] is True
     text = env_file.read_text("utf-8")
     assert "ZAI_API_KEY=zai-secret" in text
-    assert "ZAI_BASE_URL" not in text
+    assert "ZAI_BASE_URL=https://custom.zai.invalid/v1" in text
 
 
-def test_admin_apply_omits_stale_fixed_claude_runtime_settings(monkeypatch, tmp_path):
+def test_admin_apply_preserves_unrecognized_managed_assignments(monkeypatch, tmp_path):
     _set_home(monkeypatch, tmp_path)
     _clear_process_config(monkeypatch)
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     env_file.parent.mkdir(parents=True)
     env_file.write_text(
         "\n".join(
@@ -1078,8 +1165,8 @@ def test_admin_apply_omits_stale_fixed_claude_runtime_settings(monkeypatch, tmp_
     assert body["applied"] is True
     text = env_file.read_text("utf-8")
     assert "MODEL=open_router/test-model" in text
-    assert "CLAUDE_WORKSPACE" not in text
-    assert "CLAUDE_CLI_BIN" not in text
+    assert "CLAUDE_WORKSPACE=C:/custom/workspace" in text
+    assert "CLAUDE_CLI_BIN=claude-custom" in text
 
 
 def test_admin_apply_restart_required_reports_automatic_restart(monkeypatch, tmp_path):
@@ -1149,11 +1236,11 @@ def test_admin_process_env_values_are_locked_and_not_written(monkeypatch, tmp_pa
     )
 
     assert response.status_code == 200
-    env_file = tmp_path / ".codexproxy" / ".env"
+    env_file = tmp_path / ".cdx" / ".env"
     assert "deepseek/managed-model" not in env_file.read_text("utf-8")
 
 
-def test_admin_first_apply_migrates_repo_env(monkeypatch, tmp_path):
+def test_admin_never_reads_arbitrary_current_directory_env(monkeypatch, tmp_path):
     _set_home(monkeypatch, tmp_path)
     _clear_process_config(monkeypatch)
     monkeypatch.chdir(tmp_path)
@@ -1165,8 +1252,8 @@ def test_admin_first_apply_migrates_repo_env(monkeypatch, tmp_path):
 
     config = _local_client(app).get("/admin/api/config").json()
     model_field = next(field for field in config["fields"] if field["key"] == "MODEL")
-    assert model_field["value"] == "deepseek/deepseek-chat"
-    assert model_field["source"] == "repo_env"
+    assert model_field["value"] == "nvidia_nim/nvidia/nemotron-3-super-120b-a12b"
+    assert model_field["source"] == "default"
 
     response = _local_client(app).post(
         "/admin/api/config/apply",
@@ -1174,9 +1261,118 @@ def test_admin_first_apply_migrates_repo_env(monkeypatch, tmp_path):
     )
 
     assert response.status_code == 200
-    managed_text = (tmp_path / ".codexproxy" / ".env").read_text("utf-8")
-    assert "MODEL=deepseek/deepseek-chat" in managed_text
-    assert "DEEPSEEK_API_KEY=deepseek-secret" in managed_text
+    managed_text = (tmp_path / ".cdx" / ".env").read_text("utf-8")
+    assert "MODEL=deepseek/deepseek-chat" not in managed_text
+    assert "DEEPSEEK_API_KEY=deepseek-secret" not in managed_text
+
+
+def test_admin_migration_removes_blank_required_managed_values(monkeypatch, tmp_path):
+    _set_home(monkeypatch, tmp_path)
+    _clear_process_config(monkeypatch)
+    env_file = tmp_path / ".cdx" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text(
+        "MESSAGING_PLATFORM=\nWHISPER_DEVICE=\n",
+        encoding="utf-8",
+    )
+    app = create_test_app()
+
+    response = _local_client(app).post(
+        "/admin/api/config/apply",
+        json={"values": {"NVIDIA_NIM_API_KEY": "nim-secret"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    managed_text = (tmp_path / ".cdx" / ".env").read_text("utf-8")
+    assert "NVIDIA_NIM_API_KEY=nim-secret" in managed_text
+    assert "MESSAGING_PLATFORM=" not in managed_text
+    assert "WHISPER_DEVICE=" not in managed_text
+
+
+def test_admin_migrates_empty_auth_token_to_explicit_disabled_state(
+    monkeypatch, tmp_path
+):
+    _set_home(monkeypatch, tmp_path)
+    _clear_process_config(monkeypatch)
+    env_file = tmp_path / ".cdx" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text(
+        "ANTHROPIC_AUTH_TOKEN=\nPROVIDER_RATE_LIMIT=1\n",
+        encoding="utf-8",
+    )
+    app = create_test_app()
+
+    response = _local_client(app).post(
+        "/admin/api/config/apply",
+        json={"values": {"PROVIDER_RATE_LIMIT": "2"}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    managed_lines = env_file.read_text("utf-8").splitlines()
+    assert not any(line.startswith("ANTHROPIC_AUTH_TOKEN=") for line in managed_lines)
+    assert "PROXY_AUTH_ENABLED=false" in managed_lines
+    assert "PROVIDER_RATE_LIMIT=2" in managed_lines
+
+
+@pytest.mark.parametrize(
+    ("submitted", "message"),
+    [
+        (None, "this setting cannot be removed"),
+        ("", "this setting cannot be blank"),
+        ("   ", "this setting cannot be blank"),
+    ],
+)
+def test_admin_apply_rejects_missing_required_value_without_writing(
+    monkeypatch,
+    tmp_path,
+    submitted,
+    message,
+):
+    _set_home(monkeypatch, tmp_path)
+    _clear_process_config(monkeypatch)
+    env_file = tmp_path / ".cdx" / ".env"
+    env_file.parent.mkdir(parents=True)
+    original = "ANTHROPIC_AUTH_TOKEN=\nMESSAGING_PLATFORM=none\n"
+    env_file.write_text(original, encoding="utf-8")
+    app = create_test_app()
+    _local_client(app).get("/admin/api/config")
+    baseline = env_file.read_bytes()
+
+    response = _local_client(app).post(
+        "/admin/api/config/apply",
+        json={"values": {"MESSAGING_PLATFORM": submitted}},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["applied"] is False
+    assert body["valid"] is False
+    assert f"MESSAGING_PLATFORM: {message}" in body["errors"]
+    assert env_file.read_bytes() == baseline
+
+
+def test_admin_apply_preserves_false_and_numeric_zero(monkeypatch, tmp_path):
+    _set_home(monkeypatch, tmp_path)
+    _clear_process_config(monkeypatch)
+    app = create_test_app()
+
+    response = _local_client(app).post(
+        "/admin/api/config/apply",
+        json={
+            "values": {
+                "CODEX_PROXY_OPEN_BROWSER": False,
+                "HTTP_WRITE_TIMEOUT": 0,
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["applied"] is True
+    managed = (tmp_path / ".cdx" / ".env").read_text(encoding="utf-8")
+    assert "CODEX_PROXY_OPEN_BROWSER=false" in managed
+    assert "HTTP_WRITE_TIMEOUT=0" in managed
 
 
 def test_admin_local_provider_status_reports_reachable(monkeypatch, tmp_path):
@@ -1197,7 +1393,7 @@ def test_admin_local_provider_status_reports_reachable(monkeypatch, tmp_path):
         async def get(self, url: str):
             return httpx.Response(200, json={"data": []})
 
-    with patch("api.admin_routes.httpx.AsyncClient", FakeAsyncClient):
+    with patch("codexproxy.api.admin_routes.httpx.AsyncClient", FakeAsyncClient):
         response = _local_client(app).get("/admin/api/providers/local-status")
 
     assert response.status_code == 200

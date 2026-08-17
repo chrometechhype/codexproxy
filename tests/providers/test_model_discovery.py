@@ -6,26 +6,30 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from application.model_metadata import ProviderModelInfo
-from config.nim import NimSettings
-from config.provider_catalog import (
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.nim import NimSettings
+from codexproxy.config.provider_catalog import (
     DEEPSEEK_DEFAULT_BASE,
     NVIDIA_NIM_DEFAULT_BASE,
     OPENROUTER_DEFAULT_BASE,
     WAFER_DEFAULT_BASE,
 )
-from config.settings import Settings
-from core.reasoning import DEFAULT_REASONING_POLICY, ReasoningPolicy
-from providers.base import BaseProvider, ProviderConfig
-from providers.deepseek import DeepSeekProvider
-from providers.model_listing import ModelListResponseError
-from providers.nvidia_nim import NvidiaNimProvider
-from providers.open_router import OpenRouterProvider
-from providers.openai_chat import OpenAIChatProvider
-from providers.runtime import ProviderRuntime
-from providers.runtime.model_cache import ProviderModelCache
-from runtime.provider_manager import ProviderRuntimeManager
-from tests.providers.support import immediate_admission, profiled_provider
+from codexproxy.config.settings import Settings
+from codexproxy.core.reasoning import DEFAULT_REASONING_POLICY, ReasoningPolicy
+from codexproxy.providers.base import BaseProvider
+from codexproxy.providers.deepseek import DeepSeekProvider
+from codexproxy.providers.model_listing import ModelListResponseError
+from codexproxy.providers.nvidia_nim import NvidiaNimProvider
+from codexproxy.providers.open_router import OpenRouterProvider
+from codexproxy.providers.openai_chat import OpenAIChatProvider
+from codexproxy.providers.runtime import ProviderRuntime
+from codexproxy.providers.runtime.model_cache import ProviderModelCache
+from codexproxy.runtime.provider_manager import ProviderRuntimeManager
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+    profiled_provider,
+)
 
 
 def _settings(
@@ -82,8 +86,8 @@ def test_provider_catalog_contract_is_metadata_only() -> None:
 
 @pytest.mark.asyncio
 async def test_nim_lists_openai_compatible_model_infos() -> None:
-    config = ProviderConfig(api_key="test-key", base_url=NVIDIA_NIM_DEFAULT_BASE)
-    with patch("providers.openai_chat.provider.AsyncOpenAI"):
+    config = make_provider_config(api_key="test-key", base_url=NVIDIA_NIM_DEFAULT_BASE)
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI"):
         provider = NvidiaNimProvider(
             config, nim_settings=NimSettings(), admission=immediate_admission()
         )
@@ -103,12 +107,14 @@ async def test_nim_lists_openai_compatible_model_infos() -> None:
     [
         profiled_provider(
             "llamacpp",
-            ProviderConfig(api_key="llamacpp", base_url="http://localhost:8080/v1"),
+            make_provider_config(
+                api_key="llamacpp", base_url="http://localhost:8080/v1"
+            ),
             admission=immediate_admission(),
         ),
         profiled_provider(
             "ollama",
-            ProviderConfig(api_key="ollama", base_url="http://localhost:11434"),
+            make_provider_config(api_key="ollama", base_url="http://localhost:11434"),
             admission=immediate_admission(),
         ),
     ],
@@ -130,7 +136,7 @@ async def test_local_openai_chat_providers_list_model_infos(
 @pytest.mark.asyncio
 async def test_deepseek_lists_models_from_root_endpoint() -> None:
     provider = DeepSeekProvider(
-        ProviderConfig(api_key="deepseek-key", base_url=DEEPSEEK_DEFAULT_BASE),
+        make_provider_config(api_key="deepseek-key", base_url=DEEPSEEK_DEFAULT_BASE),
         admission=immediate_admission(),
     )
     with patch.object(
@@ -148,7 +154,7 @@ async def test_deepseek_lists_models_from_root_endpoint() -> None:
 async def test_wafer_lists_models_from_default_models_endpoint() -> None:
     provider = profiled_provider(
         "wafer",
-        ProviderConfig(api_key="wafer-key", base_url=WAFER_DEFAULT_BASE),
+        make_provider_config(api_key="wafer-key", base_url=WAFER_DEFAULT_BASE),
         admission=immediate_admission(),
     )
     with patch.object(
@@ -165,7 +171,9 @@ async def test_wafer_lists_models_from_default_models_endpoint() -> None:
 @pytest.mark.asyncio
 async def test_openrouter_lists_only_tool_capable_models() -> None:
     provider = OpenRouterProvider(
-        ProviderConfig(api_key="open-router-key", base_url=OPENROUTER_DEFAULT_BASE),
+        make_provider_config(
+            api_key="open-router-key", base_url=OPENROUTER_DEFAULT_BASE
+        ),
         admission=immediate_admission(),
     )
     with patch.object(
@@ -203,7 +211,9 @@ async def test_openrouter_lists_only_tool_capable_models() -> None:
 @pytest.mark.asyncio
 async def test_openrouter_lists_tool_metadata_with_thinking_support() -> None:
     provider = OpenRouterProvider(
-        ProviderConfig(api_key="open-router-key", base_url=OPENROUTER_DEFAULT_BASE),
+        make_provider_config(
+            api_key="open-router-key", base_url=OPENROUTER_DEFAULT_BASE
+        ),
         admission=immediate_admission(),
     )
     with patch.object(
@@ -244,7 +254,9 @@ async def test_openrouter_lists_tool_metadata_with_thinking_support() -> None:
 @pytest.mark.asyncio
 async def test_openrouter_lists_empty_set_when_no_tool_capable_models() -> None:
     provider = OpenRouterProvider(
-        ProviderConfig(api_key="open-router-key", base_url=OPENROUTER_DEFAULT_BASE),
+        make_provider_config(
+            api_key="open-router-key", base_url=OPENROUTER_DEFAULT_BASE
+        ),
         admission=immediate_admission(),
     )
     with patch.object(
@@ -264,7 +276,9 @@ async def test_openrouter_lists_empty_set_when_no_tool_capable_models() -> None:
 @pytest.mark.asyncio
 async def test_openrouter_model_metadata_rejects_malformed_ids() -> None:
     provider = OpenRouterProvider(
-        ProviderConfig(api_key="open-router-key", base_url=OPENROUTER_DEFAULT_BASE),
+        make_provider_config(
+            api_key="open-router-key", base_url=OPENROUTER_DEFAULT_BASE
+        ),
         admission=immediate_admission(),
     )
     with (
@@ -285,7 +299,7 @@ async def test_openrouter_model_metadata_rejects_malformed_ids() -> None:
 async def test_model_listing_rejects_malformed_payload() -> None:
     provider = profiled_provider(
         "llamacpp",
-        ProviderConfig(api_key="llamacpp", base_url="http://localhost:8080/v1"),
+        make_provider_config(api_key="llamacpp", base_url="http://localhost:8080/v1"),
         admission=immediate_admission(),
     )
     with (
@@ -304,7 +318,7 @@ async def test_model_listing_rejects_malformed_payload() -> None:
 async def test_model_listing_propagates_upstream_errors() -> None:
     provider = profiled_provider(
         "llamacpp",
-        ProviderConfig(api_key="llamacpp", base_url="http://localhost:8080/v1"),
+        make_provider_config(api_key="llamacpp", base_url="http://localhost:8080/v1"),
         admission=immediate_admission(),
     )
     with (
@@ -329,7 +343,7 @@ class FakeProvider(BaseProvider):
         peer_started: asyncio.Event | None = None,
     ):
         super().__init__(
-            ProviderConfig(api_key="test", base_url="https://test.invalid")
+            make_provider_config(api_key="test", base_url="https://test.invalid")
         )
         self._model_infos = model_infos
         self._error = error
@@ -439,7 +453,7 @@ async def test_runtime_warm_reports_query_failures_without_blocking() -> None:
         },
     )
 
-    with patch("providers.runtime.discovery.logger.warning") as warning:
+    with patch("codexproxy.providers.runtime.discovery.logger.warning") as warning:
         result = await runtime.warm_referenced_model_cache()
 
     assert result.refreshed_provider_ids == ("nvidia_nim",)

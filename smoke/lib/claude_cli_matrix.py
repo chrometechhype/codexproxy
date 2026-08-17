@@ -10,9 +10,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from cli.claude_env import build_claude_proxy_env
+from codexproxy.cli.claude_env import build_claude_proxy_env
 from smoke.lib.child_process import run_captured_text
 from smoke.lib.config import ProviderModel, SmokeConfig, redacted
+from smoke.lib.outcomes import is_upstream_unavailable_text
 from smoke.lib.server import RunningServer
 
 REGRESSION_CLASSIFICATIONS = frozenset({"harness_bug", "product_failure"})
@@ -20,26 +21,6 @@ REGRESSION_CLASSIFICATIONS = frozenset({"harness_bug", "product_failure"})
 _HTTP_REGRESSION_PATTERNS = (
     r'POST /v1/messages[^"\n]* HTTP/1\.1" 4(?!01|03|04|08|09)\d\d',
     r'POST /v1/messages[^"\n]* HTTP/1\.1" 5\d\d',
-)
-_UPSTREAM_UNAVAILABLE_MARKERS = (
-    "upstream_unavailable",
-    "readtimeout",
-    "connecterror",
-    "connection refused",
-    "timed out",
-    "rate limit",
-    "overloaded",
-    "capacity",
-    "upstream provider",
-    "provider api request failed",
-    "httpstatuserror",
-)
-_HTTP_429_PATTERNS = (
-    r'HTTP/1\.[01]" 429\b',
-    r"\bHTTP/1\.[01] 429\b",
-    r"\bstatus_code=429\b",
-    r"\bstatus[=:]\s*429\b",
-    r"\b429 Too Many Requests\b",
 )
 _MISSING_ENV_MARKERS = (
     "api key",
@@ -120,7 +101,7 @@ def run_claude_cli(
 
     env = build_claude_proxy_env(
         proxy_root_url=server.base_url,
-        auth_token=config.settings.anthropic_auth_token,
+        auth_token=config.settings.proxy_auth_token,
         base_env=os.environ,
     )
     env["TERM"] = "dumb"
@@ -320,7 +301,7 @@ def classify_probe(
 
     if cli_ok and marker_ok and tool_ok and agent_ok and task_ok and compact_ok:
         return "passed", "passed"
-    if _has_upstream_unavailable_text(combined):
+    if is_upstream_unavailable_text(combined):
         return "failed", "upstream_unavailable"
     if not _has_proxy_request(log_delta):
         return "failed", "harness_bug"
@@ -694,7 +675,7 @@ def _has_proxy_request(log_delta: str) -> bool:
     return (
         "POST /v1/messages" in log_delta
         or "API_REQUEST:" in log_delta
-        or '"event": "api.request.received"' in log_delta
+        or '"event": "codexproxy.api.request.received"' in log_delta
         or (
             '"http_method": "POST"' in log_delta
             and '"http_path": "/v1/messages"' in log_delta
@@ -748,19 +729,10 @@ def _agent_result_count(text: str) -> int:
     return text.count("agentId:") + text.count('"agentId"') + text.count("'agentId'")
 
 
-def _has_upstream_unavailable_text(text: str) -> bool:
-    lower = text.lower()
-    if any(marker_text in lower for marker_text in _UPSTREAM_UNAVAILABLE_MARKERS):
-        return True
-    return any(
-        re.search(pattern, text, flags=re.IGNORECASE) for pattern in _HTTP_429_PATTERNS
-    )
-
-
 def _request_count(log_delta: str) -> int:
     access_log_count = log_delta.count("POST /v1/messages")
     service_log_count = log_delta.count("API_REQUEST:")
-    structured_log_count = log_delta.count('"event": "api.request.received"')
+    structured_log_count = log_delta.count('"event": "codexproxy.api.request.received"')
     return max(access_log_count, service_log_count, structured_log_count)
 
 

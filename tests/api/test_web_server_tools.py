@@ -6,39 +6,39 @@ import httpx
 import pytest
 from fastapi.responses import JSONResponse, StreamingResponse
 
-import api.web_tools.constants as web_tool_constants
-from api.handlers import MessagesHandler
-from api.web_tools import egress as web_egress
-from api.web_tools.egress import (
+import codexproxy.api.web_tools.constants as web_tool_constants
+from codexproxy.api.handlers import MessagesHandler
+from codexproxy.api.web_tools import egress as web_egress
+from codexproxy.api.web_tools.egress import (
     WebFetchEgressPolicy,
     WebFetchEgressViolation,
     enforce_web_fetch_egress,
 )
-from api.web_tools.outbound import (
+from codexproxy.api.web_tools.outbound import (
     _drain_response_body_capped,
     _read_response_body_capped,
     _run_web_fetch,
 )
-from api.web_tools.request import is_web_server_tool_request
-from api.web_tools.streaming import stream_web_server_tool_response
-from application.errors import InvalidRequestError
-from application.routing import (
+from codexproxy.api.web_tools.request import is_web_server_tool_request
+from codexproxy.api.web_tools.streaming import stream_web_server_tool_response
+from codexproxy.application.errors import InvalidRequestError
+from codexproxy.application.routing import (
     ModelRouter,
     ResolvedModel,
     RoutedMessagesRequest,
 )
-from config.provider_catalog import PROVIDER_CATALOG
-from config.reasoning import ReasoningPreference
-from config.settings import Settings
-from core.anthropic.models import Message, MessagesRequest, Tool
-from core.anthropic.stream_contracts import (
+from codexproxy.config.provider_catalog import PROVIDER_CATALOG
+from codexproxy.config.reasoning import ReasoningPreference
+from codexproxy.config.settings import Settings
+from codexproxy.core.anthropic.models import Message, MessagesRequest, Tool
+from codexproxy.core.anthropic.stream_contracts import (
     assert_anthropic_stream_contract,
     parse_sse_text,
     text_content,
 )
-from core.reasoning import ReasoningPolicy
-from core.version import package_version
-from messaging.event_parser import parse_cli_event
+from codexproxy.core.reasoning import ReasoningPolicy
+from codexproxy.core.version import package_version
+from codexproxy.messaging.event_parser import parse_cli_event
 
 _STRICT_EGRESS = WebFetchEgressPolicy(
     allow_private_network_targets=False,
@@ -128,7 +128,7 @@ def test_web_server_tool_not_detected_when_forced_name_missing_from_tools():
 async def test_service_rejects_forced_server_tool_when_local_handler_is_disabled(
     provider_id: str,
 ):
-    """Every provider needs CodexProxy's local handler for forced server tools."""
+    """Every provider needs CDX's local handler for forced server tools."""
     settings = Settings()
     assert settings.enable_web_server_tools is False
     service = MessagesHandler(
@@ -282,7 +282,9 @@ async def test_run_web_fetch_follows_redirect_when_each_hop_is_allowed():
     )
     res_ok = _aiohttp_response(200, url="http://8.8.8.8/final", body=b"hello world")
     client_cm, session = _aiohttp_client_session_patch(res_redirect, res_ok)
-    with patch("api.web_tools.outbound.ClientSession", return_value=client_cm):
+    with patch(
+        "codexproxy.api.web_tools.outbound.ClientSession", return_value=client_cm
+    ):
         out = await _run_web_fetch("http://8.8.8.8/start", _STRICT_EGRESS)
 
     assert out["data"] == "hello world"
@@ -295,7 +297,9 @@ async def test_run_web_fetch_truncates_large_body_to_byte_cap(monkeypatch):
     res_ok = _aiohttp_response(200, url="http://8.8.8.8/big", body=huge)
     client_cm, _ = _aiohttp_client_session_patch(res_ok)
     monkeypatch.setattr(web_tool_constants, "_MAX_WEB_FETCH_RESPONSE_BYTES", 100)
-    with patch("api.web_tools.outbound.ClientSession", return_value=client_cm):
+    with patch(
+        "codexproxy.api.web_tools.outbound.ClientSession", return_value=client_cm
+    ):
         out = await _run_web_fetch("http://8.8.8.8/big", _STRICT_EGRESS)
 
     assert len(out["data"]) <= 100
@@ -313,7 +317,7 @@ async def test_run_web_fetch_redirect_to_blocked_host_raises():
     client_cm, session = _aiohttp_client_session_patch(res_redirect)
     with (
         patch(
-            "api.web_tools.outbound.ClientSession",
+            "codexproxy.api.web_tools.outbound.ClientSession",
             return_value=client_cm,
         ),
         pytest.raises(WebFetchEgressViolation),
@@ -329,7 +333,7 @@ async def test_run_web_fetch_redirect_without_location_raises():
     client_cm, _ = _aiohttp_client_session_patch(res_bad)
     with (
         patch(
-            "api.web_tools.outbound.ClientSession",
+            "codexproxy.api.web_tools.outbound.ClientSession",
             return_value=client_cm,
         ),
         pytest.raises(WebFetchEgressViolation, match="missing Location"),
@@ -343,9 +347,9 @@ async def test_run_web_fetch_excess_redirects_raises():
     res2 = _aiohttp_response(302, url="http://8.8.8.8/b", location="/c", body=b"")
     client_cm, _ = _aiohttp_client_session_patch(res1, res2)
     with (
-        patch("api.web_tools.constants._MAX_WEB_FETCH_REDIRECTS", 1),
+        patch("codexproxy.api.web_tools.constants._MAX_WEB_FETCH_REDIRECTS", 1),
         patch(
-            "api.web_tools.outbound.ClientSession",
+            "codexproxy.api.web_tools.outbound.ClientSession",
             return_value=client_cm,
         ),
         pytest.raises(WebFetchEgressViolation, match="exceeded maximum redirects"),
@@ -359,7 +363,9 @@ async def test_streams_web_search_server_tool_result(monkeypatch):
         assert query == "DeepSeek V4 model release 2026"
         return [{"title": "DeepSeek V4 Released", "url": "https://example.com/v4"}]
 
-    monkeypatch.setattr("api.web_tools.outbound._run_web_search", fake_search)
+    monkeypatch.setattr(
+        "codexproxy.api.web_tools.outbound._run_web_search", fake_search
+    )
     request = MessagesRequest(
         model="claude-haiku-4-5-20251001",
         max_tokens=100,
@@ -419,7 +425,9 @@ async def test_service_streams_forced_web_search_by_default(monkeypatch):
     async def fake_search(_query: str) -> list[dict[str, str]]:
         return [{"title": "DeepSeek V4 Released", "url": "https://example.com/v4"}]
 
-    monkeypatch.setattr("api.web_tools.outbound._run_web_search", fake_search)
+    monkeypatch.setattr(
+        "codexproxy.api.web_tools.outbound._run_web_search", fake_search
+    )
     settings = Settings.model_validate({"ENABLE_WEB_SERVER_TOOLS": True})
     provider_resolver = MagicMock()
     service = MessagesHandler(
@@ -461,7 +469,9 @@ async def test_service_aggregates_forced_web_search_when_stream_false(monkeypatc
     async def fake_search(_query: str) -> list[dict[str, str]]:
         return [{"title": "DeepSeek V4 Released", "url": "https://example.com/v4"}]
 
-    monkeypatch.setattr("api.web_tools.outbound._run_web_search", fake_search)
+    monkeypatch.setattr(
+        "codexproxy.api.web_tools.outbound._run_web_search", fake_search
+    )
     settings = Settings.model_validate({"ENABLE_WEB_SERVER_TOOLS": True})
     provider_resolver = MagicMock()
     service = MessagesHandler(
@@ -508,7 +518,7 @@ async def test_forced_web_fetch_ignores_stale_url_from_prior_user_turns(monkeypa
             "data": "x",
         }
 
-    monkeypatch.setattr("api.web_tools.outbound._run_web_fetch", fake_fetch)
+    monkeypatch.setattr("codexproxy.api.web_tools.outbound._run_web_fetch", fake_fetch)
     request = MessagesRequest(
         model="claude-haiku-4-5-20251001",
         max_tokens=100,
@@ -548,7 +558,7 @@ async def test_service_aggregates_forced_web_fetch_when_stream_false(monkeypatch
             "data": "Article body",
         }
 
-    monkeypatch.setattr("api.web_tools.outbound._run_web_fetch", fake_fetch)
+    monkeypatch.setattr("codexproxy.api.web_tools.outbound._run_web_fetch", fake_fetch)
     settings = Settings.model_validate({"ENABLE_WEB_SERVER_TOOLS": True})
     provider_resolver = MagicMock()
     service = MessagesHandler(
@@ -592,7 +602,7 @@ async def test_streams_web_fetch_server_tool_result(monkeypatch):
             "data": "Article body",
         }
 
-    monkeypatch.setattr("api.web_tools.outbound._run_web_fetch", fake_fetch)
+    monkeypatch.setattr("codexproxy.api.web_tools.outbound._run_web_fetch", fake_fetch)
     request = MessagesRequest(
         model="claude-haiku-4-5-20251001",
         max_tokens=100,
@@ -646,7 +656,7 @@ async def test_streams_web_fetch_error_summary_generic_by_default(monkeypatch):
     async def boom(_url: str, _egress: WebFetchEgressPolicy) -> dict[str, str]:
         raise ValueError(secret)
 
-    monkeypatch.setattr("api.web_tools.outbound._run_web_fetch", boom)
+    monkeypatch.setattr("codexproxy.api.web_tools.outbound._run_web_fetch", boom)
     request = MessagesRequest(
         model="claude-haiku-4-5-20251001",
         max_tokens=100,
@@ -660,7 +670,7 @@ async def test_streams_web_fetch_error_summary_generic_by_default(monkeypatch):
         tool_choice={"type": "tool", "name": "web_fetch"},
     )
 
-    with patch("api.web_tools.outbound.logger.warning") as log_warn:
+    with patch("codexproxy.api.web_tools.outbound.logger.warning") as log_warn:
         raw = "".join(
             [
                 event
@@ -704,7 +714,7 @@ async def test_streams_web_fetch_error_summary_verbose_includes_exception_class(
     async def boom(_url: str, _egress: WebFetchEgressPolicy) -> dict[str, str]:
         raise OSError(5, "oops")
 
-    monkeypatch.setattr("api.web_tools.outbound._run_web_fetch", boom)
+    monkeypatch.setattr("codexproxy.api.web_tools.outbound._run_web_fetch", boom)
     request = MessagesRequest(
         model="claude-haiku-4-5-20251001",
         max_tokens=100,

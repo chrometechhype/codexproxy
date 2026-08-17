@@ -2,11 +2,11 @@
 
 import pytest
 
-from messaging.models import MessageScope
-from messaging.trees.graph import MessageTreeGraph
-from messaging.trees.node import MessageNode, MessageState
-from messaging.trees.queue import MessageNodeQueue
-from messaging.trees.snapshot import (
+from codexproxy.messaging.models import MessageScope
+from codexproxy.messaging.trees.graph import MessageTreeGraph
+from codexproxy.messaging.trees.node import MessageNode, MessageState
+from codexproxy.messaging.trees.queue import MessageNodeQueue
+from codexproxy.messaging.trees.snapshot import (
     TreeSnapshot,
     node_from_snapshot,
     node_to_snapshot,

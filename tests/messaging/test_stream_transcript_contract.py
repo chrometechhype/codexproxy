@@ -1,13 +1,13 @@
 """Messaging-specific assertions built on neutral Anthropic stream contracts."""
 
-from core.anthropic import AnthropicStreamLedger
-from core.anthropic.stream_contracts import (
+from codexproxy.core.anthropic import AnthropicStreamLedger
+from codexproxy.core.anthropic.stream_contracts import (
     assert_anthropic_stream_contract,
     has_tool_use,
     parse_sse_text,
 )
-from messaging.event_parser import parse_cli_event
-from messaging.transcript import RenderCtx, TranscriptBuffer
+from codexproxy.messaging.event_parser import parse_cli_event
+from codexproxy.messaging.transcript import RenderCtx, TranscriptBuffer
 
 
 def test_thinking_tool_text_and_transcript_order_contract() -> None:

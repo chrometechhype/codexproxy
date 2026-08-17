@@ -4,15 +4,15 @@ from unittest.mock import patch
 
 import pytest
 
-from core.anthropic.stream_contracts import parse_sse_text
-from core.anthropic.streaming import format_sse_event
-from core.async_iterators import AsyncCloseable
-from core.failures import ExecutionFailure, FailureKind
-from core.openai_responses import (
+from codexproxy.core.anthropic.stream_contracts import parse_sse_text
+from codexproxy.core.anthropic.streaming import format_sse_event
+from codexproxy.core.async_iterators import AsyncCloseable
+from codexproxy.core.failures import ExecutionFailure, FailureKind
+from codexproxy.core.openai_responses import (
     OpenAIResponsesAdapter,
     OpenAIResponsesRequest,
 )
-from core.openai_responses.anthropic_sse import (
+from codexproxy.core.openai_responses.anthropic_sse import (
     AnthropicSseEvent,
     iter_sse_events,
 )
@@ -121,7 +121,7 @@ async def test_responses_transform_closes_direct_event_source_on_early_close() -
         ]
     )
     with patch(
-        "core.openai_responses.stream.iter_sse_events",
+        "codexproxy.core.openai_responses.stream.iter_sse_events",
         return_value=events,
     ):
         stream = _responses_sse(
@@ -145,7 +145,7 @@ async def test_responses_transform_preserves_direct_source_failure() -> None:
     )
     with (
         patch(
-            "core.openai_responses.stream.iter_sse_events",
+            "codexproxy.core.openai_responses.stream.iter_sse_events",
             return_value=events,
         ),
         pytest.raises(RuntimeError) as exc_info,
@@ -297,24 +297,24 @@ async def test_anthropic_tool_stream_converts_to_function_call_item() -> None:
     assert function_call["type"] == "function_call"
     assert function_call["call_id"] == "toolu_1"
     assert function_call["name"] == "echo"
-    assert function_call["arguments"] == '{"value":"FCC"}'
+    assert function_call["arguments"] == '{"value":"CDX"}'
 
 
 @pytest.mark.asyncio
 async def test_anthropic_function_tool_arguments_are_normalized() -> None:
     response = await _completed_response_from_sse(
-        _aiter(_anthropic_tool_stream(partial_json='{ "value" : "FCC" }')),
+        _aiter(_anthropic_tool_stream(partial_json='{ "value" : "CDX" }')),
         {"model": "nvidia_nim/test-model", "stream": True},
     )
 
-    assert response["output"][0]["arguments"] == '{"value":"FCC"}'
+    assert response["output"][0]["arguments"] == '{"value":"CDX"}'
 
 
 @pytest.mark.asyncio
 async def test_anthropic_malformed_function_tool_arguments_fail_response() -> None:
     text = await _collect_sse(
         _responses_sse(
-            _aiter(_anthropic_tool_stream(partial_json='{"value":"FCC" "bad"}')),
+            _aiter(_anthropic_tool_stream(partial_json='{"value":"CDX" "bad"}')),
             {"model": "nvidia_nim/test-model", "stream": True},
         )
     )
@@ -335,7 +335,7 @@ async def test_anthropic_malformed_function_tool_arguments_fail_response() -> No
 @pytest.mark.asyncio
 async def test_anthropic_malformed_function_tool_arguments_fail_on_eof() -> None:
     stream = _anthropic_tool_stream(
-        partial_json='{"value":"FCC" "bad"}',
+        partial_json='{"value":"CDX" "bad"}',
         include_block_stop=False,
     )
     text = await _collect_sse(
@@ -551,7 +551,7 @@ async def test_anthropic_error_stream_converts_to_response_failed_event() -> Non
 
 
 @pytest.mark.asyncio
-async def test_split_usage_deltas_are_accumulated() -> None:
+async def test_split_usage_deltas_sum_latest_anthropic_input_categories() -> None:
     response = await _completed_response_from_sse(
         _aiter(
             [
@@ -561,7 +561,11 @@ async def test_split_usage_deltas_are_accumulated() -> None:
                     {
                         "type": "message_delta",
                         "delta": {"stop_reason": "end_turn"},
-                        "usage": {"input_tokens": 11},
+                        "usage": {
+                            "input_tokens": 20,
+                            "cache_creation_input_tokens": 5,
+                            "cache_read_input_tokens": 10,
+                        },
                     },
                 ),
                 format_sse_event(
@@ -569,7 +573,10 @@ async def test_split_usage_deltas_are_accumulated() -> None:
                     {
                         "type": "message_delta",
                         "delta": {},
-                        "usage": {"output_tokens": 7},
+                        "usage": {
+                            "cache_read_input_tokens": 11,
+                            "output_tokens": 7,
+                        },
                     },
                 ),
                 format_sse_event("message_stop", {"type": "message_stop"}),
@@ -579,11 +586,55 @@ async def test_split_usage_deltas_are_accumulated() -> None:
     )
 
     assert response["usage"] == {
-        "input_tokens": 11,
+        "input_tokens": 36,
         "output_tokens": 7,
-        "total_tokens": 18,
+        "total_tokens": 43,
     }
     assert "stop_reason" not in response
+
+
+@pytest.mark.asyncio
+async def test_usage_ignores_invalid_anthropic_input_categories() -> None:
+    response = await _completed_response_from_sse(
+        _aiter(
+            [
+                *_anthropic_text_stream("usage")[:-2],
+                format_sse_event(
+                    "message_delta",
+                    {
+                        "type": "message_delta",
+                        "delta": {"stop_reason": "end_turn"},
+                        "usage": {
+                            "input_tokens": 20,
+                            "cache_creation_input_tokens": 5,
+                            "cache_read_input_tokens": 10,
+                        },
+                    },
+                ),
+                format_sse_event(
+                    "message_delta",
+                    {
+                        "type": "message_delta",
+                        "delta": {},
+                        "usage": {
+                            "input_tokens": -1,
+                            "cache_creation_input_tokens": -2,
+                            "cache_read_input_tokens": True,
+                            "output_tokens": 7,
+                        },
+                    },
+                ),
+                format_sse_event("message_stop", {"type": "message_stop"}),
+            ]
+        ),
+        {"model": "nvidia_nim/test-model", "stream": True},
+    )
+
+    assert response["usage"] == {
+        "input_tokens": 35,
+        "output_tokens": 7,
+        "total_tokens": 42,
+    }
 
 
 @pytest.mark.asyncio
@@ -655,9 +706,9 @@ async def test_text_only_usage_omits_reasoning_usage_detail() -> None:
         (
             {"model": "nvidia_nim/test-model", "stream": True},
             "echo",
-            '{"value":"FCC"}',
+            '{"value":"CDX"}',
             "function_call",
-            ("arguments", '{"value":"FCC"}'),
+            ("arguments", '{"value":"CDX"}'),
         ),
         (
             {
@@ -723,7 +774,7 @@ async def test_overlapping_text_and_tool_blocks_keep_reserved_output_indexes() -
         "function_call",
     ]
     assert completed["output"][0]["content"][0]["text"] == "text"
-    assert completed["output"][1]["arguments"] == '{"value":"FCC"}'
+    assert completed["output"][1]["arguments"] == '{"value":"CDX"}'
 
 
 @pytest.mark.asyncio
@@ -804,7 +855,7 @@ def _anthropic_text_stream(text: str, *, stop_reason: str = "end_turn") -> list[
 
 def _anthropic_tool_stream(
     tool_name: str = "echo",
-    partial_json: str = '{"value":"FCC"}',
+    partial_json: str = '{"value":"CDX"}',
     *,
     include_block_stop: bool = True,
 ) -> list[str]:
@@ -940,7 +991,7 @@ def _overlapping_text_tool_stream() -> list[str]:
                 "index": 1,
                 "delta": {
                     "type": "input_json_delta",
-                    "partial_json": '{"value":"FCC"}',
+                    "partial_json": '{"value":"CDX"}',
                 },
             },
         ),

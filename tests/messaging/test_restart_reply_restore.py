@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from messaging.models import IncomingMessage, MessageScope
-from messaging.session import SessionStore
-from messaging.trees import TreeIdentity
-from messaging.trees.node import MessageNode, MessageState
-from messaging.trees.runtime import MessageTree
-from messaging.workflow import MessagingWorkflow
+from codexproxy.messaging.models import IncomingMessage, MessageScope
+from codexproxy.messaging.session import SessionStore
+from codexproxy.messaging.trees import TreeIdentity
+from codexproxy.messaging.trees.node import MessageNode, MessageState
+from codexproxy.messaging.trees.runtime import MessageTree
+from codexproxy.messaging.workflow import MessagingWorkflow
 
 TELEGRAM_CHAT_1 = MessageScope(platform="telegram", chat_id="chat_1")
 

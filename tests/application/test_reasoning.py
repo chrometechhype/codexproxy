@@ -1,12 +1,12 @@
 import pytest
 
-from application.reasoning import (
+from codexproxy.application.reasoning import (
     client_reasoning_policy,
     resolve_reasoning_policy,
 )
-from config.reasoning import ReasoningPreference
-from core.anthropic.models import MessagesRequest
-from core.reasoning import (
+from codexproxy.config.reasoning import ReasoningPreference
+from codexproxy.core.anthropic.models import MessagesRequest
+from codexproxy.core.reasoning import (
     ReasoningControl,
     ReasoningEffort,
     ReasoningPolicy,
@@ -140,7 +140,7 @@ def test_reasoning_budget_requires_explicit_on_control() -> None:
         (ReasoningEffort.MAX, 8_192),
     ),
 )
-def test_reasoning_effort_has_one_CODEX_PROXY_numeric_budget(
+def test_reasoning_effort_has_one_fcc_numeric_budget(
     effort: ReasoningEffort, expected: int
 ) -> None:
     assert ReasoningPolicy.on(effort=effort).numeric_budget_tokens == expected

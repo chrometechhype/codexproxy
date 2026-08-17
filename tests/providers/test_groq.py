@@ -4,10 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from config.provider_catalog import GROQ_DEFAULT_BASE
-from providers.base import ProviderConfig
+from codexproxy.config.provider_catalog import GROQ_DEFAULT_BASE
+from codexproxy.providers.groq import GroqProvider
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import immediate_admission, profiled_provider
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+)
 
 
 def make_request(**overrides):
@@ -16,7 +19,7 @@ def make_request(**overrides):
 
 @pytest.fixture
 def groq_config():
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test_groq_key",
         base_url=GROQ_DEFAULT_BASE,
         rate_limit=10,
@@ -26,15 +29,13 @@ def groq_config():
 
 @pytest.fixture
 def groq_provider(groq_config):
-    return profiled_provider("groq", groq_config, admission=immediate_admission())
+    return GroqProvider(groq_config, admission=immediate_admission())
 
 
 def test_init(groq_config):
     """Test provider initialization."""
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
-        provider = profiled_provider(
-            "groq", groq_config, admission=immediate_admission()
-        )
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+        provider = GroqProvider(groq_config, admission=immediate_admission())
         assert provider._api_key == "test_groq_key"
         assert provider._base_url == GROQ_DEFAULT_BASE
         mock_openai.assert_called_once()
@@ -54,10 +55,59 @@ def test_build_request_body_basic(groq_provider):
     assert "max_completion_tokens" in body
 
 
+def test_build_request_body_replays_reasoning_as_tagged_content(groq_provider):
+    request = make_request(
+        messages=[
+            {"role": "user", "content": "Inspect the file."},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "thinking", "thinking": "I need to read it first."},
+                    {"type": "text", "text": "I will inspect the file."},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "read_file",
+                        "input": {"path": "example.py"},
+                    },
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_1",
+                        "content": "print('hello')",
+                    }
+                ],
+            },
+        ]
+    )
+
+    body = groq_provider._build_request_body(request)
+
+    assistant = next(
+        message for message in body["messages"] if message["role"] == "assistant"
+    )
+    assert assistant["content"] == (
+        "<think>\nI need to read it first.\n</think>\n\nI will inspect the file."
+    )
+    assert assistant["tool_calls"][0]["id"] == "toolu_1"
+    assert body["messages"][-1] == {
+        "role": "tool",
+        "tool_call_id": "toolu_1",
+        "content": "print('hello')",
+    }
+    assert all(
+        "reasoning_content" not in message and "reasoning" not in message
+        for message in body["messages"]
+    )
+
+
 def test_build_request_body_global_disable_blocks_reasoning_mapping():
-    provider = profiled_provider(
-        "groq",
-        ProviderConfig(
+    provider = GroqProvider(
+        make_provider_config(
             api_key="test_groq_key",
             base_url=GROQ_DEFAULT_BASE,
             rate_limit=10,
@@ -74,7 +124,7 @@ def test_build_request_body_global_disable_blocks_reasoning_mapping():
 
 def test_build_request_body_sanitizes_and_remaps_via_mock_converter(groq_provider):
     with patch(
-        "providers.openai_chat.request_policy.build_base_request_body"
+        "codexproxy.providers.openai_chat.request_policy.build_base_request_body"
     ) as mock_convert:
         mock_convert.return_value = {
             "model": "llama-3.3-70b-versatile",
@@ -107,7 +157,7 @@ def test_build_request_body_sanitizes_and_remaps_via_mock_converter(groq_provide
 
 def test_build_request_body_prefers_existing_max_completion_tokens(groq_provider):
     with patch(
-        "providers.openai_chat.request_policy.build_base_request_body"
+        "codexproxy.providers.openai_chat.request_policy.build_base_request_body"
     ) as mock_convert:
         mock_convert.return_value = {
             "model": "llama-3.3-70b-versatile",

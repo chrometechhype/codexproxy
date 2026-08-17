@@ -3,20 +3,25 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException, Request
 
-from api.dependencies import (
+from codexproxy.api.dependencies import (
     get_services,
     get_settings,
     require_proxy_auth,
     resolve_provider,
 )
-from api.ports import ApiServices
-from application.errors import ApplicationUnavailableError
-from application.ports import RequestRuntimeLease
-from config.settings import Settings
+from codexproxy.api.ports import ApiServices
+from codexproxy.application.errors import ApplicationUnavailableError
+from codexproxy.application.ports import RequestRuntimeLease
+from codexproxy.config.settings import Settings
 from tests.api.support import create_test_app
 
 
-def _request(*, headers: dict[str, str], token: str) -> tuple[Request, Settings]:
+def _request(
+    *,
+    headers: dict[str, str],
+    token: str = "codexcc",
+    enabled: bool = True,
+) -> tuple[Request, Settings]:
     request = Request(
         {
             "type": "http",
@@ -27,7 +32,10 @@ def _request(*, headers: dict[str, str], token: str) -> tuple[Request, Settings]
             ],
         }
     )
-    settings = Settings.model_construct(anthropic_auth_token=token)
+    settings = Settings.model_construct(
+        proxy_auth_enabled=enabled,
+        proxy_auth_token=token,
+    )
     return request, settings
 
 
@@ -55,7 +63,8 @@ def test_get_settings_reads_current_request_runtime_settings() -> None:
     app = create_test_app(
         Settings.model_construct(
             model="deepseek/test-model",
-            anthropic_auth_token="",
+            proxy_auth_enabled=False,
+            proxy_auth_token="codexcc",
         )
     )
 
@@ -66,7 +75,7 @@ def test_resolve_provider_uses_retained_lease_and_logs_first_initialization() ->
     provider = MagicMock()
     lease = _lease(provider=provider)
 
-    with patch("api.dependencies.logger.info") as log_info:
+    with patch("codexproxy.api.dependencies.logger.info") as log_info:
         result = resolve_provider("nvidia_nim", lease=lease)
 
     assert result is provider
@@ -78,7 +87,7 @@ def test_resolve_provider_skips_initialization_log_for_cached_provider() -> None
     lease = _lease()
     lease.is_provider_cached.return_value = True
 
-    with patch("api.dependencies.logger.info") as log_info:
+    with patch("codexproxy.api.dependencies.logger.info") as log_info:
         resolve_provider("nvidia_nim", lease=lease)
 
     log_info.assert_not_called()
@@ -106,8 +115,8 @@ def test_resolve_provider_unrelated_error_is_not_reclassified() -> None:
         resolve_provider("nvidia_nim", lease=lease)
 
 
-def test_require_proxy_auth_allows_when_no_token_configured():
-    request, settings = _request(headers={}, token="")
+def test_require_proxy_auth_allows_when_disabled_with_retained_token():
+    request, settings = _request(headers={}, enabled=False)
 
     require_proxy_auth(request, settings)
 

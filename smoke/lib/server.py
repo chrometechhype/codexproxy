@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from .child_process import cmd_CODEX_PROXY_server
+from .child_process import cmd_fcc_server
 from .config import SmokeConfig, redacted
 
 
@@ -58,7 +58,7 @@ def start_server(
     if env_overrides:
         env.update(env_overrides)
 
-    cmd = command or cmd_CODEX_PROXY_server()
+    cmd = command or cmd_fcc_server()
 
     with log_path.open("ab") as log_file:
         process = subprocess.Popen(

@@ -1,11 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from core.anthropic.conversion import (
+from codexproxy.core.anthropic.conversion import (
     OpenAIConversionError,
     build_base_request_body,
 )
-from core.anthropic.models import (
+from codexproxy.core.anthropic.models import (
     ContentBlockDocument,
     ContentBlockWebFetchToolResult,
     Message,

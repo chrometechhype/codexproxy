@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from core.async_iterators import (
+from codexproxy.core.async_iterators import (
     AsyncCloseable,
     try_close_async_iterator,
 )

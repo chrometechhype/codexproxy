@@ -8,11 +8,11 @@ from unittest.mock import patch
 
 import pytest
 
-import messaging.session.persistence as persistence_module
-from messaging.models import MessageScope
-from messaging.session import SessionStore
-from messaging.session.persistence import DebouncedJsonPersistence
-from messaging.trees import TreeIdentity, TreeSnapshot
+import codexproxy.messaging.session.persistence as persistence_module
+from codexproxy.messaging.models import MessageScope
+from codexproxy.messaging.session import SessionStore
+from codexproxy.messaging.session.persistence import DebouncedJsonPersistence
+from codexproxy.messaging.trees import TreeIdentity, TreeSnapshot
 
 TELEGRAM_C1 = MessageScope(platform="telegram", chat_id="c1")
 TELEGRAM_C2 = MessageScope(platform="telegram", chat_id="c2")
@@ -167,7 +167,7 @@ class TestSessionStoreSaveEdgeCases:
         )
         with (
             patch(
-                "messaging.session.persistence.os.replace",
+                "codexproxy.messaging.session.persistence.os.replace",
                 side_effect=OSError("disk full"),
             ),
             pytest.raises(OSError, match="disk full"),
@@ -217,7 +217,7 @@ class TestSessionStoreSaveEdgeCases:
         )
 
         with patch(
-            "messaging.session.persistence.os.replace",
+            "codexproxy.messaging.session.persistence.os.replace",
             side_effect=OSError("timer disk full"),
         ):
             FakeTimer.instances[-1].fire()
@@ -366,7 +366,7 @@ class TestSessionStoreTreeSnapshots:
             encoding="utf-8",
         )
 
-        with patch("messaging.trees.snapshot.logger.warning") as warning:
+        with patch("codexproxy.messaging.trees.snapshot.logger.warning") as warning:
             store = SessionStore(storage_path=str(path))
 
         assert store.load_conversation_snapshot().is_empty
@@ -471,7 +471,7 @@ class TestSessionStoreAtomicWrites:
 
         with (
             patch(
-                "messaging.session.persistence.os.replace",
+                "codexproxy.messaging.session.persistence.os.replace",
                 side_effect=OSError("replace failed"),
             ),
             pytest.raises(OSError, match="replace failed"),
@@ -494,7 +494,7 @@ class TestSessionStoreAtomicWrites:
 
         with (
             patch(
-                "messaging.session.persistence.os.replace",
+                "codexproxy.messaging.session.persistence.os.replace",
                 side_effect=OSError("clear replace failed"),
             ),
             pytest.raises(OSError, match="clear replace failed"),

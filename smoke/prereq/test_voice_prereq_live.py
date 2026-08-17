@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from messaging.transcription import TranscriptionService
-from messaging.voice import Transcriber
-from providers.nvidia_nim.voice import NvidiaNimTranscriber
+from codexproxy.messaging.transcription import TranscriptionService
+from codexproxy.messaging.voice import Transcriber
+from codexproxy.providers.nvidia_nim.voice import NvidiaNimTranscriber
 from smoke.lib.config import SmokeConfig
 
 pytestmark = [pytest.mark.live, pytest.mark.smoke_target("voice")]
@@ -26,9 +26,12 @@ async def test_voice_transcription_backend_when_explicitly_enabled(
     _write_tone_wav(wav_path)
     transcriber: Transcriber
     if smoke_config.settings.whisper_device == "nvidia_nim":
+        api_key = smoke_config.settings.nvidia_nim_api_key
+        if api_key is None:
+            pytest.skip("NVIDIA_NIM_API_KEY is required")
         transcriber = NvidiaNimTranscriber(
             model=smoke_config.settings.whisper_model,
-            api_key=smoke_config.settings.nvidia_nim_api_key,
+            api_key=api_key,
         )
     else:
         transcriber = TranscriptionService(

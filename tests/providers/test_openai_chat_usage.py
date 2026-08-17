@@ -8,31 +8,33 @@ import openai
 import pytest
 from httpx import Request, Response
 
-from core.anthropic import ReasoningReplayMode
-from core.anthropic.models import MessagesRequest
-from core.anthropic.stream_contracts import parse_sse_text
-from core.reasoning import DEFAULT_REASONING_POLICY, ReasoningPolicy
-from providers.base import ProviderConfig
-from providers.openai_chat import (
+from codexproxy.core.anthropic import ReasoningReplayMode
+from codexproxy.core.anthropic.models import MessagesRequest
+from codexproxy.core.anthropic.stream_contracts import parse_sse_text
+from codexproxy.core.reasoning import DEFAULT_REASONING_POLICY, ReasoningPolicy
+from codexproxy.providers.openai_chat import (
     OpenAIChatProfile,
     OpenAIChatProvider,
     OpenAIChatRequestPolicy,
 )
-from providers.openai_chat.reasoning import NO_REASONING
-from providers.openai_chat.usage import (
+from codexproxy.providers.openai_chat.reasoning import NO_REASONING
+from codexproxy.providers.openai_chat.usage import (
     clone_without_stream_usage,
     is_stream_usage_rejection,
     request_stream_usage,
     usage_int,
 )
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import immediate_admission
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+)
 
 
 class _UsageTestProvider(OpenAIChatProvider):
     def __init__(self):
         super().__init__(
-            ProviderConfig(
+            make_provider_config(
                 api_key="test_key",
                 base_url="https://provider.example/v1",
                 rate_limit=100,

@@ -6,23 +6,23 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from api.handlers import (
+from codexproxy.api.handlers import (
     MessagesHandler,
     ResponsesHandler,
     TokenCountHandler,
 )
-from application.errors import InvalidRequestError
-from application.model_metadata import ProviderModelInfo
-from config.settings import Settings
-from core.anthropic.models import (
+from codexproxy.application.errors import InvalidRequestError
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.settings import Settings
+from codexproxy.core.anthropic.models import (
     Message,
     MessagesRequest,
     TokenCountRequest,
 )
-from core.anthropic.streaming import format_sse_event
-from core.failures import ExecutionFailure, FailureKind
-from core.openai_responses import OpenAIResponsesRequest
-from core.reasoning import ReasoningPolicy
+from codexproxy.core.anthropic.streaming import format_sse_event
+from codexproxy.core.failures import ExecutionFailure, FailureKind
+from codexproxy.core.openai_responses import OpenAIResponsesRequest
+from codexproxy.core.reasoning import ReasoningPolicy
 
 _CLASSIFIER_SYSTEM = (
     "You are a security monitor. Respond with <block>yes</block> or <block>no</block>."
@@ -195,7 +195,11 @@ async def test_messages_handler_aggregates_provider_stream_when_stream_false() -
                 {
                     "type": "message_delta",
                     "delta": {"stop_reason": "end_turn", "stop_sequence": None},
-                    "usage": {"input_tokens": 7, "output_tokens": 2},
+                    "usage": {
+                        "input_tokens": 20,
+                        "output_tokens": 2,
+                        "cache_read_input_tokens": 10,
+                    },
                 },
             ),
             format_sse_event("message_stop", {"type": "message_stop"}),
@@ -220,7 +224,11 @@ async def test_messages_handler_aggregates_provider_stream_when_stream_false() -
     assert body["model"] == "test-model"
     assert body["content"] == [{"type": "text", "text": "OK"}]
     assert body["stop_reason"] == "end_turn"
-    assert body["usage"] == {"input_tokens": 7, "output_tokens": 2}
+    assert body["usage"] == {
+        "input_tokens": 20,
+        "output_tokens": 2,
+        "cache_read_input_tokens": 10,
+    }
 
 
 @pytest.mark.asyncio
@@ -386,7 +394,7 @@ async def test_messages_handler_forces_no_thinking_for_safety_classifier() -> No
         messages=[Message(role="user", content=_CLASSIFIER_USER)],
     )
 
-    with patch("api.handlers.messages.trace_event") as trace_mock:
+    with patch("codexproxy.api.handlers.messages.trace_event") as trace_mock:
         response = await handler.create(request)
         assert isinstance(response, StreamingResponse)
         await _streaming_body_text(response)
@@ -396,11 +404,11 @@ async def test_messages_handler_forces_no_thinking_for_safety_classifier() -> No
     assert provider.requests[0].model == "test-model"
     assert provider.requests[0].system == _CLASSIFIER_SYSTEM
     assert _trace_events(
-        trace_mock, "api.optimization.safety_classifier_no_thinking"
+        trace_mock, "codexproxy.api.optimization.safety_classifier_no_thinking"
     ) == [
         {
             "stage": "routing",
-            "event": "api.optimization.safety_classifier_no_thinking",
+            "event": "codexproxy.api.optimization.safety_classifier_no_thinking",
             "source": "api",
             "model": "nvidia_nim/test-model",
             "changed": True,
@@ -428,7 +436,7 @@ async def test_messages_handler_preserves_thinking_for_non_classifier() -> None:
         ],
     )
 
-    with patch("api.handlers.messages.trace_event") as trace_mock:
+    with patch("codexproxy.api.handlers.messages.trace_event") as trace_mock:
         response = await handler.create(request)
         assert isinstance(response, StreamingResponse)
         await _streaming_body_text(response)
@@ -438,7 +446,7 @@ async def test_messages_handler_preserves_thinking_for_non_classifier() -> None:
     assert (
         _trace_events(
             trace_mock,
-            "api.optimization.safety_classifier_no_thinking",
+            "codexproxy.api.optimization.safety_classifier_no_thinking",
         )
         == []
     )
@@ -449,14 +457,14 @@ async def test_messages_handler_keeps_existing_no_thinking_for_classifier() -> N
     provider = FakeProvider()
     handler = MessagesHandler(Settings(), provider_resolver=lambda _: provider)
     request = MessagesRequest(
-        model="claude-3-freecc-no-thinking/nvidia_nim/test-model",
+        model="claude-3-codexcc-no-thinking/nvidia_nim/test-model",
         max_tokens=100,
         stream=True,
         system=_CLASSIFIER_SYSTEM,
         messages=[Message(role="user", content=_CLASSIFIER_USER)],
     )
 
-    with patch("api.handlers.messages.trace_event") as trace_mock:
+    with patch("codexproxy.api.handlers.messages.trace_event") as trace_mock:
         response = await handler.create(request)
         assert isinstance(response, StreamingResponse)
         await _streaming_body_text(response)
@@ -464,13 +472,13 @@ async def test_messages_handler_keeps_existing_no_thinking_for_classifier() -> N
     assert provider.preflight_calls[0][1] == ReasoningPolicy.off()
     assert provider.stream_kwargs[0]["reasoning"] == ReasoningPolicy.off()
     assert _trace_events(
-        trace_mock, "api.optimization.safety_classifier_no_thinking"
+        trace_mock, "codexproxy.api.optimization.safety_classifier_no_thinking"
     ) == [
         {
             "stage": "routing",
-            "event": "api.optimization.safety_classifier_no_thinking",
+            "event": "codexproxy.api.optimization.safety_classifier_no_thinking",
             "source": "api",
-            "model": "claude-3-freecc-no-thinking/nvidia_nim/test-model",
+            "model": "claude-3-codexcc-no-thinking/nvidia_nim/test-model",
             "changed": False,
         }
     ]
@@ -490,7 +498,7 @@ async def test_messages_handler_optimization_intercepts_before_provider_executio
     optimized = object()
 
     with patch(
-        "api.handlers.messages.try_optimizations",
+        "codexproxy.api.handlers.messages.try_optimizations",
         return_value=optimized,
     ):
         assert await handler.create(request) is optimized
@@ -504,7 +512,7 @@ async def test_responses_handler_bypasses_message_only_optimizations() -> None:
     handler = ResponsesHandler(Settings(), provider_resolver=lambda _: provider)
 
     with patch(
-        "api.handlers.messages.try_optimizations",
+        "codexproxy.api.handlers.messages.try_optimizations",
         side_effect=AssertionError("Responses must not use message optimizations"),
     ):
         response = await handler.create(
@@ -525,7 +533,7 @@ async def test_responses_handler_does_not_apply_safety_classifier_policy() -> No
     provider = FakeProvider()
     handler = ResponsesHandler(Settings(), provider_resolver=lambda _: provider)
 
-    with patch("api.handlers.messages.trace_event") as trace_mock:
+    with patch("codexproxy.api.handlers.messages.trace_event") as trace_mock:
         response = await handler.create(
             OpenAIResponsesRequest(
                 model="nvidia_nim/test-model",
@@ -542,7 +550,7 @@ async def test_responses_handler_does_not_apply_safety_classifier_policy() -> No
     assert (
         _trace_events(
             trace_mock,
-            "api.optimization.safety_classifier_no_thinking",
+            "codexproxy.api.optimization.safety_classifier_no_thinking",
         )
         == []
     )
@@ -554,7 +562,7 @@ def test_token_count_handler_routes_and_counts_tokens() -> None:
         token_counter=lambda messages, system, tools: len(messages) + 41,
     )
 
-    with patch("api.handlers.token_count.trace_event") as trace:
+    with patch("codexproxy.api.handlers.token_count.trace_event") as trace:
         response = handler.count(
             TokenCountRequest(
                 model="nvidia_nim/test-model",

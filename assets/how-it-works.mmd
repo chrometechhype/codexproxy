@@ -7,7 +7,7 @@ flowchart LR
 
     subgraph proxy["CodexProxy Proxy :8082"]
         admin["Local Admin UI<br/>keys, models, status"]
-        config[("Managed Config<br/>~/.fcc/.env")]
+        config[("Managed Config<br/>~/.cdx/.env")]
         convert["Responses Converter<br/>OpenAI to Anthropic"]
         router{"Model Router<br/>Opus / Sonnet / Haiku"}
         optimize["Request Optimizations<br/>cheap local probes"]

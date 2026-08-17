@@ -4,11 +4,12 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from application.model_metadata import ProviderModelInfo
-from core.anthropic.models import Message, MessagesRequest
-from core.reasoning import DEFAULT_REASONING_POLICY, ReasoningPolicy
-from providers.base import BaseProvider, ProviderConfig
-from providers.openai_chat import OpenAIChatProvider
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.core.anthropic.models import Message, MessagesRequest
+from codexproxy.core.reasoning import DEFAULT_REASONING_POLICY, ReasoningPolicy
+from codexproxy.providers.base import BaseProvider
+from codexproxy.providers.openai_chat import OpenAIChatProvider
+from tests.providers.support import make_provider_config
 
 
 class RecordingOpenAIProvider(OpenAIChatProvider):
@@ -48,7 +49,7 @@ class ProviderWithoutPreflight(BaseProvider):
 def test_provider_base_requires_an_explicit_preflight_implementation() -> None:
     with pytest.raises(TypeError, match="preflight_stream"):
         ProviderWithoutPreflight(
-            ProviderConfig(api_key="test", base_url="https://test.invalid")
+            make_provider_config(api_key="test", base_url="https://test.invalid")
         )
 
 

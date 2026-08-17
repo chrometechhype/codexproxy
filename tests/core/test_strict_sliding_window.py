@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-import core.rate_limit as rate_limit_module
-from core.rate_limit import StrictSlidingWindowLimiter
+import codexproxy.core.rate_limit as rate_limit_module
+from codexproxy.core.rate_limit import StrictSlidingWindowLimiter
 
 
 @pytest.mark.asyncio

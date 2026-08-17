@@ -6,29 +6,29 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from application.errors import InvalidRequestError
-from application.model_metadata import ProviderModelInfo
-from config.provider_catalog import KILO_DEFAULT_BASE
-from core.anthropic.models import Message, MessagesRequest
-from core.anthropic.stream_contracts import (
+from codexproxy.application.errors import InvalidRequestError
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.provider_catalog import KILO_DEFAULT_BASE
+from codexproxy.core.anthropic.models import Message, MessagesRequest
+from codexproxy.core.anthropic.stream_contracts import (
     parse_sse_text,
     text_content,
     thinking_content,
 )
-from core.reasoning import ReasoningPolicy
-from providers.base import ProviderConfig
-from providers.kilo import KiloProvider
-from providers.model_listing import ModelListResponseError
-from providers.openai_chat import OpenAIChatProvider
+from codexproxy.core.reasoning import ReasoningPolicy
+from codexproxy.providers.kilo import KiloProvider
+from codexproxy.providers.model_listing import ModelListResponseError
+from codexproxy.providers.openai_chat import OpenAIChatProvider
 from tests.providers.support import (
     immediate_admission,
+    make_provider_config,
     reasoning_for,
 )
 
 
 @pytest.fixture
 def kilo_config():
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test_kilo_key",
         base_url=KILO_DEFAULT_BASE,
         rate_limit=10,

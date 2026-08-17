@@ -3,7 +3,7 @@
 import httpx
 import openai
 
-from providers.stream_recovery import (
+from codexproxy.providers.stream_recovery import (
     RecoveryController,
     RecoveryFailureAction,
     RecoveryHoldbackBuffer,

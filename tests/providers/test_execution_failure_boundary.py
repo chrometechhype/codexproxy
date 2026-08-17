@@ -6,15 +6,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from config.nim import NimSettings
-from core.anthropic.stream_contracts import parse_sse_text
-from core.async_iterators import AsyncCloseable
-from core.failures import ExecutionFailure, FailureKind
-from providers.base import ProviderConfig
-from providers.http import close_provider_stream
-from providers.nvidia_nim import NvidiaNimProvider
+from codexproxy.config.nim import NimSettings
+from codexproxy.core.anthropic.stream_contracts import parse_sse_text
+from codexproxy.core.async_iterators import AsyncCloseable
+from codexproxy.core.failures import ExecutionFailure, FailureKind
+from codexproxy.providers.http import close_provider_stream
+from codexproxy.providers.nvidia_nim import NvidiaNimProvider
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import immediate_admission
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+)
 
 
 class _FailingStream:
@@ -53,7 +55,7 @@ def _chunk(*, content: str | None = None, finish_reason: str | None = None) -> o
 
 def _provider() -> NvidiaNimProvider:
     return NvidiaNimProvider(
-        ProviderConfig(
+        make_provider_config(
             api_key="test_key",
             base_url="https://test.api.nvidia.com/v1",
             rate_limit=10,
@@ -128,7 +130,7 @@ async def test_openai_stream_close_failure_cannot_mask_execution_failure() -> No
             new_callable=AsyncMock,
             return_value=stream,
         ),
-        patch("providers.http.trace_event") as trace_event,
+        patch("codexproxy.providers.http.trace_event") as trace_event,
         pytest.raises(ExecutionFailure) as exc_info,
     ):
         [
@@ -166,7 +168,7 @@ async def test_stream_close_failure_without_active_error_is_observability_only()
         close_error=RuntimeError("normal close failed"),
     )
 
-    with patch("providers.http.trace_event") as trace_event:
+    with patch("codexproxy.providers.http.trace_event") as trace_event:
         await close_provider_stream(
             stream,
             active_error=None,
@@ -207,7 +209,7 @@ async def test_completed_stream_close_failure_preserves_success_lifecycle() -> N
             new_callable=AsyncMock,
             return_value=stream,
         ),
-        patch("providers.http.trace_event") as trace_event,
+        patch("codexproxy.providers.http.trace_event") as trace_event,
     ):
         emitted = [
             event

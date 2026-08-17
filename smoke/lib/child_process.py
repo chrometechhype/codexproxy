@@ -20,23 +20,23 @@ def cmd_python_c(script: str) -> list[str]:
     return [python_exe(), "-c", script]
 
 
-def cmd_CODEX_PROXY_version() -> list[str]:
+def cmd_fcc_version() -> list[str]:
     return [
         python_exe(),
         "-c",
         (
             "import sys; "
             "sys.argv = ['cdx-server', '--version']; "
-            "from cli.entrypoints import serve; serve()"
+            "from codexproxy.cli.entrypoints import serve; serve()"
         ),
     ]
 
 
-def cmd_CODEX_PROXY_server() -> list[str]:
+def cmd_fcc_server() -> list[str]:
     return [
         python_exe(),
         "-c",
-        "from cli.entrypoints import serve; serve()",
+        "from codexproxy.cli.entrypoints import serve; serve()",
     ]
 
 

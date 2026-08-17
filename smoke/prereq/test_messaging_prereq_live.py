@@ -27,7 +27,7 @@ def test_telegram_bot_api_permissions(smoke_config: SmokeConfig) -> None:
             "CODEX_PROXY_SMOKE_TELEGRAM_CHAT_ID or ALLOWED_TELEGRAM_USER_ID required"
         )
 
-    marker = f"CodexProxy smoke {int(time.time())}"
+    marker = f"CDX smoke {int(time.time())}"
     sent = httpx.post(
         f"{base_url}/sendMessage",
         json={"chat_id": chat_id, "text": marker},
@@ -75,7 +75,7 @@ def test_discord_bot_api_permissions(smoke_config: SmokeConfig) -> None:
     )
     assert channel.status_code == 200, channel.text
 
-    marker = f"CodexProxy smoke {int(time.time())}"
+    marker = f"CDX smoke {int(time.time())}"
     sent = httpx.post(
         f"{base_url}/channels/{channel_id}/messages",
         headers=headers,

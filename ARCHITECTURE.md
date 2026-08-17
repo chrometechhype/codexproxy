@@ -12,15 +12,15 @@ and how contributors should extend it.
 
 CodexProxy is a local proxy for agent clients. It accepts Anthropic
 Messages traffic from Claude Code and Pi clients and OpenAI Responses traffic
-from Codex CLI, IDE, and App clients, routes the request to a configured
-upstream provider, and preserves the wire protocol expected by the caller.
+from Codex and OpenCode clients, routes the request to a configured upstream
+provider, and preserves the wire protocol expected by the caller.
 
 There are three runtime surfaces:
 
 - HTTP proxy: FastAPI routes expose Anthropic-compatible, Responses-compatible,
   health, model-listing, stop, and admin endpoints.
-- CLI launchers: wrapper entrypoints prepare Claude Code, Codex, and Pi sessions
-  so they target the local proxy.
+- CLI launchers: wrapper entrypoints prepare Claude Code, Codex, Pi, and
+  OpenCode sessions so they target the local proxy.
 - Messaging bridge: optional Discord or Telegram adapters turn chat messages
   into managed client CLI sessions.
 
@@ -29,6 +29,7 @@ flowchart LR
     ClaudeCode[Claude Code CLI and Extensions] --> ProxyAPI[FastAPI Proxy]
     Codex[Codex CLI, IDE, and App] --> ProxyAPI
     Pi[Pi Coding Agent] --> ProxyAPI
+    OpenCode[OpenCode CLI] --> ProxyAPI
     AdminUI[Local Admin UI] --> ProxyAPI
     Bots[Discord or Telegram Bots] --> Messaging[Messaging Bridge]
     Messaging --> ClientCLI[Managed Client CLI Sessions]
@@ -45,31 +46,31 @@ flowchart LR
 
 The installable wheel packages are declared in [pyproject.toml](pyproject.toml):
 
-- [application/](application/) is the dependency-leaf application boundary. It
+- [src/codexproxy/application/](src/codexproxy/application/) is the dependency-leaf application boundary. It
   owns immutable routing/model-metadata values, model routing, shared provider
   execution, the consumer-facing `ProviderPort`, request-runtime lease ports,
   task control, and deterministic request/readiness errors. It depends only on
   configuration and core protocol-neutral logic.
-- [api/](api/) is the HTTP adapter. It owns the FastAPI app, routes, API product
+- [src/codexproxy/api/](src/codexproxy/api/) is the HTTP adapter. It owns the FastAPI app, routes, API product
   handlers, local optimizations, model-catalog responses, HTTP error mapping,
   response commit timing, and Admin-specific ports. It consumes application and
   protocol types instead of defining use cases or wire schemas.
-- [cli/](cli/) owns console entrypoints, client CLI launchers, process/session
+- [src/codexproxy/cli/](src/codexproxy/cli/) owns console entrypoints, client CLI launchers, process/session
   management, and client adapter contracts.
-- [config/](config/) owns settings, provider metadata, filesystem paths,
+- [src/codexproxy/config/](src/codexproxy/config/) owns settings, provider metadata, filesystem paths,
   logging setup, constants, and provider ID catalogs.
-- [core/](core/) owns provider-neutral protocol logic: wire request and response
+- [src/codexproxy/core/](src/codexproxy/core/) owns provider-neutral protocol logic: wire request and response
   models, Anthropic conversion, SSE construction, OpenAI Responses conversion,
   canonical execution-failure semantics, credential-safe diagnostics, token
   counting, and structured trace helpers. It never classifies provider SDK or
   HTTP client exceptions.
-- [messaging/](messaging/) owns optional platform adapters, incoming message
+- [src/codexproxy/messaging/](src/codexproxy/messaging/) owns optional platform adapters, incoming message
   handling, tree queues, transcript rendering, persistence, commands, and voice
   support.
-- [providers/](providers/) owns provider construction, the shared OpenAI-chat
+- [src/codexproxy/providers/](src/codexproxy/providers/) owns provider construction, the shared OpenAI-chat
   provider, specialized adapters, SDK/HTTP failure classification, retry and
   recovery policy, rate limiting, model listing, and concrete provider adapters.
-- [runtime/](runtime/) is the process composition root. It owns application
+- [src/codexproxy/runtime/](src/codexproxy/runtime/) is the process composition root. It owns application
   startup and shutdown, provider generations, Admin runtime operations, and the
   concrete wiring between API, providers, messaging, and managed CLI sessions.
 
@@ -93,8 +94,8 @@ also removes that permission:
 | `runtime` | `api`, `application`, `cli`, `config`, `core`, `messaging`, `providers` |
 
 There is one exact exception:
-`cli.entrypoints` imports
-`runtime.bootstrap` because the installed server executable
+`codexproxy.cli.entrypoints` imports
+`codexproxy.runtime.bootstrap` because the installed server executable
 delegates construction to the process composition root. The exception does not
 permit any broader dependency from `cli` to `runtime`. Every new top-level
 package or cross-package edge must be added to the policy deliberately.
@@ -119,17 +120,17 @@ server does not require an optional extra. Static AST enforcement cannot observe
 dynamic imports. Deliberate provider factory loading is instead protected by the
 provider catalog, supported-ID, and factory synchronization contract.
 
-[core/version.py](core/version.py) is the sole runtime owner
-of the CodexProxy release version. It reads installed distribution metadata for
-FastAPI/OpenAPI, cdx-owned CLI `--version` output, and the outbound web-tools
+[core/version.py](src/codexproxy/core/version.py) is the sole runtime owner
+of the CDX release version. It reads installed distribution metadata for
+FastAPI/OpenAPI, CDX-owned CLI `--version` output, and the outbound web-tools
 user agent. A source-only checkout without installed metadata reports the
 explicit `0+unknown` fallback; runtime code never parses `pyproject.toml` or
 duplicates a release literal. Client launcher arguments remain transparent to
-their wrapped clients except for cdx-owned ephemeral provider configuration.
+their wrapped clients except for CDX-owned ephemeral provider configuration.
 
 The main ownership rule is that Anthropic and Responses protocol schemas and
-shared protocol behavior belong in [core/](core/), while request routing and
-provider execution belong in [application/](application/). Routes use core schemas
+shared protocol behavior belong in [src/codexproxy/core/](src/codexproxy/core/), while request routing and
+provider execution belong in [src/codexproxy/application/](src/codexproxy/application/). Routes use core schemas
 directly for wire validation and call application use cases. Provider modules use
 the same concrete request types and neutral helpers instead of importing the API
 adapter or another provider.
@@ -141,13 +142,20 @@ facade-only. Package initialization and those leaves must remain import-order sa
 The model-list schema stays beside its API-owned construction policy in
 `api/model_catalog.py`; there is no generic API model package.
 
+Type annotations follow the same ownership boundaries. Known values use the
+domain types owned by their package, and JSON wire values use `JsonValue` or
+`JsonObject` from `core.json_types`. `object` is reserved for genuinely opaque
+integration boundaries and is narrowed before use. Explicit `typing.Any` is
+avoided because it disables checking, but this remains a semantic design-review
+rule rather than a mechanical text ban in CI.
+
 ## Customer-Facing Contract
 
-CodexProxy optimizes for installed user workflows, not internal compatibility. The
+CDX optimizes for installed user workflows, not internal compatibility. The
 behavior that must be preserved is that these user-facing surfaces run correctly
 for real prompts against supported providers:
 
-- `cdx-server`, the Windows/macOS CodexProxy Desktop shell, and the local Admin UI for
+- `cdx-server`, the Windows/macOS CDX Desktop shell, and the local Admin UI for
   configuring supported providers, model routing, auth, server tools, messaging,
   and diagnostics.
 - `cdx-claude`, Claude Code, and the Anthropic-compatible proxy behavior Claude
@@ -159,8 +167,14 @@ for real prompts against supported providers:
   tool calls, generated `/model` catalog support, Responses stream lifecycle
   events, and Responses-to-Anthropic conversion at the adapter boundary.
 - `cdx-pi`, Pi, and the Anthropic-compatible proxy behavior Pi relies on,
-  including an cdx-scoped model catalog, streaming text and reasoning, and tool
+  including an CDX-scoped model catalog, streaming text and reasoning, and tool
   use/results.
+- `cdx-opencode`, stable OpenCode V1, and the OpenAI Responses behavior it
+  relies on, including an CDX-scoped model catalog and process-local provider
+  configuration.
+- `cdx-cline`, stable Cline CLI, and the OpenAI Responses behavior it relies
+  on, including an CDX-scoped model catalog, attached local sessions, and
+  process-local provider configuration.
 - Configured Discord and Telegram messaging bridges, including command handling,
   reply-based conversation branches, status updates, transcript rendering,
   managed Claude/Codex task execution where configured, task stop/clear flows,
@@ -188,20 +202,20 @@ The current package boundaries are intentional, but several modules still carry
 large orchestration responsibilities. Treat these as refactor targets, not as
 new places to add unrelated behavior:
 
-- [api/handlers/](api/handlers/) owns customer-facing API product flows:
+- [api/handlers/](src/codexproxy/api/handlers/) owns customer-facing API product flows:
   Claude Messages, OpenAI Responses, and token counting. Keep route handlers
   thin, keep Claude-only behavior in the Messages handler, and use
-  [application/execution.py](application/execution.py) only for shared
+  [application/execution.py](src/codexproxy/application/execution.py) only for shared
   provider resolution, preflight, tracing, token counting, and streaming.
-- [providers/openai_chat/](providers/openai_chat/) owns the common upstream provider
+- [providers/openai_chat/](src/codexproxy/providers/openai_chat/) owns the common upstream provider
   behavior. It separates immutable vendor profiles from per-request stream
   execution, recovery, request policy, and tool-call assembly. Shared
-  protocol rules belong in [core/](core/).
-- [messaging/workflow.py](messaging/workflow.py) coordinates messaging runtime
+  protocol rules belong in [src/codexproxy/core/](src/codexproxy/core/).
+- [messaging/workflow.py](src/codexproxy/messaging/workflow.py) coordinates messaging runtime
   dependencies. Inbound turn intake, queued node execution, slash command
   dependencies, and tree queue internals live in separate modules so new
   behavior has one owner instead of growing the workflow object.
-- [config/admin/](config/admin/) owns Admin UI config behavior. Keep
+- [config/admin/](src/codexproxy/config/admin/) owns Admin UI config behavior. Keep
   provider fields catalog-driven, and keep manifest, source loading, validation,
   env rendering, value presentation, and status metadata in their package owners.
 
@@ -209,25 +223,27 @@ new places to add unrelated behavior:
 
 Console scripts are registered in [pyproject.toml](pyproject.toml):
 
-- `cdx-server` calls `cli.entrypoints:serve`.
+- `cdx-server` calls `codexproxy.cli.entrypoints:serve`.
 - `cdx-desktop` is a GUI script calling
-  `cli.desktop_entrypoint:launch` on Windows and macOS.
-- `cdx-claude` calls `cli.launchers.claude:launch`.
-- `cdx-codex` calls `cli.launchers.codex:launch`.
-- `cdx-pi` calls `cli.launchers.pi:launch`.
+  `codexproxy.cli.desktop_entrypoint:launch` on Windows and macOS.
+- `cdx-claude` calls `codexproxy.cli.launchers.claude:launch`.
+- `cdx-codex` calls `codexproxy.cli.launchers.codex:launch`.
+- `cdx-pi` calls `codexproxy.cli.launchers.pi:launch`.
+- `cdx-opencode` calls `codexproxy.cli.launchers.opencode:launch`.
+- `cdx-cline` calls `codexproxy.cli.launchers.cline:launch`.
 
 [scripts/install.sh](scripts/install.sh) and [scripts/install.ps1](scripts/install.ps1)
 install or update the uv tool plus optional voice extras. On Windows the
-installer owns the CodexProxy desktop and Start-menu shortcuts; on macOS it owns the
+installer owns the CDX desktop and Start-menu shortcuts; on macOS it owns the
 per-user application bundle and desktop link. [scripts/uninstall.sh](scripts/uninstall.sh)
 and [scripts/uninstall.ps1](scripts/uninstall.ps1) remove those exact desktop
-artifacts, the CodexProxy uv tool, and the managed `~/.codexproxy/` tree from
-[config/paths.py](config/paths.py); they do not remove
-uv, Claude Code, Codex, Pi, or uv-managed Python runtimes. [scripts/ci.sh](scripts/ci.sh) and
+artifacts, the CDX uv tool, and the managed `~/.cdx/` tree from
+[config/paths.py](src/codexproxy/config/paths.py); they do not remove
+uv, Claude Code, Codex, Pi, OpenCode, Cline, or uv-managed Python runtimes. [scripts/ci.sh](scripts/ci.sh) and
 [scripts/ci.ps1](scripts/ci.ps1) mirror [.github/workflows/tests.yml](.github/workflows/tests.yml)
 for local pre-push verification.
 
-[cli/entrypoints.py](cli/entrypoints.py) starts the FastAPI server with Uvicorn.
+[cli/entrypoints.py](src/codexproxy/cli/entrypoints.py) starts the FastAPI server with Uvicorn.
 The shared `ServerSupervisor` migrates legacy env files when needed, loads cached
 settings, runs one server instance, and can restart it after Admin config changes.
 An Admin restart constructs the next instance only when the prior
@@ -236,32 +252,32 @@ incomplete ASGI shutdown therefore exits the supervisor instead of overlapping
 old and replacement graphs. On final shutdown it best-effort kills registered
 child processes.
 
-[cli/desktop.py](cli/desktop.py) owns the platform-neutral
+[cli/desktop.py](src/codexproxy/cli/desktop.py) owns the platform-neutral
 desktop lifecycle. An operating-system file lock admits one desktop host, the
 tray remains on the process main thread for native event-loop compatibility, and
 one worker runs the same in-process `ServerSupervisor` with console output and
 automatic browser launch disabled. A second desktop launch waits for health,
 opens the existing Admin page, and exits. Tray restart delegates to the canonical
 supervisor; tray quit requests the same graceful ASGI and application-runtime
-shutdown as `cdx-server`. [cli/desktop_tray.py](cli/desktop_tray.py)
+shutdown as `cdx-server`. [cli/desktop_tray.py](src/codexproxy/cli/desktop_tray.py)
 owns only native status-area presentation and callbacks.
 
-[runtime/bootstrap.py](runtime/bootstrap.py) is the single production composition function. The CLI
+[runtime/bootstrap.py](src/codexproxy/runtime/bootstrap.py) is the single production composition function. The CLI
 supervisor supplies one settings snapshot and its restart callback; bootstrap
 configures logging, constructs the runtime owners and the configured voice
   transcriber, constructs the explicit `ApiServices` composition value, and
   returns the ASGI application. Provider request leases and task control satisfy
-  the consumer-owned ports in [application/ports.py](application/ports.py); Admin operations retain
-  their inbound-adapter port in [api/ports.py](api/ports.py).
+  the consumer-owned ports in [application/ports.py](src/codexproxy/application/ports.py); Admin operations retain
+  their inbound-adapter port in [api/ports.py](src/codexproxy/api/ports.py).
 
-[api/app.py](api/app.py) registers routers and exception
+[api/app.py](src/codexproxy/api/app.py) registers routers and exception
 handlers around an explicit `ApiServices` value, then wraps the application in a
 pure ASGI correlation boundary. The boundary surrounds the complete wire send;
 it does not proxy streaming responses through `BaseHTTPMiddleware`. The API does
 not read global settings or construct runtime resources.
 `app.state.services` is the only runtime state published to FastAPI.
 
-[runtime/application.py](runtime/application.py) owns process startup and shutdown, optional messaging,
+[runtime/application.py](src/codexproxy/runtime/application.py) owns process startup and shutdown, optional messaging,
 the selected transcriber, the managed CLI session manager, Admin pending state,
 connected-account use cases, and the injected restart callback. Shutdown is
 serialized and ordered: quiesce
@@ -277,13 +293,13 @@ the process supervisor owns any force-termination deadline. Optional messaging
 startup remains nonfatal only when every partially constructed messaging owner
 was successfully cleaned; incomplete startup cleanup fails the application
 startup and retains the graph for the next close attempt.
-[runtime/asgi.py](runtime/asgi.py) drives that owner from ASGI lifespan messages and preserves
+[runtime/asgi.py](src/codexproxy/runtime/asgi.py) drives that owner from ASGI lifespan messages and preserves
 the concise startup-failure contract.
 
-[runtime/provider_manager.py](runtime/provider_manager.py) is the only owner that constructs, publishes,
+[runtime/provider_manager.py](src/codexproxy/runtime/provider_manager.py) is the only owner that constructs, publishes,
 retires, and closes provider generations. Each request acquires a generation
 lease before routing. Non-streaming responses release it after aggregation;
-streaming responses bind it to CodexProxy's response owner, which first closes the
+streaming responses bind it to CDX's response owner, which first closes the
 entire body chain and then releases the lease on completion, failure,
 cancellation, disconnect, or a response-start send failure. A provider-only
 Admin Apply prepares a candidate and commits configuration before publication.
@@ -309,71 +325,75 @@ retain the model list they loaded at startup.
 
 ## Configuration Model
 
-[config/settings.py](config/settings.py) owns the flat Pydantic Settings schema:
-raw env fields, validation, and `get_settings()`. It should not own routing,
-model-ref parsing, launcher defaults, or web-tool policy. Dotenv discovery lives
-in [config/env_files.py](config/env_files.py) and uses this order:
+[config/settings.py](src/codexproxy/config/settings.py) is a pure Pydantic
+schema. It owns field types, canonical defaults, normalization, and cross-field
+validation, but it never reads process state or files. Required strings are
+always non-empty. Optional strings have exactly one absent state, `None`; blank
+input is normalized to that state before validation.
 
-1. repo-local `.env`;
-2. managed `~/.codexproxy/.env`;
-3. optional `CODEX_PROXY_ENV_FILE`, appended when present.
+[config/loader.py](src/codexproxy/config/loader.py) owns external source
+composition and provenance. The live precedence is Settings defaults, then the
+managed `~/.cdx/.env`, then process environment. The one intentional exception
+is `ANTHROPIC_AUTH_TOKEN`: a non-empty managed value wins over an inherited stale
+process token so CDX-launched clients and the server cannot disagree. Every
+entrypoint uses this loader, and cached settings are invalidated only through
+its public cache accessor.
 
-Later dotenv files override earlier dotenv files. Process environment variables
-also participate through Pydantic settings resolution. `ANTHROPIC_AUTH_TOKEN`
-has an extra guard after settings are built: if any configured dotenv file
-defines it, that dotenv value replaces a stale inherited shell token. Auth-token
-source detection for startup warnings also belongs to `config/env_files.py`.
+[config/env_migrations.py](src/codexproxy/config/env_migrations.py) owns a
+locked, atomic schema-1 consolidation before the first load. When the managed
+file is not yet schema 1, migration selects one base source: existing managed
+state, otherwise a legacy home file, otherwise a verified CDX source-checkout
+file. A legacy `CODEX_PROXY_ENV_FILE` may overlay that base once. Recognized effective
+values are written to the managed file; imported files remain untouched. Once
+the managed schema marker exists, checkout files and `CODEX_PROXY_ENV_FILE` are inert
+and are not live configuration sources.
 
-[config/paths.py](config/paths.py) defines managed paths:
+[config/paths.py](src/codexproxy/config/paths.py) defines the managed
+config, lock, model catalog, messaging workspace, and log locations under
+`~/.cdx`. Arbitrary current-working-directory `.env` files are never read.
 
-- config directory: `~/.codexproxy`;
-- managed env file: `~/.codexproxy/.env`;
-- generated Codex model catalog: `~/.codexproxy/codex-model-catalog.json`;
-- messaging state directory: `~/.codexproxy/agent_workspace`;
-- server log: `~/.codexproxy/logs/server.log`.
+Proxy authentication has two independent settings:
 
-Model routing configuration is tiered:
+- `PROXY_AUTH_ENABLED` controls whether CDX validates incoming bearer tokens;
+- `ANTHROPIC_AUTH_TOKEN` is a retained, non-empty client credential, exposed
+  internally as `proxy_auth_token`.
 
-- `MODEL` is the fallback provider-prefixed model ref.
-- `MODEL_FABLE`, `MODEL_OPUS`, `MODEL_SONNET`, and `MODEL_HAIKU` override Claude model tiers.
-- `REASONING_POLICY` selects `off`, `client`, `low`, `medium`, `high`, `xhigh`,
-  or `max` for the fallback route.
-- `REASONING_FABLE`, `REASONING_OPUS`, `REASONING_SONNET`, and
-  `REASONING_HAIKU` accept the same values plus `inherit`.
+Disabling authentication does not erase or replace the token. Claude, Codex,
+Pi, managed messaging, and local model-catalog calls all receive the retained
+token. The API boundary checks the boolean first and uses constant-time token
+comparison only when enforcement is enabled.
 
-[config/reasoning.py](config/reasoning.py) owns the typed
-configuration vocabulary. cdx-owned dotenv files receive a one-time rename and
-value migration from the retired boolean settings; explicit `CODEX_PROXY_ENV_FILE`
-files are never rewritten and instead receive an actionable startup warning.
+Model routing remains tiered: `MODEL` is the fallback route;
+`MODEL_FABLE`, `MODEL_OPUS`, `MODEL_SONNET`, and `MODEL_HAIKU` are optional
+overrides. [config/model_refs.py](src/codexproxy/config/model_refs.py) owns
+model-ref parsing, while [config/reasoning.py](src/codexproxy/config/reasoning.py)
+owns the typed reasoning vocabulary.
 
-[config/model_refs.py](config/model_refs.py) owns provider-prefixed model ref
-parsing and configured `MODEL*` inventory. API routing and provider validation
-depend on those helpers instead of adding behavior methods to Settings.
+[config/admin/](src/codexproxy/config/admin/) owns the Admin manifest,
+presentation, validation, and sparse managed-file persistence. Settings
+metadata supplies runtime defaults; provider and smoke fields are generated
+from [config/provider_catalog.py](src/codexproxy/config/provider_catalog.py).
+Admin requests are partial updates: omitted keys stay unchanged, `null` removes
+an optional assignment, and required/defaulted values reject `null` or blank
+input. False and zero remain real values. Masked or blank secret submissions
+mean unchanged; an explicit remove action is available only for optional
+secrets. Preview and Apply validate the same prospective Settings snapshot, and
+Apply atomically writes only configured values plus preserved unknown managed
+assignments. Process-owned fields are visible but locked.
 
-[config/admin/](config/admin/) owns the Admin UI config manifest and
-managed env writes. Provider credential, configurable base URL, proxy, and display-name
-metadata is generated from [config/provider_catalog.py](config/provider_catalog.py);
-admin-only help text stays beside the admin manifest. The package splits source
-loading, value presentation, validation, persistence, and provider status into
-separate modules. [api/admin_routes.py](api/admin_routes.py) exposes local-only
-admin endpoints that load and validate config, then delegate runtime operations
-through `AdminRuntimePort`. Provider-only Apply prepares prospective settings,
-atomically commits the managed env, and publishes a new provider generation.
-Restart-required changes preserve the existing supervisor restart flow and do
-not publish an in-process generation first.
+The provider composition root narrows optional Settings into provider-ready
+state. Static-key providers receive a non-empty key, Vertex receives renewable
+ADC with `api_key=None`, and optional proxies remain `None` until configured.
+Resolved [ProviderConfig](src/codexproxy/providers/base.py) has no second
+set of Settings defaults.
 
-[.env.example](.env.example) is the single Admin UI template source. It is
-packaged as a [config/](config/) resource for Admin UI defaults;
-runtime settings do not read it as a live config file. The Admin UI creates and
-atomically replaces `~/.codexproxy/.env` when configuration is applied; server startup
-only migrates legacy env files when the managed file is absent.
-
-Admin routes call `require_loopback_admin()`, which rejects non-loopback clients
-and non-local origins.
+[.env.example](.env.example) is documentation only. It is neither packaged nor
+read at runtime. Admin routes call `require_loopback_admin()`, which rejects
+non-loopback clients and non-local origins.
 
 ## HTTP Request Flow
 
-[api/routes.py](api/routes.py) exposes the public proxy routes:
+[api/routes.py](src/codexproxy/api/routes.py) exposes the public proxy routes:
 
 - `POST /v1/messages`: Anthropic Messages-compatible streaming requests.
 - `POST /v1/responses`: OpenAI Responses-compatible requests.
@@ -383,17 +403,17 @@ and non-local origins.
 - `POST /stop`: stop CLI sessions and pending tasks.
 - `HEAD` and `OPTIONS` probes for compatibility on supported endpoints.
 
-Admin routes live beside these in [api/admin_routes.py](api/admin_routes.py).
+Admin routes live beside these in [api/admin_routes.py](src/codexproxy/api/admin_routes.py).
 
 Authentication is handled by `require_proxy_auth()` in
-[api/dependencies.py](api/dependencies.py). If `ANTHROPIC_AUTH_TOKEN` is blank,
-proxy auth is disabled. Otherwise CodexProxy accepts exactly `Authorization: Bearer
+[api/dependencies.py](src/codexproxy/api/dependencies.py). If `ANTHROPIC_AUTH_TOKEN` is blank,
+proxy auth is disabled. Otherwise CDX accepts exactly `Authorization: Bearer
 <token>`. Other credential headers are ignored, so a stale provider API key
 cannot mask valid proxy authorization. The complete bearer token is compared
 in constant time; no model suffix or other token mutation is accepted.
 
 HTTP request correlation is owned at ingress. A pure ASGI boundary creates one
-opaque CodexProxy request ID before routing, places it in log context and request state,
+opaque CDX request ID before routing, places it in log context and request state,
 and adds `request-id` while forwarding the actual `http.response.start` message.
 OpenAI-compatible Responses and the shared model catalog also expose the same
 value as `x-request-id`. Provider execution and trace events receive that
@@ -403,28 +423,45 @@ response lifetime finalization under the concrete response owner. Starlette's
 outer server-error boundary bypasses user middleware for its catch-all 500, so
 that one handler explicitly attaches the same ingress-owned headers.
 
-[api/handlers/](api/handlers/) owns the public API product flows.
+[api/handlers/](src/codexproxy/api/handlers/) owns the public API product flows.
 `MessagesHandler` validates non-empty messages, resolves models, applies
 Claude-only safety-classifier and local optimization policy, handles local web
 server tools, then streams Anthropic SSE. `ResponsesHandler` owns streaming-only
 OpenAI Responses validation and conversion for Codex clients. `TokenCountHandler`
 owns Anthropic token counting. Shared provider execution lives in
-[application/execution.py](application/execution.py). `ProviderExecutor` resolves the narrow
+[application/execution.py](src/codexproxy/application/execution.py). `ProviderExecutor` resolves the narrow
 consumer-owned `ProviderPort`, synchronously preflights the upstream request,
 emits trace events, counts input tokens, and returns an Anthropic SSE iterator.
 It receives only a provider resolver and the few scalar collaborators it needs;
 it does not depend on FastAPI, provider implementations, or the full settings
-object.
-[api/response_streams.py](api/response_streams.py) owns public streaming egress
+object. The executor also owns CDX's provider-progress deadline: every wait for
+the next non-empty provider chunk is limited to 240 seconds, leaving one minute
+below the five-minute idle watchdog shared by the first-party Claude, Codex, and
+Pi harnesses. Admission, retries, backoff, and recovery before a chunk all consume
+that same wait; a non-empty emitted chunk renews the next window. The timeout
+context ends before the executor yields, so downstream response backpressure is
+not mistaken for stalled provider work and cannot receive cancellation from the
+generator's timer. Expiry becomes a protocol-neutral, non-retryable 504
+`ExecutionFailure`; cancellation and provider-originated timeouts retain their
+existing meanings.
+
+[core/token_estimation.py](src/codexproxy/core/token_estimation.py) owns
+process-wide best-effort plain-text token estimation. It acquires the shared
+encoder once and degrades to a deterministic character estimate when encoder
+data is unavailable, so a cold cache or blocked network cannot prevent CDX from
+starting. Anthropic request counting and the Anthropic/Responses stream ledgers
+retain ownership of their protocol-specific block and structural overhead.
+
+[api/response_streams.py](src/codexproxy/api/response_streams.py) owns public streaming egress
 commit timing. It waits for the first protocol chunk before returning a
-successful cdx-owned `StreamingResponse`. Its explicit replay iterator owns the
+successful CDX-owned `StreamingResponse`. Its explicit replay iterator owns the
 prefetched stream even before replay begins. The response itself owns one
 idempotent finalization task: close the body transitively, then release the
 provider-generation lease. This finalizer surrounds the real ASGI send and runs
 to completion even when sending headers or the first body frame fails. A provider
 execution failure before that commit boundary remains a real typed non-2xx JSON
-response. Once CodexProxy has finalized the failure, the response includes
-`x-should-retry: false` so CodexProxy retains ownership of upstream retry/recovery
+response. Once CDX has finalized the failure, the response includes
+`x-should-retry: false` so CDX retains ownership of upstream retry/recovery
 without causing a second client retry loop. After the first chunk has escaped,
 HTTP status is committed; Messages emits an Anthropic `event: error` and closes
 without a synthetic `message_stop`; Responses emits `response.failed` with the
@@ -481,17 +518,17 @@ sequenceDiagram
 OpenAI Responses uses the same provider execution primitive without importing
 Claude-only message intercepts. `ResponsesHandler` delegates protocol work to
 the `OpenAIResponsesAdapter` in
-[core/openai_responses/adapter.py](core/openai_responses/adapter.py). The adapter
+[src/codexproxy/core/openai_responses/adapter.py](src/codexproxy/core/openai_responses/adapter.py). The adapter
 converts the Responses payload into an Anthropic Messages payload before
 provider execution, then converts Anthropic SSE back to Responses SSE.
 
 ## Model Routing
 
-[application/routing.py](application/routing.py) resolves incoming client model names.
+[application/routing.py](src/codexproxy/application/routing.py) resolves incoming client model names.
 It supports two forms:
 
 - Direct provider model refs such as `nvidia_nim/nvidia/model-name`.
-- Gateway model IDs decoded by [core/gateway_model_ids.py](core/gateway_model_ids.py).
+- Gateway model IDs decoded by [core/gateway_model_ids.py](src/codexproxy/core/gateway_model_ids.py).
 
 If the incoming model is not direct, `ModelRouter` maps it by Claude tier. Names
 containing `fable`, `opus`, `sonnet`, or `haiku` use the matching tier override when set,
@@ -500,7 +537,7 @@ otherwise they fall back to `MODEL`.
 The router also selects the applicable reasoning preference. Direct provider
 refs use the root policy; Claude tier routes use a non-inherited tier override
 or the root fallback; the no-thinking gateway variant forces `off`.
-[application/reasoning.py](application/reasoning.py) then
+[application/reasoning.py](src/codexproxy/application/reasoning.py) then
 combines that preference with the concrete client request exactly once. The
 resulting `ReasoningPolicy` preserves independent control, named effort, and an
 exact client token budget without guessing provider behavior. `ResolvedModel`
@@ -523,7 +560,7 @@ publish the private upstream model as the response model.
 
 Provider model discovery and optional thinking metadata live in the
 application-level catalog owned by `ProviderRuntimeManager`.
-[providers/runtime/discovery.py](providers/runtime/discovery.py)
+[providers/runtime/discovery.py](src/codexproxy/providers/runtime/discovery.py)
 is the sole owner of provider model-list queries and cache population. Startup
 synchronously warms the providers referenced by model routing before clients can
 perform their one-time model fetch, then a background pass fills the remaining
@@ -543,10 +580,10 @@ generation, so a hot replacement does not erase the last useful model list.
 Discovery failures retain prior entries.
 
 Codex-specific model picker shaping stays out of this route.
-[runtime/codex_catalog.py](runtime/codex_catalog.py) is the
+[runtime/codex_catalog.py](src/codexproxy/runtime/codex_catalog.py) is the
 composition bridge: it asks this route's pure builder for the exact application
 inventory, passes that response to the existing Codex adapter, and writes
-`~/.codexproxy/codex-model-catalog.json` without making a loopback HTTP request.
+`~/.cdx/codex-model-catalog.json` without making a loopback HTTP request.
 `ProviderRuntimeManager` invokes the bridge after authoritative settings,
 discovery, provider-test, or connected-account changes. Startup creates a
 missing file after routed-provider warming but preserves an existing
@@ -560,23 +597,23 @@ The Codex App reads `model_catalog_json` at startup, so it must restart to see a
 later catalog publication. `cdx-codex` remains an additional launch-time
 synchronizer: it fetches the same `/v1/models` response, uses the same adapter
 and writer, and passes the path as an ephemeral override. Codex users open the
-native picker with `/model`; CodexProxy does not implement a proxy-level `/models`
+native picker with `/model`; CDX does not implement a proxy-level `/models`
 alias.
 
 ## Provider Architecture
 
 Provider metadata is neutral and centralized in
-[config/provider_catalog.py](config/provider_catalog.py). Each
+[config/provider_catalog.py](src/codexproxy/config/provider_catalog.py). Each
 `ProviderDescriptor` declares provider ID, display name, authentication kind, locality, credential env
 var, default base URL, settings attribute names, configuration readiness, and
 proxy support. Readiness may require multiple ordinary settings or a non-secret
 project ID; it is not inferred exclusively from API-key presence. The catalog
 does not select a concrete adapter.
 
-[providers/runtime/](providers/runtime/) owns construction details for one
+[providers/runtime/](src/codexproxy/providers/runtime/) owns construction details for one
 closable provider generation: construction policy, resolved provider
 configuration, lazy provider instances, provider-owned admission controllers, and
-cleanup. [providers/runtime/factory.py](providers/runtime/factory.py)
+cleanup. [providers/runtime/factory.py](src/codexproxy/providers/runtime/factory.py)
 constructs ordinary provider IDs from `OPENAI_CHAT_PROFILES`, keeps a sparse
 factory mapping for adapters with real state or algorithms, and accepts explicit
 composition-root factories for providers with process-lifetime dependencies.
@@ -586,7 +623,7 @@ catalog.
 provider ID within a generation; there is no pass-through cache object, process
 singleton, or second admission registry.
 
-[providers/admission.py](providers/admission.py) owns the
+[providers/admission.py](src/codexproxy/providers/admission.py) owns the
 complete shared upstream-admission lifecycle for that provider generation. A
 strict sliding window admits each real attempt before a concurrency bulkhead;
 the bulkhead is held only while an upstream operation or stream is active, never
@@ -615,18 +652,18 @@ and discovery orchestration belong to `ProviderRuntimeManager` in the runtime
 package. This separates a single generation's resources from process-lifetime
 state.
 
-[application/model_metadata.py](application/model_metadata.py) owns the immutable
+[application/model_metadata.py](src/codexproxy/application/model_metadata.py) owns the immutable
 `ProviderModelInfo` value consumed by the application catalog. Provider-specific
 model-list modules retain response parsing and construct that value directly;
 there is no provider-layer alias for the former owner.
 
-[application/ports.py](application/ports.py) defines the two provider operations consumed by request
+[application/ports.py](src/codexproxy/application/ports.py) defines the two provider operations consumed by request
 execution: synchronous `preflight_stream()` and lazy `stream_response()`. API
 handlers and application execution depend on that structural port, never on a
 provider base class. Provider adapters implement it without registration or a
 compatibility layer.
 
-[providers/base.py](providers/base.py) defines provider-internal construction and lifecycle contracts:
+[providers/base.py](src/codexproxy/providers/base.py) defines provider-internal construction and lifecycle contracts:
 
 - `ProviderConfig`: shared provider settings such as API key, base URL, rate
   limits, timeouts, proxy, and logging flags. It is a frozen internal
@@ -637,7 +674,7 @@ compatibility layer.
   values directly; there is no parallel IDs-only catalog contract.
 
 There are two upstream transport families:
-[providers/openai_chat/](providers/openai_chat/) implements the concrete
+[providers/openai_chat/](src/codexproxy/providers/openai_chat/) implements the concrete
 `OpenAIChatProvider` used by every OpenAI-compatible `/chat/completions`
 upstream. `OpenAIChatProfile` contains immutable request policy, an explicit
 reasoning encoder, an explicit history replay mode, its standard
@@ -648,15 +685,29 @@ owns the exactly typed private per-request runner, recovery operations, tool-cal
 assembly, and streamed usage handling. No obsolete generic transport namespace
 or untyped provider backchannel remains.
 
-[providers/openai_codex/](providers/openai_codex/) owns
+[providers/groq/](src/codexproxy/providers/groq/) is a specialized
+`OpenAIChatProvider` because Groq exposes incompatible `reasoning_effort`
+vocabularies without publishing that capability in model metadata. The Groq
+adapter owns a generation-local vocabulary cache keyed by the exact opaque model
+ID; model names and versions are never parsed to select behavior. A narrowly
+recognized pre-stream 400 can teach the adapter the accepted known vocabulary
+and trigger one request-body correction through the shared provider attempt
+budget. Later requests apply the same pure rewrite proactively. Unknown values
+are never echoed, unrelated errors retain their normal failure path, and no
+separate retry loop or persisted capability registry exists. Groq rejects
+structured assistant reasoning fields in replayed Chat Completions history, so
+the same provider policy preserves prior reasoning as ordinary tagged assistant
+content; this replay rule is provider-wide and never selected by model name.
+
+[providers/openai_codex/](src/codexproxy/providers/openai_codex/) owns
 ChatGPT subscription authentication and the Codex backend's OpenAI Responses
-transport. Its process-lifetime auth manager owns CodexProxy's credential file,
+transport. Its process-lifetime auth manager owns CDX's credential file,
 browser/device authorization, refresh, and revocation; provider generations
 borrow it and resolve fresh headers for each operation. The provider owns HTTP
 failure classification, model discovery, admission, and commit-boundary retry.
 Neutral Anthropic-to-Responses input and Responses-to-Anthropic stream
 conversion remain in
-[core/openai_responses/](core/openai_responses/), which
+[core/openai_responses/](src/codexproxy/core/openai_responses/), which
 never imports OAuth, account IDs, or provider endpoints. That neutral converter
 preserves the public Responses contract; the subscription provider owns the
 private Codex request projection and omits fields that backend does not accept,
@@ -667,17 +718,17 @@ declared non-SSE media type retains the bounded diagnostic failure path. The
 Admin API exposes only safe connected-account state and never serializes token
 objects.
 
-[providers/google_openai/](providers/google_openai/) owns the
+[providers/google_openai/](src/codexproxy/providers/google_openai/) owns the
 Google-specific protocol behavior shared by AI Studio and Vertex AI: literal
 Google `extra_body` construction, exclusive reasoning serialization, and
 thought-signature replay. Each concrete profile selects one Google reasoning
 encoder, and that encoder is the sole writer of `reasoning_effort` or
 `extra_body.google.thinking_config` for its request. Caller-provided Google
 thinking configuration is preserved only for provider-default reasoning;
-combining it with CodexProxy reasoning controls fails during deterministic preflight.
+combining it with CDX reasoning controls fails during deterministic preflight.
 Thought-signature replay is a separate component and never mutates reasoning
 controls. Neither concrete provider imports from the other. AI Studio owns its
-API-key endpoint; [providers/vertex/](providers/vertex/)
+API-key endpoint; [providers/vertex/](src/codexproxy/providers/vertex/)
 owns project/location endpoint composition, renewable Application Default
 Credentials, and translation of Google's native publisher-model catalog. The
 OpenAI transport receives a callable credential source, so access-token refresh
@@ -696,7 +747,7 @@ client-specific recovery phrase.
 Providers call the OpenAI request policy for Anthropic-to-OpenAI conversion,
 reasoning replay selection, `extra_body`, and chat-completion field normalization.
 The SDK-free `OpenAIToolNameCodec` in
-[core/anthropic/](core/anthropic/) owns reversible
+[core/anthropic/](src/codexproxy/core/anthropic/) owns reversible
 translation from client tool identities to OpenAI's portable function-name
 grammar. OpenAI Chat and upstream Responses adapters apply that codec only to
 their explicit declaration, forced-choice, and replay fields, then restore the
@@ -704,16 +755,32 @@ original identity before Anthropic tool state or schema validation. Valid names
 remain unchanged, while deterministic aliases keep retries, replay, and
 append-only prompt prefixes stable. This is target-protocol conversion, never a
 provider or model capability switch.
+When an Anthropic request declares tools but omits `tool_choice`, the conversion
+boundary resolves Anthropic's implicit `auto` intent once. Both upstream OpenAI
+Chat and OpenAI Responses encoders materialize that value explicitly, while
+preserving every client-supplied choice. OpenAI-origin `/v1/responses` ingress
+retains its own omission semantics; providers and models never choose this
+default.
+Some OpenAI-compatible upstreams expose their documented function-tag protocol
+through ordinary content instead of structured tool deltas. The shared
+Anthropic tool boundary recognizes that protocol only when tools were declared
+and the client did not explicitly choose `none`, and only when the response ends
+with one or more exact, schema-valid control blocks with no suffix. Any preceding
+content remains visible; all malformed or non-terminal lookalikes remain text.
+Native structured tool calls disable textual recovery and remain authoritative.
+This normalization is driven by the response grammar rather than provider or
+model identity; harness permissions remain the final authority for execution.
 Specialized provider packages remain only for true upstream quirks such as
-Gemini thought signatures, NIM tool-schema aliases, retry downgrades, and NVCF
-deployment-failure classification, or DeepSeek attachment/tool/thinking
-compatibility. Local Ollama, Ollama Cloud, llama.cpp, and LM Studio all use the
+Gemini thought signatures, Groq reasoning-vocabulary negotiation, NIM
+tool-schema aliases, retry downgrades, and NVCF deployment-failure
+classification, or DeepSeek attachment/tool/thinking compatibility. Local
+Ollama, Ollama Cloud, llama.cpp, and LM Studio all use the
 same OpenAI-compatible Chat Completions provider family;
 Ollama's standard `reasoning` delta and history field are profile data rather
 than a specialized adapter. DeepSeek intentionally uses its
 OpenAI-compatible Chat Completions endpoint because that is the endpoint that
-reports prompt-cache hit/miss counters; the provider maps those counters back
-into Anthropic usage fields for Claude-compatible clients. DeepSeek reasoning
+reports prompt-cache hit/miss counters; the provider translates those native
+counters into Anthropic usage semantics. DeepSeek reasoning
 history is serialized per assistant turn: non-tool reasoning is omitted from
 its first replay, while tool-call reasoning is retained independently of the
 next generation's thinking mode. Append-only conversations therefore keep an
@@ -728,19 +795,35 @@ Responses-only models from Chat Completions discovery while keeping direct model
 execution upstream-authoritative. Amazon Bedrock Mantle uses an ordinary profile with a region-specific,
 configurable OpenAI base URL and bearer API key; AWS SigV4 and native
 Converse/Invoke transports are outside that provider contract. Wafer, Kimi API,
-Kimi Code, MiniMax, Fireworks, and Z.ai use ordinary
+Kimi Code, MiniMax, Fireworks, and both Z.ai surfaces use ordinary
 declarative profiles for their thinking, token, and `extra_body` policy. Kimi
 Code remains distinct from Kimi API because its subscription key and base URL
 are a separate customer contract; its profile maps provider-neutral reasoning
-to Kimi's named efforts and identifies CodexProxy through the upstream user agent.
-Z.ai is treated as the GLM Coding Plan provider and uses Z.ai's Coding Plan
-OpenAI base.
+to Kimi's named efforts and identifies CDX through the upstream user agent.
+QwenCloud Coding Plan likewise remains distinct from QwenCloud Token Plan
+because its subscription key, quota, endpoint, and personal interactive-use
+contract are separate. It uses the ordinary OpenAI Chat transport, preserves
+reasoning history through `reasoning_content`, and does not impose one reasoning
+control or output-token default across its heterogeneous model catalog.
+ClinePass is a distinct subscription provider using Cline's programmatic
+`CLINE_API_KEY` and fixed OpenAI Chat Completions endpoint. Its declarative
+profile discovers only the dynamic `clinePass` catalog collection, consumes
+plaintext `reasoning`, preserves documented opaque `reasoning_details`, and
+sends no invented catalog-wide reasoning control. General Cline usage billing,
+CLI account authentication, and Cline-native tools remain separate product
+decisions.
+Z.ai Coding Plan (`zai`) and Z.ai API (`zai_api`) are distinct provider
+identities because their fixed endpoints select Coding Plan quota versus
+pay-as-you-go balance. They share the upstream `ZAI_API_KEY` and one declarative
+wire policy, while retaining separate proxies, provider instances, admission
+state, learned output caps, model caches, status rows, and model prefixes. CDX
+never probes or falls back between the two billing endpoints.
 Mistral La Plateforme keeps its native `reasoning_effort` and thinking-chunk
 request/stream mapping inside
-[providers/mistral/reasoning.py](providers/mistral/reasoning.py), including its
+[providers/mistral/reasoning.py](src/codexproxy/providers/mistral/reasoning.py), including its
 fallback retry when an upstream request rejects reasoning fields.
 NIM reasoning budget control is also treated as a provider-owned best-effort
-downgrade: if an upstream NIM deployment rejects explicit budget control, CodexProxy
+downgrade: if an upstream NIM deployment rejects explicit budget control, CDX
 retries without the budget while preserving thinking enablement.
 NIM also owns response normalization for model-native tool markup exposed in
 chat-completion text. The normalizer recognizes the native protocol signature
@@ -755,7 +838,7 @@ arguments and validates the original schema.
 
 ### Reasoning Ownership
 
-[core/reasoning.py](core/reasoning.py) owns the immutable,
+[core/reasoning.py](src/codexproxy/core/reasoning.py) owns the immutable,
 provider-neutral `ReasoningPolicy`. It represents three distinct facts:
 
 - `control`: provider default, explicitly off, or explicitly on;
@@ -763,7 +846,7 @@ provider-neutral `ReasoningPolicy`. It represents three distinct facts:
 - `budget_tokens`: an exact positive client budget when one was supplied.
 
 When a numeric-budget provider needs a budget, `ReasoningPolicy` expresses named
-effort through CodexProxy's single product scale: `minimal`/`low=512`, `medium=1024`,
+effort through CDX's single product scale: `minimal`/`low=512`, `medium=1024`,
 `high=2048`, `xhigh=4096`, and `max=8192`. Exact client budgets take precedence.
 
 The application layer resolves configuration and client input into this value;
@@ -784,14 +867,14 @@ for a valid continuation.
 The boundary has five hard rules:
 
 1. Never inspect an upstream model name or version to select reasoning behavior.
-2. Prefer a provider's named effort vocabulary; use CodexProxy's documented numeric
+2. Prefer a provider's named effort vocabulary; use CDX's documented numeric
    scale only when the provider exposes a numeric budget rather than named effort.
 3. Never use the output-token limit as a reasoning budget. Forward exact or
-   cdx-mapped budgets only through documented numeric fields; otherwise translate
+   CDX-mapped budgets only through documented numeric fields; otherwise translate
    a supported named or boolean control and leave unsupported precision upstream.
 4. Provider-default intent emits no compute-control field. Explicit off requests
    an upstream disable where supported and always suppresses reasoning output at
-   the CodexProxy protocol boundary.
+   the CDX protocol boundary.
 5. Each provider profile has exactly one reasoning encoder. That encoder alone
    writes the provider's computation and reasoning-output request fields;
    unrelated request postprocessors never add, repair, or remove those fields.
@@ -816,18 +899,23 @@ streamed usage handling: it requests
 `stream_options.include_usage`, consumes provider `prompt_tokens` and
 `completion_tokens` when present, and falls back to local estimates when
 providers omit or reject optional usage metadata. Provider modules only own true
-usage quirks such as DeepSeek prompt-cache counters.
+usage quirks: DeepSeek validates a complete hit/miss partition, maps misses to
+ordinary input and hits to cache reads, and never reports a miss as an
+Anthropic cache creation. The native Responses-to-Anthropic adapter likewise
+partitions a valid cached-token detail from the upstream total. At the reverse
+protocol boundary, the Anthropic-to-Responses adapter recombines those
+disjoint input categories into its single `input_tokens` total.
 
 ### Adding A Provider
 
-1. Add provider metadata to [config/provider_catalog.py](config/provider_catalog.py).
-2. Add credentials and related settings to [config/settings.py](config/settings.py)
+1. Add provider metadata to [config/provider_catalog.py](src/codexproxy/config/provider_catalog.py).
+2. Add credentials and related settings to [config/settings.py](src/codexproxy/config/settings.py)
    and [.env.example](.env.example) when user configurable.
 3. Let Admin UI provider credential, configurable base URL, and proxy fields come from the
    catalog. Add admin-only help text or provider-specific fields under
-   [config/admin/](config/admin/) only when the generated manifest is
+   [config/admin/](src/codexproxy/config/admin/) only when the generated manifest is
    insufficient.
-4. Add an `OpenAIChatProfile` under [providers/openai_chat/](providers/openai_chat/) when
+4. Add an `OpenAIChatProfile` under [providers/openai_chat/](src/codexproxy/providers/openai_chat/) when
    request policy fully describes the upstream.
 5. Add a specialized provider package and sparse factory entry only when the
    upstream owns state, model-list behavior, stream events, or retry algorithms
@@ -841,7 +929,7 @@ usage quirks such as DeepSeek prompt-cache counters.
 
 ## Protocol Conversion And Streaming Contracts
 
-[core/anthropic/](core/anthropic/) owns Anthropic-side protocol behavior:
+[src/codexproxy/core/anthropic/](src/codexproxy/core/anthropic/) owns Anthropic-side protocol behavior:
 
 - `models.py` defines the permissive Messages and token-count wire requests,
   content/tool/thinking blocks, and Anthropic response envelopes;
@@ -851,9 +939,10 @@ usage quirks such as DeepSeek prompt-cache counters.
 - request serialization primitives shared by provider request policies;
 - tool schema and tool-result handling;
 - thinking block handling;
-- stream lifecycle through `core/anthropic/streaming`, including the neutral
+- stream lifecycle through `src/codexproxy/core/anthropic/streaming`, including the neutral
   stream ledger, Anthropic SSE emitter, continuation-body construction, and tool repair;
-- token counting and Anthropic-owned failure-kind-to-wire mapping.
+- Anthropic structural token counting and Anthropic-owned failure-kind-to-wire
+  mapping.
 
 `MessagesRequest` is an ingress model; no current provider sends Anthropic wire
 requests downstream. Anthropic request models validate transcript data without
@@ -877,21 +966,21 @@ while any deliberate provider-specific attachment removal remains explicit
 compatibility policy.
 
 Shared stream behavior lives under
-[core/anthropic/streaming/](core/anthropic/streaming/). The shared layer owns the
+[src/codexproxy/core/anthropic/streaming/](src/codexproxy/core/anthropic/streaming/). The shared layer owns the
 Anthropic content-block ledger, SSE serialization, continuation request
 transformations, and tool JSON repair. It does not import `httpx` or the OpenAI
 SDK and does not decide whether an upstream failure is retryable.
 
-[core/failures.py](core/failures.py) defines the immutable,
+[core/failures.py](src/codexproxy/core/failures.py) defines the immutable,
 protocol-neutral `FailureKind` and `ExecutionFailure`. The exception is the
 value propagated through async iterators; its semantic fields are immutable,
 while Python remains free to attach traceback/cause metadata during unwinding.
-[core/diagnostics.py](core/diagnostics.py) owns bounded error
+[core/diagnostics.py](src/codexproxy/core/diagnostics.py) owns bounded error
 body/cause extraction, credential redaction, safe traceback formatting, and
 copyable request-ID diagnostics. Anthropic and Responses packages independently
 map the canonical kind and status to their wire error types.
 
-[providers/failure_policy.py](providers/failure_policy.py)
+[providers/failure_policy.py](src/codexproxy/providers/failure_policy.py)
 owns generic raw OpenAI SDK and `httpx` exception classification,
 transient status/body inference, stable provider wording, and final diagnostic
 construction for those failures.
@@ -906,7 +995,7 @@ one-controller-per-provider policy; a degraded NIM function can therefore
 briefly pause other NIM models during shared recovery. No provider-specific
 marker enters `core/`, another provider, or an API adapter.
 
-[providers/stream_recovery.py](providers/stream_recovery.py)
+[providers/stream_recovery.py](src/codexproxy/providers/stream_recovery.py)
 owns only the 0.75-second/65,536-byte commit holdback and the choice between
 transparent replay, request-local continuation/tool salvage, and final failure.
 `ProviderRetrySession` owns one five-attempt budget for the whole logical
@@ -916,15 +1005,19 @@ nested retry counters. Deterministic corrections retry immediately; transient
 failures use exponential backoff with jitter and honor `Retry-After` as a
 minimum. When partial output exists, the last available attempt is reserved for
 continuation or repair instead of replaying the full request again. Completed
-tool calls can be salvaged without an upstream attempt.
+tool calls can be salvaged without an upstream attempt. The application-owned
+progress window is an outer no-progress bound, not another retry counter: opening
+a new attempt never resets it, while a real emitted provider chunk does. Fast
+transient failures can therefore still use all five attempts, but repeated
+fully-stalled operations cannot outlive the downstream harness.
 
 For streams, upstream acceptance is the first received chunk. Retryable failure
 before that point participates in provider-wide coordinated recovery. Failure
 after that point remains request-local so one interrupted connection does not
 freeze healthy parallel streams, but any continuation still consumes the same
-execution budget. The OpenAI SDK's internal retries remain disabled so CodexProxy is
+execution budget. The OpenAI SDK's internal retries remain disabled so CDX is
 the only retry owner. `ExecutionFailure.retryable` records provider-policy
-eligibility; it never tells the client to retry after CodexProxy has finalized the
+eligibility; it never tells the client to retry after CDX has finalized the
 failure.
 
 The OpenAI-chat provider remains an upstream adapter: it converts OpenAI chat
@@ -942,19 +1035,19 @@ Messages appends one Anthropic `event: error`, while Responses emits
 the same failure and discards its partial aggregate. Unexpected failures use the
 same commit-state split but do not acquire provider retry semantics.
 
-[core/openai_responses/](core/openai_responses/) owns OpenAI Responses support:
+[src/codexproxy/core/openai_responses/](src/codexproxy/core/openai_responses/) owns OpenAI Responses support:
 
 - the permissive `OpenAIResponsesRequest` ingress model used directly by the
   FastAPI route and the protocol adapter;
 - the `OpenAIResponsesAdapter` facade used by the API layer;
-- streaming-only `/v1/responses` support for Codex/CodexProxy workflows;
+- streaming-only `/v1/responses` support for Codex/CDX workflows;
 - Responses request conversion into Anthropic Messages payloads;
 - Anthropic SSE conversion into Responses SSE;
 - OpenAI-compatible error envelopes.
 
 The package intentionally does not implement the full OpenAI Responses surface.
-CodexProxy accepts omitted `stream` or `stream: true`; `stream: false` is rejected with
-an OpenAI-shaped client error because installed CodexProxy/Codex workflows only need
+CDX accepts omitted `stream` or `stream: true`; `stream: false` is rejected with
+an OpenAI-shaped client error because installed CDX/Codex workflows only need
 streaming. Request conversion, stream transformation, Anthropic SSE parsing,
 Responses SSE event formatting, output item construction, tool identity mapping,
 reasoning mapping, ID generation, and error envelope construction each live
@@ -962,7 +1055,7 @@ behind the adapter boundary. The concrete request object crosses that boundary
 unchanged; nested Responses input and tool data stays permissive and is
 interpreted by the conversion functions. `stream.py` is the public streaming
 entrypoint;
-[core/openai_responses/streaming/](core/openai_responses/streaming/) owns the
+[src/codexproxy/core/openai_responses/streaming/](src/codexproxy/core/openai_responses/streaming/) owns the
 block-indexed Responses stream assembler. The package separates Anthropic SSE
 dispatch, block state, output ledger ordering, block completion, SSE event
 builders, and error mapping. API code should depend on the adapter, not on
@@ -985,7 +1078,7 @@ Responses `custom` tool declarations, represents them internally as Anthropic
 tools with a single string `input` field, and restores `custom_tool_call`,
 `custom_tool_call_output`, and `response.custom_tool_call_input.*` shapes at the
 Responses edge. Text or grammar format metadata is preserved as model guidance;
-CodexProxy does not validate custom-tool grammars.
+CDX does not validate custom-tool grammars.
 
 Client-facing Responses tool identity mapping is distinct from upstream wire
 portability. Namespaces and custom-tool identities are restored at the public
@@ -1015,7 +1108,7 @@ Provider thinking output maps back to Responses reasoning in the same block
 order the upstream Anthropic stream produced. Anthropic `thinking` blocks become
 Responses `reasoning` output items and `response.reasoning_text.*` stream
 events. Anthropic `redacted_thinking` becomes a Responses `reasoning` item with
-`encrypted_content`; the opaque value is not exposed as visible text and CodexProxy
+`encrypted_content`; the opaque value is not exposed as visible text and CDX
 does not synthesize reasoning summaries.
 
 Provider code should delegate protocol details to these modules. Avoid copying
@@ -1024,7 +1117,7 @@ for shared Anthropic behavior.
 
 ## Local Optimizations And Server Tools
 
-[api/optimization_handlers.py](api/optimization_handlers.py) short-circuits
+[api/optimization_handlers.py](src/codexproxy/api/optimization_handlers.py) short-circuits
 common low-value client requests before they reach a provider:
 
 - quota probes;
@@ -1047,9 +1140,9 @@ so Claude Code receives a parser-readable `<block>yes</block>` or
 `<block>no</block>` verdict.
 
 Local `web_search` and `web_fetch` handling lives under
-[api/web_tools/](api/web_tools/). When `ENABLE_WEB_SERVER_TOOLS` is true, the
+[api/web_tools/](src/codexproxy/api/web_tools/). When `ENABLE_WEB_SERVER_TOOLS` is true, the
 Messages handler can stream local Anthropic server-tool responses without sending the
-request upstream. [api/web_tools/egress.py](api/web_tools/egress.py) enforces URL
+request upstream. [api/web_tools/egress.py](src/codexproxy/api/web_tools/egress.py) enforces URL
 scheme and private-network restrictions for `web_fetch`.
 
 Anthropic server-tool definitions are never passed to upstream OpenAI Chat
@@ -1059,71 +1152,127 @@ otherwise the Messages handler rejects them before provider execution.
 
 ## CLI Launchers And Managed Claude
 
-[cli/local_http.py](cli/local_http.py) owns the direct
-agent-to-CodexProxy connection boundary. Launcher health checks and local model-catalog
+[cli/local_http.py](src/codexproxy/cli/local_http.py) owns the direct
+agent-to-CDX connection boundary. Launcher health checks and local model-catalog
 requests never inherit environment or operating-system forward proxies. Every
 spawned agent environment preserves the user's outbound proxy configuration but
-adds the configured CodexProxy host and standard loopback names to both `NO_PROXY` and
+adds the configured CDX host and standard loopback names to both `NO_PROXY` and
 `no_proxy`. Provider-specific upstream proxies remain provider-owned and do not
 participate in this local boundary.
 
-[cli/proxy_auth.py](cli/proxy_auth.py) owns the neutral
-proxy-auth token policy shared by client launchers. A blank configured token
-becomes the local-only `cdx-no-auth` sentinel so clients cross their login gates
-while CodexProxy continues to run without API authentication.
-
-[cli/claude_env.py](cli/claude_env.py) owns the canonical
-Claude Code proxy environment used by every cdx-launched Claude process. It
+[cli/claude_env.py](src/codexproxy/cli/claude_env.py) owns the canonical
+Claude Code proxy environment used by every CDX-launched Claude process. It
 strips inherited `ANTHROPIC_*` variables, sets `ANTHROPIC_BASE_URL`, enables
 gateway model discovery, configures the auto-compact window, disables
-nonessential Anthropic traffic, and always sets `ANTHROPIC_AUTH_TOKEN`. Blank
-proxy auth uses the shared local-only sentinel so Claude Code reaches the proxy
-instead of stopping at its login gate.
+nonessential Anthropic traffic, and always sets the retained non-empty
+`ANTHROPIC_AUTH_TOKEN`. Server-side authentication enablement does not alter the
+client environment.
 
-[cli/launchers/claude.py](cli/launchers/claude.py) owns the installed
+[cli/launchers/claude.py](src/codexproxy/cli/launchers/claude.py) owns the installed
 `cdx-claude` launcher:
 
 - `cdx-claude` applies the shared proxy environment without changing the user's
   Claude command arguments.
 
-[cli/launchers/codex.py](cli/launchers/codex.py) owns the installed
+[cli/launchers/codex.py](src/codexproxy/cli/launchers/codex.py) owns the installed
 `cdx-codex` launcher:
 
 - `cdx-codex` strips official OpenAI and Codex credential variables.
 - It strips parent-only Codex thread, shell, permission, and origin context so
   each launched client owns an independent runtime identity.
-- It creates an ephemeral `codexproxy` model provider with `wire_api = "responses"` and
+- It creates an ephemeral `cdx` model provider with `wire_api = "responses"` and
   a base URL pointing at the local proxy `/v1` path.
 - After proxy health succeeds, it fetches `/v1/models`, writes a generated Codex
-  `model_catalog_json` file under `~/.codexproxy/`, and injects that path so Codex's
-  native `/model` picker lists CodexProxy provider slugs. Catalog generation is
+  `model_catalog_json` file under `~/.cdx/`, and injects that path so Codex's
+  native `/model` picker lists CDX provider slugs. Catalog generation is
   fail-open: launch continues with a warning if the catalog cannot be prepared.
 - The server lifecycle independently keeps that same file synchronized for
   Codex App and IDE processes that are not launched through `cdx-codex`.
-- Catalog discovery and inference both authenticate with HTTP bearer authorization.
-- It stores the proxy auth token in `CODEX_PROXY_CODEX_API_KEY` for Codex's provider
-  `env_key` to read. This process-local variable is a client credential carrier,
-  not a second CodexProxy setting.
+- Launcher-side catalog discovery authenticates directly with the canonical proxy
+  token.
+- Inference through `cdx-codex`, Codex App, and IDE integrations uses the same
+  command-backed provider authentication. Codex invokes
+  `cdx-codex --print-proxy-auth-token`, which reads the canonical CDX settings,
+  prints only the shared proxy-auth token (or the no-auth sentinel), and exits
+  without a proxy preflight, model request, or client process. This gives every
+  Codex surface one credential owner instead of competing with Codex's signed-in
+  OpenAI authorization.
 
-[cli/launchers/pi.py](cli/launchers/pi.py) owns the installed
-`cdx-pi` launcher and [cli/launchers/pi_extension.ts](cli/launchers/pi_extension.ts)
+[cli/launchers/model_catalog.py](src/codexproxy/cli/launchers/model_catalog.py)
+owns the client-neutral projection from CDX's `/v1/models` response to direct,
+nested `provider/model` routes. It removes Claude-only compatibility aliases,
+deduplicates normal and no-thinking forms deterministically, and is shared by
+Codex, OpenCode, and Cline. Each launcher remains responsible for translating those
+neutral entries into its client's configuration format.
+
+[cli/launchers/pi.py](src/codexproxy/cli/launchers/pi.py) owns the installed
+`cdx-pi` launcher and [cli/launchers/pi_extension.ts](src/codexproxy/cli/launchers/pi_extension.ts)
 is its bundled Pi adapter:
 
 - Session commands load the extension from its absolute installed path and
   scope Pi to the ephemeral `codexproxy/**` provider, whose model IDs
-  retain CodexProxy's nested `provider/model` routing reference.
-- The extension fetches CodexProxy's `/v1/models` catalog before registration, projects
+  retain CDX's nested `provider/model` routing reference.
+- The extension fetches CDX's `/v1/models` catalog before registration, projects
   only routable provider-model IDs, and registers an `anthropic-messages`
   provider targeting the local proxy. Catalog failure is fail-closed so Pi never
   silently falls back to a different provider.
 - Catalog discovery and provider inference use HTTP bearer authorization. Pi's
   provider API-key field remains its process-local credential carrier.
-- CodexProxy connection values live only in child-process `CODEX_PROXY_PI_*` variables. Native
+- CDX connection values live only in child-process `CODEX_PROXY_PI_*` variables. Native
   Pi credentials and persistent configuration remain untouched.
 - Pi package-management, configuration, help, and version commands pass through
-  unchanged because they do not create an cdx-backed session.
+  unchanged because they do not create an CDX-backed session.
 
-[cli/managed/](cli/managed/) owns managed Claude Code subprocesses used by
+[cli/launchers/opencode.py](src/codexproxy/cli/launchers/opencode.py) and
+[cli/launchers/opencode_config.py](src/codexproxy/cli/launchers/opencode_config.py)
+own the installed `cdx-opencode` launcher for stable OpenCode V1:
+
+- Inference commands require OpenCode V1 1.18.18 or newer, a reachable CDX
+  server, and a non-empty routable `/v1/models` snapshot. Preparation is
+  fail-closed so OpenCode cannot fall back to a native provider.
+- The launcher creates a temporary, secret-free `codexproxy` provider
+  catalog and a protected process overlay. The provider uses `@ai-sdk/openai`
+  against CDX's `/v1` Responses surface, and bearer material is carried only in
+  the child environment.
+- Existing `OPENCODE_CONFIG` or `OPENCODE_CONFIG_CONTENT` overrides are rejected
+  because their precedence would make CDX routing ambiguous. Persistent OpenCode
+  config, data, credentials, plugins, and sessions remain OpenCode-owned and are
+  never rewritten.
+- Native help, version, authentication, upgrade, uninstall, and completion
+  commands pass through without requiring CDX. Other arguments are forwarded
+  unchanged after the CDX process configuration is ready.
+
+[cli/launchers/cline.py](src/codexproxy/cli/launchers/cline.py) and
+[cli/launchers/cline_config.py](src/codexproxy/cli/launchers/cline_config.py)
+own the installed `cdx-cline` launcher for Cline CLI 3.0.55 or newer:
+
+- Attached inference sessions require a reachable CDX server and a non-empty
+  routable `/v1/models` snapshot. Preparation is fail-closed, and the launcher
+  prepends Cline's built-in `openai-native` provider while leaving an explicit
+  caller `--model` selection intact.
+- The launcher creates protected temporary `providers.json` and `models.json`
+  files. For that child only, they retarget Cline's existing OpenAI Responses
+  transport to CDX's `/v1` surface, rename it to CodexProxy, replace its
+  catalog with nested CDX model slugs, and carry the canonical proxy token.
+  Cline 3.0.55's session gateway cannot instantiate user-defined provider IDs,
+  so this built-in transport seam is required even though its startup picker can
+  read custom providers.
+- `CLINE_PROVIDER_SETTINGS_PATH` points only that child at the generated
+  settings, and `CLINE_SESSION_BACKEND_MODE=local` keeps attached sessions in
+  the launcher lifecycle. Native Cline config, data, credentials, plugins, and
+  sessions remain Cline-owned.
+- Native configuration and package-management commands pass through without
+  requiring CDX. Hub, dashboard, schedule, connection, hook, kanban, and Zen
+  surfaces are rejected because they can outlive the temporary credential and
+  must be run with ordinary `cline`.
+- Cline sandbox data overrides are also rejected: released Cline rewrites its
+  provider-settings path in that mode, which would displace CDX's ephemeral
+  credential file. Ordinary Cline remains the owner of sandboxed runs.
+- Cline's provider picker can still expose its native providers. Startup and
+  command-line routing remain CDX-owned; deliberately switching providers
+  inside the running Cline process is an explicit opt-out for that process.
+
+[cli/managed/](src/codexproxy/cli/managed/) owns managed Claude Code subprocesses used by
 Discord and Telegram messaging. Managed task invocations extend the same proxy
 environment only with non-interactive terminal settings, optional `--resume`,
 optional `--fork-session`, `--model fable`, and `--output-format stream-json`.
@@ -1146,15 +1295,15 @@ reports a count-only failure, and leaves failures available for the next cleanup
 attempt. Real-session registration is collision-safe and becomes durable tree
 state only after the manager accepts it.
 
-Codex and Pi are supported through their installed launchers. CodexProxy does not keep
-internal managed session runners for them because no user-facing messaging
-setting selects either client for Discord or Telegram.
+Codex, Pi, OpenCode, and Cline are supported through their installed launchers. CDX
+does not keep internal managed session runners for them because no user-facing
+messaging setting selects those clients for Discord or Telegram.
 
 ## Messaging Architecture
 
-Messaging is optional. [runtime/application.py](runtime/application.py) calls
+Messaging is optional. [runtime/application.py](src/codexproxy/runtime/application.py) calls
 `create_messaging_components()` from
-[messaging/platforms/factory.py](messaging/platforms/factory.py) during startup.
+[messaging/platforms/factory.py](src/codexproxy/messaging/platforms/factory.py) during startup.
 If `MESSAGING_PLATFORM` is `none`, or if the selected platform token is missing,
 the messaging bridge is skipped.
 
@@ -1168,7 +1317,7 @@ The API sees only the application-owned `TaskController` used to preserve
 `/stop` behavior.
 
 The platform factory returns a `MessagingPlatformComponents` bundle from
-[messaging/platforms/ports.py](messaging/platforms/ports.py): a
+[messaging/platforms/ports.py](src/codexproxy/messaging/platforms/ports.py): a
 `MessagingRuntime` with separate `quiesce()` and `close()` phases, an
 `OutboundMessenger` for queued sends/edits/deletes, an optional
 `VoiceCancellation` port for scoped and bulk voice cancellation during `/stop`
@@ -1176,8 +1325,8 @@ and `/clear`, and an optional immutable startup-notice intent. Workflow code
 depends on these ports and values, not on Telegram or Discord SDK objects.
 
 Runtime adapters in
-[messaging/platforms/telegram.py](messaging/platforms/telegram.py) and
-[messaging/platforms/discord.py](messaging/platforms/discord.py) own SDK client
+[messaging/platforms/telegram.py](src/codexproxy/messaging/platforms/telegram.py) and
+[messaging/platforms/discord.py](src/codexproxy/messaging/platforms/discord.py) own SDK client
 lifecycle, event subscription, inbound handoff, voice-note handoff, and one
 injected `MessagingRateLimiter`. The platform factory creates a fresh limiter
 for the selected runtime. `quiesce()` stops new SDK ingress and drains active
@@ -1189,12 +1338,12 @@ Telegram retries initialization and polling as separate repeatable steps; it
 never restarts an already-running SDK application after polling bootstrap fails.
 Separate application runtimes cannot share or stop each other's queue. Inbound
 normalization lives in
-[messaging/platforms/telegram_inbound.py](messaging/platforms/telegram_inbound.py)
-and [messaging/platforms/discord_inbound.py](messaging/platforms/discord_inbound.py).
+[messaging/platforms/telegram_inbound.py](src/codexproxy/messaging/platforms/telegram_inbound.py)
+and [messaging/platforms/discord_inbound.py](src/codexproxy/messaging/platforms/discord_inbound.py).
 Outbound SDK calls live in
-[messaging/platforms/telegram_io.py](messaging/platforms/telegram_io.py) and
-[messaging/platforms/discord_io.py](messaging/platforms/discord_io.py). Shared
-delivery policy lives in [messaging/platforms/outbox.py](messaging/platforms/outbox.py),
+[messaging/platforms/telegram_io.py](src/codexproxy/messaging/platforms/telegram_io.py) and
+[messaging/platforms/discord_io.py](src/codexproxy/messaging/platforms/discord_io.py). Shared
+delivery policy lives in [messaging/platforms/outbox.py](src/codexproxy/messaging/platforms/outbox.py),
 which requires that limiter directly and owns queued send/edit/list-based delete,
 dedup keys, and retained fire-and-forget tasks. Shutdown cancels and awaits both
 queued limiter work and arbitrary outbox work; there is no optional unthrottled
@@ -1202,10 +1351,10 @@ fallback, and both owners reject admission once close begins. Workflow and comma
 message ID lists; platform IO decides whether to use native batch deletion
 (Telegram) or internal per-message deletion (Discord).
 Shared voice-note orchestration lives in
-[messaging/platforms/voice_flow.py](messaging/platforms/voice_flow.py), which owns
+[messaging/platforms/voice_flow.py](src/codexproxy/messaging/platforms/voice_flow.py), which owns
 file-size validation, temp-file cleanup, transcription, error replies, and the
 handoff to `IncomingMessage`. Before status delivery it reserves an opaque claim
-in the `PendingVoiceRegistry` owned by [messaging/voice.py](messaging/voice.py).
+in the `PendingVoiceRegistry` owned by [messaging/voice.py](src/codexproxy/messaging/voice.py).
 That registry atomically owns optional status binding, cancellation by either
 message ID, and one child task that retains the exclusive handoff lease through
 the complete workflow callback. An explicit stop or clear atomically removes
@@ -1234,7 +1383,7 @@ credential used by an active voice backend through Admin is therefore
 restart-required, while the same provider credential remains hot-replaceable
 when voice does not use it.
 
-[messaging/workflow.py](messaging/workflow.py) contains `MessagingWorkflow`, the
+[messaging/workflow.py](src/codexproxy/messaging/workflow.py) contains `MessagingWorkflow`, the
 platform-agnostic coordinator. It owns dependencies, render settings, the
 state-transaction lock, global stop generation, per-chat clear generations,
 stop/clear side effects, and shutdown-visible state. Each inbound turn snapshots
@@ -1275,7 +1424,7 @@ retry. No platform I/O runs under the workflow lock. Ordinary notice-send
 failure is privacy-safe and nonfatal, while cancellation before a delivery
 receipt remains immediate and cannot create a phantom message ID.
 
-[messaging/turn_intake.py](messaging/turn_intake.py) owns slash command dispatch,
+[messaging/turn_intake.py](src/codexproxy/messaging/turn_intake.py) owns slash command dispatch,
 status-echo filtering, initial status messages, and rendering detached frozen
 admission/queue effects. The workflow records each accepted inbound prompt,
 voice note, or command before intake performs external status I/O. Intake asks
@@ -1286,7 +1435,7 @@ concurrent clear removes is instead rejected as `PARENT_REMOVED`; intake then
 best-effort deletes both the stale child prompt and its provisional status.
 Duplicate delivery deletes only its provisional status.
 
-[messaging/node_runner.py](messaging/node_runner.py) owns managed CLI session
+[messaging/node_runner.py](src/codexproxy/messaging/node_runner.py) owns managed CLI session
 lifecycle for queued nodes: parent-session fork/resume, session registration,
 CLI event parsing, transcript/status updates, cancellation, error propagation,
 and session cleanup. It executes an immutable `NodeClaim`; session, completion,
@@ -1296,23 +1445,23 @@ propagates to queued descendants; a later successful exit is authoritative for
 the same live, non-cancelled claim. A stale runner receives no snapshot and
 cannot restore a branch removed by `/clear`.
 
-[messaging/event_parser.py](messaging/event_parser.py) normalizes managed Claude
+[messaging/event_parser.py](src/codexproxy/messaging/event_parser.py) normalizes managed Claude
 JSON events into low-level transcript events.
-[messaging/transcript/](messaging/transcript/) owns transcript assembly and
+[messaging/transcript/](src/codexproxy/messaging/transcript/) owns transcript assembly and
 rendering: open content-block tracking, Task/subagent display state, segment
 models, render context, and truncation. Platform markdown details stay in
-[messaging/rendering/](messaging/rendering/).
+[messaging/rendering/](src/codexproxy/messaging/rendering/).
 
-[messaging/command_context.py](messaging/command_context.py) defines the typed
+[messaging/command_context.py](src/codexproxy/messaging/command_context.py) defines the typed
 dependency surface for `/stop`, `/clear`, and `/stats`; commands should not
 depend on the concrete workflow object or on platform SDK runtimes.
 
-[messaging/trees/runtime.py](messaging/trees/runtime.py) contains the
+[messaging/trees/runtime.py](src/codexproxy/messaging/trees/runtime.py) contains the
 `MessageTree` aggregate. Its lock is private, and complete operations own every
 graph/queue/claim invariant: add-and-admit, enqueue-or-claim,
 finish-and-claim-next, semantic state writes, cancellation, and atomic branch
 removal. Logical `parent_id` owns execution/session ancestry, while
-`parent_reference_id` records the exact prompt or CodexProxy status that received the
+`parent_reference_id` records the exact prompt or CDX status that received the
 platform reply. The aggregate derives literal reference adjacency from those
 canonical fields instead of maintaining a second graph. Removing a prompt
 therefore removes its status and every literal descendant; removing a status
@@ -1327,12 +1476,12 @@ success from reviving a stopped node. Only the matching finish transition may
 select the FIFO successor. Duplicate node/status admission and terminal-node
 re-admission are rejected without changing active state.
 
-[messaging/trees/transitions.py](messaging/trees/transitions.py) owns frozen,
+[messaging/trees/transitions.py](src/codexproxy/messaging/trees/transitions.py) owns frozen,
 slotted claims, queue entries, read views, and cancellation/removal effects.
 These values copy the UI and execution facts callers need and never contain a
 mutable `MessageNode`, lock, or `asyncio.Task`.
 
-[messaging/trees/manager.py](messaging/trees/manager.py) is the only external
+[messaging/trees/manager.py](src/codexproxy/messaging/trees/manager.py) is the only external
 tree facade. It keeps one structural lock across aggregate membership changes
 and repository index publication/removal, registers node and status references
 together under `MessageScope`, coordinates cross-tree requests, and returns
@@ -1350,9 +1499,9 @@ literal message subtree before any survivor can advance. Separate scopes and
 trees still progress independently. Subtree transitions return exact reference
 IDs for both repository unindexing and authorized platform deletion, including
 user-authored messages selected by the explicit command.
-[messaging/trees/repository.py](messaging/trees/repository.py)
+[messaging/trees/repository.py](src/codexproxy/messaging/trees/repository.py)
 is manager-private and owns only aggregate/reference indexes.
-[messaging/trees/processor.py](messaging/trees/processor.py) owns every
+[messaging/trees/processor.py](src/codexproxy/messaging/trees/processor.py) owns every
 `asyncio.Task`, keyed by globally unique claim ID. It publishes a task slot
 before task creation, which is safe under Python's eager task factory, then
 launches claims returned by the aggregate, cancels the exact matching task,
@@ -1369,12 +1518,12 @@ cleanup is still active. A failed aggregate-completion callback releases its
 finished task slot, records the failure, and hands it to the terminal waiter
 exactly once; a failed close therefore retains the workflow for reconciliation
 instead of hanging on ownership that no longer exists.
-[messaging/trees/node.py](messaging/trees/node.py) owns
+[messaging/trees/node.py](src/codexproxy/messaging/trees/node.py) owns
 `MessageNode` and `MessageState`; each node keeps only the copied scope and
 prompt needed by the aggregate rather than retaining a mutable ingress value,
-[messaging/trees/graph.py](messaging/trees/graph.py) owns parent/child and
+[messaging/trees/graph.py](src/codexproxy/messaging/trees/graph.py) owns parent/child and
 status-message lookup state, and
-[messaging/trees/snapshot.py](messaging/trees/snapshot.py) owns typed persisted
+[messaging/trees/snapshot.py](src/codexproxy/messaging/trees/snapshot.py) owns typed persisted
 conversation snapshots. New snapshots serialize scoped trees as a list, while
 loading derives scope from existing pre-scope `sessions.json` tree roots. Nodes
 persist logical and exact-reference parent relations; runtime child indexes are
@@ -1386,12 +1535,12 @@ A malformed tree carrying neither current scope nor legacy root ingress is
 reported and skipped because assigning it to an inferred chat would violate the
 same ownership boundary.
 
-[messaging/session/](messaging/session/) persists typed conversation snapshots
+[messaging/session/](src/codexproxy/messaging/session/) persists typed conversation snapshots
 and message IDs to a JSON file under the managed messaging state directory.
 `SessionStore` reads existing `sessions.json` files but exposes typed snapshot
 APIs to runtime code and deep-copies snapshot ingress and egress so no caller
 shares mutable persisted state. Debounced atomic writes live in
-[messaging/session/persistence.py](messaging/session/persistence.py). One writer
+[messaging/session/persistence.py](src/codexproxy/messaging/session/persistence.py). One writer
 lock serializes physical replaces, and a generation check under that lock
 prevents an older timer snapshot from landing after a newer flush or clear.
 Timer-triggered saves are best effort and leave the store dirty on failure;
@@ -1401,21 +1550,21 @@ snapshot and is the only operation that marks it clean.
 Standalone `/clear` detaches and drains only the invoking scope, then writes an
 authoritative scoped removal while other chats remain intact. Per-chat deletion
 ownership lives in
-[messaging/session/managed_message_log.py](messaging/session/managed_message_log.py).
+[messaging/session/managed_message_log.py](src/codexproxy/messaging/session/managed_message_log.py).
 The registry accepts managed inbound prompts, voice notes, and commands as well
-as CodexProxy output. It migrates legacy `message_log` entries and persists the final
+as CDX output. It migrates legacy `message_log` entries and persists the final
 shape as `managed_messages`. Startup notices use the same registry. An incoming
 standalone `/clear` defers insertion because the command handler already owns its
 ID on success; this prevents the command from evicting an older deletion target
 when an explicit cap is configured. Failed or cancelled clear attempts record
 the command before propagating so a later clear can discover it.
 
-`/clear` commits CodexProxy state cleanup first and then best-effort deletes the exact
+`/clear` commits CDX state cleanup first and then best-effort deletes the exact
 authorized message-ID set through the list-based outbound port. Standalone clear
-deletes every tracked user and CodexProxy message in its chat; reply clear deletes only
+deletes every tracked user and CDX message in its chat; reply clear deletes only
 the selected literal reply subtree plus its command. Discord/Telegram can still
 reject individual deletions for platform reasons such as permissions, age, or
-missing messages; such failures never restore cleared CodexProxy state.
+missing messages; such failures never restore cleared CDX state.
 
 ```mermaid
 sequenceDiagram
@@ -1442,7 +1591,7 @@ sequenceDiagram
 
 ## Observability, Diagnostics, And Safety
 
-[core/trace.py](core/trace.py) emits structured trace events across stages such
+[core/trace.py](src/codexproxy/core/trace.py) emits structured trace events across stages such
 as ingress, routing, provider, egress, messaging, and client CLI execution. Trace
 payloads are intended to connect API, provider, CLI, and messaging activity
 without requiring raw transport logs by default.
@@ -1519,9 +1668,9 @@ when maintainers want branch-level assurance.
 
 ### Add An Admin Setting
 
-1. Add or expose the setting in [config/settings.py](config/settings.py).
+1. Add or expose the setting in [config/settings.py](src/codexproxy/config/settings.py).
 2. Add the template key to [.env.example](.env.example) if users configure it.
-3. Add a `ConfigFieldSpec` under [config/admin/](config/admin/), or add
+3. Add a `ConfigFieldSpec` under [config/admin/](src/codexproxy/config/admin/), or add
    provider catalog metadata when the setting is provider credential, configurable base URL,
    proxy, or display-name metadata.
 4. Mark `restart_required` or `session_sensitive` when runtime state cannot be
@@ -1531,38 +1680,38 @@ when maintainers want branch-level assurance.
 ### Add Or Change A Client Surface
 
 1. For an installed wrapper, add or update a launcher under
-   [cli/launchers/](cli/launchers/) and keep credential stripping local to that
+   [cli/launchers/](src/codexproxy/cli/launchers/) and keep credential stripping local to that
    client.
-2. For messaging-managed execution, update [cli/managed/](cli/managed/) only
+2. For messaging-managed execution, update [cli/managed/](src/codexproxy/cli/managed/) only
    when Discord or Telegram should actually run a different managed client.
 3. Ensure managed task parsing emits the event shapes expected by
-   [messaging/event_parser.py](messaging/event_parser.py) and
-   [messaging/node_event_pipeline.py](messaging/node_event_pipeline.py).
+   [messaging/event_parser.py](src/codexproxy/messaging/event_parser.py) and
+   [messaging/node_event_pipeline.py](src/codexproxy/messaging/node_event_pipeline.py).
 4. Add launcher, managed-session, and customer-flow tests under
    [tests/cli/](tests/cli/) and [tests/messaging/](tests/messaging/).
 
 ### Add A Messaging Platform
 
 1. Implement a `MessagingRuntime`, `OutboundMessenger`, and inbound normalizer
-   under [messaging/platforms/](messaging/platforms/).
-2. Reuse [messaging/platforms/outbox.py](messaging/platforms/outbox.py) for
+   under [messaging/platforms/](src/codexproxy/messaging/platforms/).
+2. Reuse [messaging/platforms/outbox.py](src/codexproxy/messaging/platforms/outbox.py) for
    queued outbound delivery and
-   [messaging/platforms/voice_flow.py](messaging/platforms/voice_flow.py) for
+   [messaging/platforms/voice_flow.py](src/codexproxy/messaging/platforms/voice_flow.py) for
    voice-note handoff when the platform supports audio.
 3. Add construction logic to
-   [messaging/platforms/factory.py](messaging/platforms/factory.py).
+   [messaging/platforms/factory.py](src/codexproxy/messaging/platforms/factory.py).
 4. Add settings and admin fields for tokens, allowlists, and platform-specific
    runtime options.
 5. Add rendering profile support in
-   [messaging/rendering/profiles.py](messaging/rendering/profiles.py) if needed.
+   [messaging/rendering/profiles.py](src/codexproxy/messaging/rendering/profiles.py) if needed.
 6. Add deterministic runtime/outbound/workflow tests and optional live smoke
    targets.
 
 ### Add Protocol Behavior
 
-1. Put shared Anthropic behavior under [core/anthropic/](core/anthropic/).
+1. Put shared Anthropic behavior under [src/codexproxy/core/anthropic/](src/codexproxy/core/anthropic/).
 2. Put OpenAI Responses behavior under
-   [core/openai_responses/](core/openai_responses/).
+   [src/codexproxy/core/openai_responses/](src/codexproxy/core/openai_responses/).
 3. Keep provider-specific request quirks inside the provider profile or specialized
    provider subclass.
 4. Add stream contract tests under [tests/contracts/](tests/contracts/) or

@@ -2,13 +2,13 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from config.settings import Settings
+from codexproxy.config.settings import Settings
 from smoke.lib import child_process
 from smoke.lib import e2e as smoke_e2e
 from smoke.lib import http as smoke_http
 from smoke.lib import server as smoke_server
 from smoke.lib.child_process import (
-    cmd_CODEX_PROXY_server,
+    cmd_fcc_server,
     cmd_python_c,
     run_captured_text,
 )
@@ -18,11 +18,11 @@ from smoke.lib.http import collect_message_stream
 from smoke.lib.server import RunningServer
 
 
-def test_CODEX_PROXY_server_command_uses_cli_entrypoint() -> None:
-    assert cmd_CODEX_PROXY_server() == [
+def test_fcc_server_command_uses_cli_entrypoint() -> None:
+    assert cmd_fcc_server() == [
         child_process.python_exe(),
         "-c",
-        "from cli.entrypoints import serve; serve()",
+        "from codexproxy.cli.entrypoints import serve; serve()",
     ]
 
 

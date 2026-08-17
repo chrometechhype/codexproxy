@@ -3,21 +3,23 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from config.nim import NimSettings
-from config.provider_catalog import NVIDIA_NIM_DEFAULT_BASE
-from core.anthropic import StreamBlockLedger
-from providers.base import ProviderConfig
-from providers.nvidia_nim import NvidiaNimProvider
-from providers.openai_chat.tool_calls import (
+from codexproxy.config.nim import NimSettings
+from codexproxy.config.provider_catalog import NVIDIA_NIM_DEFAULT_BASE
+from codexproxy.core.anthropic import StreamBlockLedger
+from codexproxy.providers.nvidia_nim import NvidiaNimProvider
+from codexproxy.providers.openai_chat.tool_calls import (
     OpenAIToolCallAssembler,
 )
-from tests.providers.support import immediate_admission
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+)
 
 
 @pytest.mark.asyncio
 async def test_task_tool_interception():
     # Setup provider
-    config = ProviderConfig(api_key="test", base_url=NVIDIA_NIM_DEFAULT_BASE)
+    config = make_provider_config(api_key="test", base_url=NVIDIA_NIM_DEFAULT_BASE)
     provider = NvidiaNimProvider(
         config,
         nim_settings=NimSettings(),

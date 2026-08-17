@@ -1,6 +1,6 @@
 import pytest
 
-from core.anthropic import (
+from codexproxy.core.anthropic import (
     ContentType,
     HeuristicToolParser,
     ThinkTagParser,

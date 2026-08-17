@@ -5,23 +5,24 @@ from typing import Any
 import httpx
 import pytest
 
-from application.errors import InvalidRequestError
-from core.anthropic.models import MessagesRequest
-from core.anthropic.stream_contracts import (
+from codexproxy.application.errors import InvalidRequestError
+from codexproxy.core.anthropic.models import MessagesRequest
+from codexproxy.core.anthropic.stream_contracts import (
     assert_anthropic_stream_contract,
     parse_sse_text,
     text_content,
 )
-from core.diagnostics import ERROR_DETAIL_DISPLAY_CAP_BYTES
-from core.failures import ExecutionFailure
-from core.reasoning import ReasoningEffort, ReasoningPolicy
-from providers.admission import ProviderAdmissionController
-from providers.base import ProviderConfig
-from providers.openai_codex.auth import (
+from codexproxy.core.diagnostics import ERROR_DETAIL_DISPLAY_CAP_BYTES
+from codexproxy.core.failures import ExecutionFailure
+from codexproxy.core.reasoning import ReasoningEffort, ReasoningPolicy
+from codexproxy.providers.admission import ProviderAdmissionController
+from codexproxy.providers.base import ProviderConfig
+from codexproxy.providers.openai_codex.auth import (
     OpenAIAccess,
     OpenAIAuthManager,
 )
-from providers.openai_codex.provider import OpenAICodexProvider
+from codexproxy.providers.openai_codex.provider import OpenAICodexProvider
+from tests.providers.support import make_provider_config
 
 
 class _FakeAuth(OpenAIAuthManager):
@@ -42,7 +43,7 @@ class _FakeAuth(OpenAIAuthManager):
 
 
 def _config() -> ProviderConfig:
-    return ProviderConfig(
+    return make_provider_config(
         api_key="",
         base_url="https://chatgpt.com/backend-api/codex",
         rate_limit=100,

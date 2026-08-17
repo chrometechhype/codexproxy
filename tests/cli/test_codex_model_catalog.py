@@ -8,7 +8,8 @@ from typing import Any, cast
 
 import pytest
 
-from cli.launchers.codex_model_catalog import (
+from codexproxy.cli.launchers.codex import codex_config_args
+from codexproxy.cli.launchers.codex_model_catalog import (
     build_codex_model_catalog,
     write_codex_model_catalog,
 )
@@ -49,9 +50,9 @@ def test_codex_catalog_converts_configured_and_cached_models_to_direct_slugs() -
     catalog = build_codex_model_catalog(
         _models_payload(
             "anthropic/nvidia_nim/nvidia/nemotron-3-super",
-            "claude-3-freecc-no-thinking/nvidia_nim/nvidia/nemotron-3-super",
+            "claude-3-codexcc-no-thinking/nvidia_nim/nvidia/nemotron-3-super",
             "anthropic/open_router/meta-llama/llama-3.3-70b",
-            "claude-3-freecc-no-thinking/open_router/meta-llama/llama-3.3-70b",
+            "claude-3-codexcc-no-thinking/open_router/meta-llama/llama-3.3-70b",
         )
     )
 
@@ -90,7 +91,7 @@ def test_codex_catalog_excludes_claude_compatibility_model_ids() -> None:
 def test_codex_catalog_skips_no_thinking_duplicate_when_normal_slug_exists() -> None:
     catalog = build_codex_model_catalog(
         _models_payload(
-            "claude-3-freecc-no-thinking/nvidia_nim/provider-model",
+            "claude-3-codexcc-no-thinking/nvidia_nim/provider-model",
             "anthropic/nvidia_nim/provider-model",
         )
     )
@@ -100,10 +101,10 @@ def test_codex_catalog_skips_no_thinking_duplicate_when_normal_slug_exists() -> 
 
 def test_codex_catalog_preserves_no_thinking_only_entries_for_routing() -> None:
     catalog = build_codex_model_catalog(
-        _models_payload("claude-3-freecc-no-thinking/open_router/plain-model")
+        _models_payload("claude-3-codexcc-no-thinking/open_router/plain-model")
     )
 
-    assert _slugs(catalog) == ["claude-3-freecc-no-thinking/open_router/plain-model"]
+    assert _slugs(catalog) == ["claude-3-codexcc-no-thinking/open_router/plain-model"]
 
 
 def test_codex_catalog_ordering_and_priorities_are_deterministic() -> None:
@@ -139,7 +140,7 @@ def test_codex_catalog_accepts_future_direct_provider_slugs() -> None:
     ]
 
 
-def test_generated_catalog_schema_is_accepted_by_installed_codex(
+def test_launcher_config_composes_with_persistent_codex_config(
     tmp_path: Path,
 ) -> None:
     codex_binary = shutil.which("codex")
@@ -156,15 +157,18 @@ def test_generated_catalog_schema_is_accepted_by_installed_codex(
     (codex_home / "config.toml").write_text(
         "\n".join(
             (
-                'model_provider = "codexproxy"',
+                'model_provider = "cdx"',
                 'model = "nvidia_nim/test-model"',
                 f"model_catalog_json = {json.dumps(str(catalog_path))}",
                 "",
-                "[model_providers.codexproxy]",
+                "[model_providers.cdx]",
                 'name = "CodexProxy"',
                 'base_url = "http://127.0.0.1:8082/v1"',
-                'http_headers = { Authorization = "Bearer freecc" }',
                 'wire_api = "responses"',
+                "",
+                "[model_providers.cdx.auth]",
+                'command = "cdx-codex"',
+                'args = ["--print-proxy-auth-token"]',
                 "",
             )
         ),
@@ -181,7 +185,12 @@ def test_generated_catalog_schema_is_accepted_by_installed_codex(
     codex_env["CODEX_HOME"] = str(codex_home)
 
     result = subprocess.run(
-        [codex_binary, "debug", "models"],
+        [
+            codex_binary,
+            *codex_config_args(api_url="http://127.0.0.1:8082/v1"),
+            "debug",
+            "models",
+        ],
         capture_output=True,
         check=False,
         encoding="utf-8",

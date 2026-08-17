@@ -15,4 +15,3 @@ debug-*.log
 llama_cache
 .smoke-results
 .vscode
-Microsoft/

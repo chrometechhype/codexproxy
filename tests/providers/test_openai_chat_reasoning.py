@@ -1,5 +1,5 @@
-from core.reasoning import ReasoningEffort, ReasoningPolicy
-from providers.openai_chat.reasoning import (
+from codexproxy.core.reasoning import ReasoningEffort, ReasoningPolicy
+from codexproxy.providers.openai_chat.reasoning import (
     ChatTemplateReasoning,
     LlamaCppReasoning,
     NamedEffortReasoning,

@@ -7,17 +7,21 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from application.errors import ApplicationUnavailableError
-from application.model_metadata import ProviderModelInfo
-from config.provider_catalog import CLOUDFLARE_AI_REST_ROOT
-from core.anthropic.models import Message, MessagesRequest
-from core.anthropic.stream_contracts import parse_sse_text
-from providers.base import ProviderConfig
-from providers.cloudflare import (
+from codexproxy.application.errors import ApplicationUnavailableError
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.provider_catalog import CLOUDFLARE_AI_REST_ROOT
+from codexproxy.core.anthropic.models import Message, MessagesRequest
+from codexproxy.core.anthropic.stream_contracts import parse_sse_text
+from codexproxy.providers.base import ProviderConfig
+from codexproxy.providers.cloudflare import (
     CloudflareProvider,
     cloudflare_ai_base_url,
 )
-from tests.providers.support import immediate_admission, reasoning_for
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+    reasoning_for,
+)
 
 _ACCOUNT_ID = "account-123"
 _BASE_URL = f"{CLOUDFLARE_AI_REST_ROOT}/accounts/{_ACCOUNT_ID}/ai/v1"
@@ -26,7 +30,7 @@ _MODEL_SEARCH_URL = f"{CLOUDFLARE_AI_REST_ROOT}/accounts/{_ACCOUNT_ID}/ai/models
 
 @pytest.fixture
 def cloudflare_config() -> ProviderConfig:
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test-cloudflare-token",
         base_url=CLOUDFLARE_AI_REST_ROOT,
         rate_limit=10,
@@ -82,7 +86,7 @@ def test_init_composes_account_scoped_openai_chat_base_url(
     cloudflare_config: ProviderConfig,
 ) -> None:
     with (
-        patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai,
+        patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai,
         patch("httpx.AsyncClient") as mock_httpx_client,
     ):
         provider = CloudflareProvider(

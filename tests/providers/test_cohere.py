@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from application.errors import InvalidRequestError
-from config.provider_catalog import COHERE_DEFAULT_BASE
-from providers.base import ProviderConfig
+from codexproxy.application.errors import InvalidRequestError
+from codexproxy.config.provider_catalog import COHERE_DEFAULT_BASE
 from tests.providers.request_factory import make_messages_request
 from tests.providers.support import (
     immediate_admission,
+    make_provider_config,
     profiled_provider,
     reasoning_for,
 )
@@ -22,7 +22,7 @@ def make_request(**overrides):
 
 @pytest.fixture
 def cohere_config():
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test_cohere_key",
         base_url=COHERE_DEFAULT_BASE,
         rate_limit=10,
@@ -40,7 +40,7 @@ def test_default_base_url_constant():
 
 
 def test_init_uses_default_base_url_and_api_key(cohere_config):
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         provider = profiled_provider(
             "cohere", cohere_config, admission=immediate_admission()
         )
@@ -53,7 +53,7 @@ def test_init_uses_default_base_url_and_api_key(cohere_config):
 def test_init_strips_trailing_slash(cohere_config):
     config = replace(cohere_config, base_url=f"{COHERE_DEFAULT_BASE}/")
 
-    with patch("providers.openai_chat.provider.AsyncOpenAI"):
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI"):
         provider = profiled_provider("cohere", config, admission=immediate_admission())
 
     assert provider._base_url == COHERE_DEFAULT_BASE
@@ -61,7 +61,7 @@ def test_init_strips_trailing_slash(cohere_config):
 
 def test_build_request_body_sanitizes_documented_unsupported_fields(cohere_provider):
     with patch(
-        "providers.openai_chat.request_policy.build_base_request_body"
+        "codexproxy.providers.openai_chat.request_policy.build_base_request_body"
     ) as mock_convert:
         mock_convert.return_value = {
             "model": "command-a-plus-05-2026",
@@ -110,7 +110,7 @@ def test_build_request_body_maps_reasoning_on_to_high(cohere_provider):
 
 def test_build_request_body_preserves_replayed_reasoning_content(cohere_provider):
     with patch(
-        "providers.openai_chat.request_policy.build_base_request_body"
+        "codexproxy.providers.openai_chat.request_policy.build_base_request_body"
     ) as mock_convert:
         mock_convert.return_value = {
             "model": "command-a-plus-05-2026",
@@ -141,7 +141,7 @@ def test_build_request_body_preserves_replayed_reasoning_content(cohere_provider
 def test_build_request_body_maps_reasoning_off_to_none():
     provider = profiled_provider(
         "cohere",
-        ProviderConfig(
+        make_provider_config(
             api_key="test_cohere_key",
             base_url=COHERE_DEFAULT_BASE,
             rate_limit=10,

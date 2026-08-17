@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from loguru import logger
 
-from config.logging_config import configure_logging
-from core.trace import (
+from codexproxy.config.logging_config import configure_logging
+from codexproxy.core.trace import (
     TRACE_PAYLOAD_BINDING,
     trace_event,
     traced_async_stream,
@@ -82,7 +82,7 @@ def test_trace_payload_excluded_from_default_info_logs(tmp_path) -> None:
 
 def test_sanitize_masks_nested_api_key_strings() -> None:
     """Credential-shaped keys redact without touching normal message text."""
-    from core.trace import sanitize_trace_value
+    from codexproxy.core.trace import sanitize_trace_value
 
     out = sanitize_trace_value(
         {"outer": {"api_key": "secret", "text": "visible"}},

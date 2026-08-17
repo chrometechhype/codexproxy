@@ -2,12 +2,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from api.command_utils import extract_filepaths_from_command
-from api.detection import (
+from codexproxy.api.command_utils import extract_filepaths_from_command
+from codexproxy.api.detection import (
     is_filepath_extraction_request,
     is_suggestion_mode_request,
 )
-from core.anthropic.models import Message, MessagesRequest
+from codexproxy.core.anthropic.models import Message, MessagesRequest
 
 
 def _mk_req(messages, tools=None, system=None):

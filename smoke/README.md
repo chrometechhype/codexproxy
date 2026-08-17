@@ -1,4 +1,4 @@
-﻿# Product E2E Smoke Tests
+# Product E2E Smoke Tests
 
 `smoke/` is local-only. It can launch subprocesses, call real providers, touch
 local model servers, and optionally send/delete bot messages. Hermetic contracts
@@ -56,7 +56,7 @@ Default targets do not send real bot messages or load voice backends:
 | `api` | messages, count_tokens full payload, errors, `/stop`, optimizations | configured provider only for streaming messages |
 | `auth` | canonical bearer auth, conflicting legacy headers, invalid/missing auth | none; test sets an isolated token |
 | `cli` | server entrypoint, Claude CLI adaptive thinking, session cleanup | Claude CLI binary and provider only for real CLI |
-| `clients` | VS Code and JetBrains protocol payloads | configured provider |
+| `clients` | VS Code and JetBrains protocol payloads; Pi, OpenCode, and Cline CLI prompts | configured provider; installed Pi/OpenCode/Cline binaries for their CLI scenarios |
 | `config` | env precedence, removed-env migration, proxy/timeouts | none |
 | `extensibility` | provider runtime and platform factory construction | none |
 | `messaging` | fake Discord/Telegram full flow, literal clear scopes, trees, persistence, voice cancel | none |
@@ -121,7 +121,8 @@ uv run pytest smoke/product -n 0 -s --tb=short
 
 ## Environment
 
-- `CODEX_PROXY_ENV_FILE`: explicit dotenv path for startup/config scenarios.
+- Runtime settings use the isolated managed `~/.cdx/.env`; `CODEX_PROXY_ENV_FILE` is
+  exercised only by the one-time legacy migration smoke.
 - `CODEX_PROXY_LIVE_SMOKE=1`: enables live smoke execution.
 - `CODEX_PROXY_ALLOW_NO_PROVIDER_SMOKE=1`: permits no-provider live smoke for harness work.
 - `CODEX_PROXY_SMOKE_TARGETS`: comma-separated targets, or `all`.

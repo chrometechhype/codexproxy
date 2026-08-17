@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from core.anthropic.models import MessagesRequest
+from codexproxy.core.anthropic.models import MessagesRequest
 
 
 def make_messages_request(

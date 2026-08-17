@@ -1,7 +1,7 @@
 """Anthropic request parsing and public-field serialization."""
 
-from core.anthropic import dump_messages_request
-from core.anthropic.models import (
+from codexproxy.core.anthropic import dump_messages_request
+from codexproxy.core.anthropic.models import (
     ContentBlockServerToolUse,
     ContentBlockText,
     ContentBlockWebSearchToolResult,
@@ -39,7 +39,7 @@ def test_dump_preserves_public_fields_and_nested_extensions() -> None:
     assert body["output_config"] == {"some": "hint"}
 
 
-def test_dump_excludes_unknown_client_hints_and_CODEX_PROXY_routing_state() -> None:
+def test_dump_excludes_unknown_client_hints_and_fcc_routing_state() -> None:
     request = MessagesRequest.model_validate(
         {
             "model": "m",

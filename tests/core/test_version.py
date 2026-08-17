@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-import core.version as version_module
+import codexproxy.core.version as version_module
 
 
 def test_package_version_uses_installed_distribution_metadata() -> None:

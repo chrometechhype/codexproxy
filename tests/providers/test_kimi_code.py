@@ -5,14 +5,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from application.errors import InvalidRequestError
-from application.model_metadata import ProviderModelInfo
-from config.provider_catalog import KIMI_CODE_DEFAULT_BASE
-from core.anthropic.models import MessagesRequest
-from providers.base import ProviderConfig
-from providers.openai_chat import OpenAIChatProvider
+from codexproxy.application.errors import InvalidRequestError
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.provider_catalog import KIMI_CODE_DEFAULT_BASE
+from codexproxy.core.anthropic.models import MessagesRequest
+from codexproxy.providers.openai_chat import OpenAIChatProvider
 from tests.providers.support import (
     immediate_admission,
+    make_provider_config,
     profiled_provider,
     reasoning_for,
 )
@@ -31,7 +31,7 @@ def _request(**overrides) -> MessagesRequest:
 def kimi_code_provider() -> OpenAIChatProvider:
     return profiled_provider(
         "kimi_code",
-        ProviderConfig(
+        make_provider_config(
             api_key="test-subscription-key",
             base_url=KIMI_CODE_DEFAULT_BASE,
             rate_limit=10,

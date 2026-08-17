@@ -3,11 +3,11 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from messaging.command_context import ReplyClearResult, StopOutcome
-from messaging.models import MessageScope
-from messaging.platforms.ports import MessagingStartupNotice
-from messaging.session import SessionStore
-from messaging.trees import (
+from codexproxy.messaging.command_context import ReplyClearResult, StopOutcome
+from codexproxy.messaging.models import MessageScope
+from codexproxy.messaging.platforms.ports import MessagingStartupNotice
+from codexproxy.messaging.session import SessionStore
+from codexproxy.messaging.trees import (
     CancellationReason,
     CancellationResult,
     CancellationUiOwner,
@@ -23,9 +23,9 @@ from messaging.trees import (
     TreeQueueManager,
     TreeSnapshot,
 )
-from messaging.trees.transitions import CancellationEffect
-from messaging.voice import VoiceCancellationResult
-from messaging.workflow import MessagingWorkflow
+from codexproxy.messaging.trees.transitions import CancellationEffect
+from codexproxy.messaging.voice import VoiceCancellationResult
+from codexproxy.messaging.workflow import MessagingWorkflow
 
 _SCOPE = MessageScope(platform="telegram", chat_id="chat_1")
 _OTHER_SCOPE = MessageScope(platform="telegram", chat_id="other_chat")
@@ -121,7 +121,7 @@ async def test_handle_message_turn_trace_always_includes_full_message_text(
     incoming = incoming_message_factory(text=text)
     with (
         patch.object(workflow.turn_intake, "handle_message", new_callable=AsyncMock),
-        patch("messaging.workflow.trace_event") as trace_mock,
+        patch("codexproxy.messaging.workflow.trace_event") as trace_mock,
     ):
         await workflow.handle_message(incoming)
 
@@ -894,7 +894,7 @@ async def test_terminal_close_waits_past_interactive_drain_timeout(
     incoming_message_factory,
 ) -> None:
     monkeypatch.setattr(
-        "messaging.trees.manager.CANCEL_TASK_DRAIN_TIMEOUT_S",
+        "codexproxy.messaging.trees.manager.CANCEL_TASK_DRAIN_TIMEOUT_S",
         0.01,
     )
     runner_started = asyncio.Event()
@@ -1065,7 +1065,7 @@ async def test_session_info_rejects_unregistered_real_session_without_recording_
     handler,
     mock_cli_manager,
 ) -> None:
-    from messaging.node_event_pipeline import (
+    from codexproxy.messaging.node_event_pipeline import (
         handle_session_info_event,
     )
 

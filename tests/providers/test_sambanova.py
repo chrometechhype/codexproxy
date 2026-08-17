@@ -5,11 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from config.provider_catalog import SAMBANOVA_DEFAULT_BASE
-from core.reasoning import ReasoningEffort, ReasoningPolicy
-from providers.base import ProviderConfig
+from codexproxy.config.provider_catalog import SAMBANOVA_DEFAULT_BASE
+from codexproxy.core.reasoning import ReasoningEffort, ReasoningPolicy
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import immediate_admission, profiled_provider
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+    profiled_provider,
+)
 
 
 def make_request(**overrides):
@@ -18,7 +21,7 @@ def make_request(**overrides):
 
 @pytest.fixture
 def sambanova_config():
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test_sambanova_key",
         base_url=SAMBANOVA_DEFAULT_BASE,
         rate_limit=10,
@@ -38,7 +41,7 @@ def test_default_base_url_constant():
 
 
 def test_init_uses_default_base_url_and_api_key(sambanova_config):
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         provider = profiled_provider(
             "sambanova", sambanova_config, admission=immediate_admission()
         )
@@ -51,7 +54,7 @@ def test_init_uses_default_base_url_and_api_key(sambanova_config):
 def test_init_strips_trailing_slash(sambanova_config):
     config = replace(sambanova_config, base_url=f"{SAMBANOVA_DEFAULT_BASE}/")
 
-    with patch("providers.openai_chat.provider.AsyncOpenAI"):
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI"):
         provider = profiled_provider(
             "sambanova", config, admission=immediate_admission()
         )

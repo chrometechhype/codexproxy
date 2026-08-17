@@ -6,12 +6,12 @@ import pytest
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
-from api import request_errors
-from api.handlers import MessagesHandler, TokenCountHandler
-from application import execution
-from config.settings import Settings
-from core.anthropic import AnthropicStreamLedger
-from core.anthropic.models import Message, MessagesRequest
+from codexproxy.api import request_errors
+from codexproxy.api.handlers import MessagesHandler, TokenCountHandler
+from codexproxy.application import execution
+from codexproxy.config.settings import Settings
+from codexproxy.core.anthropic import AnthropicStreamLedger
+from codexproxy.core.anthropic.models import Message, MessagesRequest
 
 
 @pytest.mark.asyncio
@@ -68,7 +68,9 @@ async def test_create_message_logs_full_payload_when_opt_in():
 
 
 def test_stream_ledger_default_debug_has_no_serialized_json_content():
-    with patch("core.anthropic.streaming.emitter.logger.debug") as mock_debug:
+    with patch(
+        "codexproxy.core.anthropic.streaming.emitter.logger.debug"
+    ) as mock_debug:
         ledger = AnthropicStreamLedger("msg_x", "m", 1, log_raw_events=False)
         ledger.message_start()
 
@@ -76,7 +78,9 @@ def test_stream_ledger_default_debug_has_no_serialized_json_content():
 
 
 def test_stream_ledger_raw_logging_includes_event_body_when_enabled():
-    with patch("core.anthropic.streaming.emitter.logger.debug") as mock_debug:
+    with patch(
+        "codexproxy.core.anthropic.streaming.emitter.logger.debug"
+    ) as mock_debug:
         ledger = AnthropicStreamLedger("msg_x", "m", 1, log_raw_events=True)
         ledger.message_start()
 
@@ -158,10 +162,10 @@ async def test_create_message_unexpected_error_terminal_json_ignores_status_code
 
 def test_parse_cli_event_error_logs_metadata_by_default():
     """CLI parser must not log raw error text unless LOG_RAW_CLI_DIAGNOSTICS is on."""
-    from messaging.event_parser import parse_cli_event
+    from codexproxy.messaging.event_parser import parse_cli_event
 
     secret = "user-secret-parser-leak-xyz"
-    with patch("messaging.event_parser.logger.info") as log_info:
+    with patch("codexproxy.messaging.event_parser.logger.info") as log_info:
         parse_cli_event(
             {"type": "error", "error": {"message": secret}}, log_raw_cli=False
         )
@@ -171,10 +175,10 @@ def test_parse_cli_event_error_logs_metadata_by_default():
 
 
 def test_parse_cli_event_error_logs_text_when_log_raw_cli_enabled():
-    from messaging.event_parser import parse_cli_event
+    from codexproxy.messaging.event_parser import parse_cli_event
 
     secret = "visible-cli-parser-msg"
-    with patch("messaging.event_parser.logger.info") as log_info:
+    with patch("codexproxy.messaging.event_parser.logger.info") as log_info:
         parse_cli_event(
             {"type": "error", "error": {"message": secret}}, log_raw_cli=True
         )
@@ -194,7 +198,7 @@ def test_count_tokens_unexpected_error_default_logs_exclude_exception_text():
         settings,
         token_counter=boom,
     )
-    from core.anthropic.models import TokenCountRequest
+    from codexproxy.core.anthropic.models import TokenCountRequest
 
     req = TokenCountRequest(
         model="claude-3-haiku-20240307",

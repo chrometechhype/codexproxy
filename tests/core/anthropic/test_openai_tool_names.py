@@ -1,7 +1,7 @@
 import re
 
-from core.anthropic.models import MessagesRequest
-from core.anthropic.openai_tool_names import OpenAIToolNameCodec
+from codexproxy.core.anthropic.models import MessagesRequest
+from codexproxy.core.anthropic.openai_tool_names import OpenAIToolNameCodec
 
 _PORTABLE_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 

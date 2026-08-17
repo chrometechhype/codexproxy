@@ -2,7 +2,7 @@
 
 from httpx import ConnectError, HTTPStatusError, Request, Response
 
-from core.diagnostics import (
+from codexproxy.core.diagnostics import (
     ERROR_DETAIL_DISPLAY_CAP_BYTES,
     UpstreamErrorDetail,
     attach_upstream_error_body,
@@ -13,7 +13,7 @@ from core.diagnostics import (
     redact_sensitive_error_text,
     safe_exception_message,
 )
-from core.failures import ExecutionFailure, FailureKind
+from codexproxy.core.failures import ExecutionFailure, FailureKind
 
 
 def test_redaction_preserves_context_and_covers_recognizable_credentials() -> None:

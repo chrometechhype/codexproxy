@@ -1,10 +1,10 @@
 from copy import deepcopy
 from typing import Any
 
-from core.anthropic import ReasoningReplayMode
-from core.anthropic.models import MessagesRequest
-from core.reasoning import ReasoningPolicy
-from providers.openai_chat.request_policy import (
+from codexproxy.core.anthropic import ReasoningReplayMode
+from codexproxy.core.anthropic.models import MessagesRequest
+from codexproxy.core.reasoning import ReasoningPolicy
+from codexproxy.providers.openai_chat.request_policy import (
     OpenAIChatRequestPolicy,
     build_openai_chat_request_body,
 )

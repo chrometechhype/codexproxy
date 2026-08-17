@@ -13,15 +13,27 @@ def test_bearer_auth_is_the_only_supported_header_shape(
     smoke_config: SmokeConfig, tmp_path: Path
 ) -> None:
     token = "cdx-smoke-token"
-    env_file = tmp_path / "auth.env"
-    env_file.write_text(f'ANTHROPIC_AUTH_TOKEN="{token}"\n', encoding="utf-8")
+    home = tmp_path / "home"
+    env_file = home / ".cdx" / ".env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text(
+        "CODEX_PROXY_CONFIG_SCHEMA=1\n"
+        "PROXY_AUTH_ENABLED=true\n"
+        f'ANTHROPIC_AUTH_TOKEN="{token}"\n',
+        encoding="utf-8",
+    )
 
     with start_server(
         smoke_config,
         env_overrides={
-            "ANTHROPIC_AUTH_TOKEN": token,
-            "CODEX_PROXY_ENV_FILE": str(env_file),
+            "HOME": str(home),
+            "USERPROFILE": str(home),
             "MESSAGING_PLATFORM": "none",
+        },
+        env_unset={
+            "ANTHROPIC_AUTH_TOKEN",
+            "PROXY_AUTH_ENABLED",
+            "CODEX_PROXY_ENV_FILE",
         },
         name="auth",
     ) as server:

@@ -2,7 +2,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from config.provider_catalog import (
+from codexproxy.config.provider_catalog import (
     PROVIDER_CATALOG,
     ProviderAuthKind,
     ProviderDescriptor,

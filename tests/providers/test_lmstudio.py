@@ -5,17 +5,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from application.errors import InvalidRequestError
-from config.provider_catalog import LMSTUDIO_DEFAULT_BASE
-from core.failures import ExecutionFailure, FailureKind
-from core.reasoning import ReasoningEffort, ReasoningPolicy
-from providers.base import ProviderConfig
-from providers.lmstudio import LMStudioProvider
+from codexproxy.application.errors import InvalidRequestError
+from codexproxy.config.provider_catalog import LMSTUDIO_DEFAULT_BASE
+from codexproxy.core.failures import ExecutionFailure, FailureKind
+from codexproxy.core.reasoning import ReasoningEffort, ReasoningPolicy
+from codexproxy.providers.lmstudio import LMStudioProvider
 from tests.providers.request_factory import make_messages_request
 from tests.providers.support import (
     REASONING_OFF,
     REASONING_ON,
     immediate_admission,
+    make_provider_config,
 )
 
 
@@ -25,7 +25,7 @@ def make_request(**overrides):
 
 @pytest.fixture
 def lmstudio_config():
-    return ProviderConfig(
+    return make_provider_config(
         api_key="lm-studio",
         base_url=LMSTUDIO_DEFAULT_BASE,
         rate_limit=10,
@@ -40,7 +40,7 @@ def lmstudio_provider(lmstudio_config):
 
 def test_init(lmstudio_config):
     """Test provider initialization."""
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         provider = LMStudioProvider(lmstudio_config, admission=immediate_admission())
         assert provider._api_key == "lm-studio"
         assert provider._base_url == LMSTUDIO_DEFAULT_BASE
@@ -65,7 +65,8 @@ def test_adaptive_client_reasoning_uses_documented_named_effort(lmstudio_provide
 
     body = lmstudio_provider._build_request_body(req, reasoning=REASONING_ON)
 
-    assert body["reasoning_effort"] == "high"
+    assert body["extra_body"]["reasoning_effort"] == "high"
+    assert "reasoning_effort" not in body
 
 
 def test_exact_client_budget_is_not_derived_from_output_tokens(lmstudio_provider):
@@ -79,7 +80,8 @@ def test_exact_client_budget_is_not_derived_from_output_tokens(lmstudio_provider
         ),
     )
 
-    assert body["reasoning_tokens"] == 1024
+    assert body["extra_body"]["reasoning_tokens"] == 1024
+    assert "reasoning_tokens" not in body
     assert body["max_tokens"] == 8192
 
 
@@ -186,6 +188,49 @@ async def test_stream_response_text(lmstudio_provider):
 
 
 @pytest.mark.asyncio
+async def test_stream_response_passes_exact_reasoning_budget_via_extra_body(
+    lmstudio_provider,
+):
+    req = make_request()
+    policy = ReasoningPolicy.on(
+        effort=ReasoningEffort.HIGH,
+        budget_tokens=1024,
+    )
+
+    mock_chunk = MagicMock()
+    mock_chunk.choices = [
+        MagicMock(
+            delta=MagicMock(content="Done", reasoning_content=None, tool_calls=None),
+            finish_reason="stop",
+        )
+    ]
+    mock_chunk.usage = MagicMock(completion_tokens=1, prompt_tokens=1)
+
+    async def mock_stream():
+        yield mock_chunk
+
+    with patch.object(
+        lmstudio_provider._client.chat.completions, "create", new_callable=AsyncMock
+    ) as mock_create:
+        mock_create.return_value = mock_stream()
+
+        events = [
+            event
+            async for event in lmstudio_provider.stream_response(
+                req,
+                reasoning=policy,
+            )
+        ]
+
+    await_args = mock_create.await_args
+    assert await_args is not None
+    create_kwargs = await_args.kwargs
+    assert create_kwargs["extra_body"] == {"reasoning_tokens": 1024}
+    assert "reasoning_tokens" not in create_kwargs
+    assert any("message_stop" in event for event in events)
+
+
+@pytest.mark.asyncio
 async def test_cleanup(lmstudio_provider):
     lmstudio_provider._client = AsyncMock()
     await lmstudio_provider.cleanup()
@@ -215,7 +260,7 @@ def test_preflight_context_budget_rejects_request_over_90_percent(lmstudio_provi
     with (
         patch.object(lmstudio_provider, "_loaded_context_length", return_value=1000),
         patch(
-            "providers.lmstudio.client.get_token_count",
+            "codexproxy.providers.lmstudio.client.get_token_count",
             return_value=901,
         ),
         pytest.raises(ExecutionFailure) as exc_info,
@@ -244,7 +289,7 @@ def test_loaded_context_length_reads_max_across_loaded_models(lmstudio_provider)
         ]
     }
     with patch(
-        "providers.lmstudio.client.httpx.get", return_value=response
+        "codexproxy.providers.lmstudio.client.httpx.get", return_value=response
     ) as mock_get:
         value = lmstudio_provider._loaded_context_length()
 
@@ -255,7 +300,7 @@ def test_loaded_context_length_reads_max_across_loaded_models(lmstudio_provider)
 
 def test_loaded_context_length_fails_open_on_error(lmstudio_provider):
     with patch(
-        "providers.lmstudio.client.httpx.get",
+        "codexproxy.providers.lmstudio.client.httpx.get",
         side_effect=httpx.ConnectError("refused"),
     ):
         assert lmstudio_provider._loaded_context_length() is None
@@ -268,7 +313,7 @@ def test_loaded_context_length_is_cached_within_ttl(lmstudio_provider):
         "data": [{"state": "loaded", "loaded_context_length": 40960}]
     }
     with patch(
-        "providers.lmstudio.client.httpx.get", return_value=response
+        "codexproxy.providers.lmstudio.client.httpx.get", return_value=response
     ) as mock_get:
         first = lmstudio_provider._loaded_context_length()
         second = lmstudio_provider._loaded_context_length()

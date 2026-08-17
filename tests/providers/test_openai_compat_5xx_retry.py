@@ -7,12 +7,14 @@ import openai
 import pytest
 from httpx import Request, Response
 
-from config.nim import NimSettings
-from core.failures import ExecutionFailure
-from providers.base import ProviderConfig
-from providers.nvidia_nim import NvidiaNimProvider
+from codexproxy.config.nim import NimSettings
+from codexproxy.core.failures import ExecutionFailure
+from codexproxy.providers.nvidia_nim import NvidiaNimProvider
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import immediate_admission
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+)
 
 
 def _internal_5xx(code: int) -> openai.InternalServerError:
@@ -34,7 +36,7 @@ def _connection_error(message: str = "connect failed") -> openai.APIConnectionEr
 @pytest.mark.parametrize("status_code", [500, 502, 503, 504])
 @pytest.mark.asyncio
 async def test_nim_stream_retries_on_openai_5xx_then_streams(status_code):
-    config = ProviderConfig(
+    config = make_provider_config(
         api_key="test_key",
         base_url="https://test.api.nvidia.com/v1",
         rate_limit=100,
@@ -78,7 +80,7 @@ async def test_nim_stream_retries_on_openai_5xx_then_streams(status_code):
 
 @pytest.mark.asyncio
 async def test_nim_stream_retries_on_pre_stream_connection_error_then_streams():
-    config = ProviderConfig(
+    config = make_provider_config(
         api_key="test_key",
         base_url="https://test.api.nvidia.com/v1",
         rate_limit=100,
@@ -122,7 +124,7 @@ async def test_nim_stream_retries_on_pre_stream_connection_error_then_streams():
 
 @pytest.mark.asyncio
 async def test_nim_stream_connection_error_exhausted_emits_cause_chain():
-    config = ProviderConfig(
+    config = make_provider_config(
         api_key="test_key",
         base_url="https://test.api.nvidia.com/v1",
         rate_limit=100,
@@ -146,7 +148,7 @@ async def test_nim_stream_connection_error_exhausted_emits_cause_chain():
             new_callable=AsyncMock,
             side_effect=error,
         ) as mock_create,
-        patch("providers.openai_chat.provider.trace_event") as trace,
+        patch("codexproxy.providers.openai_chat.provider.trace_event") as trace,
         pytest.raises(ExecutionFailure) as exc_info,
     ):
         [e async for e in provider.stream_response(req, request_id="req_conn")]
@@ -177,7 +179,7 @@ async def test_nim_stream_openai_5xx_exhausted_emits_user_message(
     status_code,
     expect_substr,
 ):
-    config = ProviderConfig(
+    config = make_provider_config(
         api_key="test_key",
         base_url="https://test.api.nvidia.com/v1",
         rate_limit=100,

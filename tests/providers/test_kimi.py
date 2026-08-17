@@ -5,15 +5,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from application.errors import InvalidRequestError
-from application.model_metadata import ProviderModelInfo
-from config.constants import ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS
-from config.provider_catalog import KIMI_DEFAULT_BASE
-from core.anthropic.models import Message, MessagesRequest
-from providers.base import ProviderConfig
-from providers.openai_chat import OpenAIChatProvider
+from codexproxy.application.errors import InvalidRequestError
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.constants import ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS
+from codexproxy.config.provider_catalog import KIMI_DEFAULT_BASE
+from codexproxy.core.anthropic.models import Message, MessagesRequest
+from codexproxy.providers.openai_chat import OpenAIChatProvider
 from tests.providers.support import (
     immediate_admission,
+    make_provider_config,
     profiled_provider,
     reasoning_for,
 )
@@ -23,7 +23,7 @@ from tests.providers.support import (
 def kimi_provider():
     return profiled_provider(
         "kimi",
-        ProviderConfig(
+        make_provider_config(
             api_key="test_kimi_key",
             base_url=KIMI_DEFAULT_BASE,
             rate_limit=10,

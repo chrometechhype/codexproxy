@@ -4,16 +4,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from application.errors import InvalidRequestError
-from config.provider_catalog import GEMINI_DEFAULT_BASE
-from core.reasoning import ReasoningEffort, ReasoningPolicy
-from providers.base import ProviderConfig
-from providers.gemini import GeminiProvider
-from providers.google_openai import (
+from codexproxy.application.errors import InvalidRequestError
+from codexproxy.config.provider_catalog import GEMINI_DEFAULT_BASE
+from codexproxy.core.reasoning import ReasoningEffort, ReasoningPolicy
+from codexproxy.providers.gemini import GeminiProvider
+from codexproxy.providers.google_openai import (
     GOOGLE_SKIP_THOUGHT_SIGNATURE_VALIDATOR,
 )
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import immediate_admission, reasoning_for
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+    reasoning_for,
+)
 
 
 def make_request(**overrides):
@@ -41,7 +44,7 @@ def _google_thinking_config(wire: dict) -> dict | None:
 
 @pytest.fixture
 def gemini_config():
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test_gemini_key",
         base_url=GEMINI_DEFAULT_BASE,
         rate_limit=10,
@@ -56,7 +59,7 @@ def gemini_provider(gemini_config):
 
 def test_init(gemini_config):
     """Test provider initialization."""
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         provider = GeminiProvider(gemini_config, admission=immediate_admission())
         assert provider._api_key == "test_gemini_key"
         assert (
@@ -113,7 +116,7 @@ def test_build_request_body_sdk_wire_json_has_literal_extra_body(gemini_provider
 def test_build_request_body_reasoning_off_sets_reasoning_none():
     """When thinking is off, Gemini uses reasoning_effort none (Gemini 2.5 convention)."""
     provider = GeminiProvider(
-        ProviderConfig(
+        make_provider_config(
             api_key="test_gemini_key",
             base_url=GEMINI_DEFAULT_BASE,
             rate_limit=10,
@@ -244,7 +247,7 @@ def test_build_request_body_merges_caller_nested_google(gemini_provider):
     }
 
 
-def test_gemini_rejects_caller_thinking_config_with_CODEX_PROXY_reasoning_control(
+def test_gemini_rejects_caller_thinking_config_with_fcc_reasoning_control(
     gemini_provider: GeminiProvider,
 ) -> None:
     request = make_request(

@@ -5,14 +5,15 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from config.model_refs import parse_model_name, parse_provider_type
-from config.provider_catalog import (
+from codexproxy.config.loader import clear_settings_cache, get_settings
+from codexproxy.config.model_refs import parse_model_name, parse_provider_type
+from codexproxy.config.provider_catalog import (
     PROVIDER_CATALOG,
     SUPPORTED_PROVIDER_IDS,
     ProviderAuthKind,
 )
-from config.settings import Settings, get_settings
-from providers.runtime.config import has_provider_configuration
+from codexproxy.config.settings import Settings
+from codexproxy.providers.runtime.config import has_provider_configuration
 
 DEFAULT_TARGETS = frozenset(
     {
@@ -48,7 +49,7 @@ SECRET_KEY_PARTS = ("KEY", "TOKEN", "SECRET", "WEBHOOK", "AUTH")
 PROVIDER_SMOKE_DEFAULT_MODELS: dict[str, str] = {
     "nvidia_nim": "nvidia_nim/nvidia/nemotron-3-super-120b-a12b",
     "azure_openai": "azure_openai/gpt-5.1",
-    "open_router": "open_router/moonshotai/kimi-k2.6:free",
+    "open_router": "open_router/nvidia/nemotron-3-super-120b-a12b:free",
     "mistral": "mistral/devstral-small-latest",
     "mistral_codestral": "mistral_codestral/codestral-latest",
     "deepseek": "deepseek/deepseek-v4-pro",
@@ -59,7 +60,7 @@ PROVIDER_SMOKE_DEFAULT_MODELS: dict[str, str] = {
     "kimi_code": "kimi_code/k3",
     "wafer": "wafer/DeepSeek-V4-Pro",
     "minimax": "minimax/MiniMax-M3",
-    "opencode": "opencode/gpt-5.3-codex",
+    "opencode_zen": "opencode_zen/gpt-5.3-codex",
     "opencode_go": "opencode_go/minimax-m2.7",
     "vercel": "vercel/openai/gpt-5.5",
     "bedrock": "bedrock/openai.gpt-oss-120b",
@@ -67,13 +68,30 @@ PROVIDER_SMOKE_DEFAULT_MODELS: dict[str, str] = {
     "cohere": "cohere/command-a-plus-05-2026",
     "github_models": "github_models/openai/gpt-4.1",
     "zai": "zai/glm-5.2",
+    "zai_api": "zai_api/glm-4.7-flash",
     "gemini": "gemini/models/gemini-3.1-flash-lite",
     "vertex": "vertex/google/gemini-3.5-flash",
     "groq": "groq/llama-3.3-70b-versatile",
+    "cline_pass": "cline_pass/cline-pass/deepseek-v4-flash",
+    "xai": "xai/grok-4.5",
+    "qwencloud": "qwencloud/qwen3.7-plus",
+    "qwencloud_coding": "qwencloud_coding/qwen3.7-plus",
+    "together": "together/zai-org/GLM-5.2",
+    "deepinfra": "deepinfra/deepseek-ai/DeepSeek-V4-Flash",
+    "siliconflow": "siliconflow/Qwen/Qwen3-32B",
+    "nebius": "nebius/Qwen/Qwen3-30B-A3B",
+    "chutes": "chutes/Qwen/Qwen3-32B-TEE",
+    "featherless": "featherless/Qwen/Qwen3-32B",
     "sambanova": "sambanova/Meta-Llama-3.3-70B-Instruct",
     "kilo": "kilo/kilo-auto/free",
     "cerebras": "cerebras/llama3.1-8b",
+    "novita": "novita/deepseek/deepseek-v4-flash-0731",
     "cloudflare": "cloudflare/@cf/moonshotai/kimi-k2.6",
+    "tokenrouter": "tokenrouter/moonshotai/kimi-k3-free",
+    "nararoute": "nararoute/kimi-k3-free",
+    "agnes": "agnes/agnes-2.0-flash",
+    "zenmux": "zenmux/deepseek/deepseek-v4-flash-free",
+    "wandb": "wandb/openai/gpt-oss-20b",
 }
 MISTRAL_REASONING_SMOKE_DEFAULT_MODEL = "mistral/mistral-medium-3-5"
 
@@ -161,7 +179,7 @@ class SmokeConfig:
     @classmethod
     def load(cls) -> SmokeConfig:
         root = Path(__file__).resolve().parents[2]
-        get_settings.cache_clear()
+        clear_settings_cache()
         settings = get_settings()
         return cls(
             root=root,
@@ -387,7 +405,7 @@ def openrouter_free_cli_model_refs(
 
 def auth_headers(token: str | None = None) -> dict[str, str]:
     settings = get_settings()
-    resolved = token if token is not None else settings.anthropic_auth_token
+    resolved = token if token is not None else settings.proxy_auth_token
     headers = {
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",

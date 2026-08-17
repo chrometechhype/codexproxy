@@ -1,6 +1,6 @@
 """Tests for Anthropic protocol response models."""
 
-from core.anthropic.models import (
+from codexproxy.core.anthropic.models import (
     ContentBlockText,
     ContentBlockThinking,
     ContentBlockToolUse,

@@ -70,7 +70,7 @@ def test_pi_cli_prompt_e2e(smoke_config: SmokeConfig, tmp_path: Path) -> None:
     if not uv_bin:
         pytest.skip("missing_env: uv not found")
     provider_model = ProviderMatrixDriver(smoke_config).first_model()
-    auth_token = "cdx-pi-smoke-token"
+    auth_token = smoke_config.settings.proxy_auth_token
 
     with SmokeServerDriver(
         smoke_config,
@@ -116,6 +116,139 @@ def test_pi_cli_prompt_e2e(smoke_config: SmokeConfig, tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr or result.stdout
     assert "CODEX_PROXY_SMOKE_PI" in result.stdout
     assert "POST /v1/messages" in server_log
+
+
+@pytest.mark.smoke_target("clients")
+def test_opencode_cli_prompt_e2e(smoke_config: SmokeConfig, tmp_path: Path) -> None:
+    if not shutil.which("opencode"):
+        pytest.skip("missing_env: OpenCode CLI not found")
+    uv_bin = shutil.which("uv")
+    if not uv_bin:
+        pytest.skip("missing_env: uv not found")
+    provider_model = ProviderMatrixDriver(smoke_config).first_model()
+    auth_token = smoke_config.settings.proxy_auth_token
+    isolated_home = tmp_path / "opencode-home"
+    isolated_config = tmp_path / "opencode-config"
+    for path in (isolated_home, isolated_config):
+        path.mkdir()
+
+    with SmokeServerDriver(
+        smoke_config,
+        name="product-opencode-cli",
+        env_overrides={
+            "MODEL": provider_model.full_model,
+            "ANTHROPIC_AUTH_TOKEN": auth_token,
+            "MESSAGING_PLATFORM": "none",
+        },
+    ).run() as server:
+        env = os.environ.copy()
+        env.update(
+            {
+                "HOST": "127.0.0.1",
+                "PORT": str(server.port),
+                "CODEX_PROXY_OPEN_BROWSER": "0",
+                "ANTHROPIC_AUTH_TOKEN": auth_token,
+                "HOME": str(isolated_home),
+                "USERPROFILE": str(isolated_home),
+                "XDG_CONFIG_HOME": str(isolated_home / "config"),
+                "XDG_DATA_HOME": str(isolated_home / "data"),
+                "XDG_CACHE_HOME": str(isolated_home / "cache"),
+                "XDG_STATE_HOME": str(isolated_home / "state"),
+                "OPENCODE_CONFIG_DIR": str(isolated_config),
+            }
+        )
+        env.pop("OPENCODE_CONFIG", None)
+        env.pop("OPENCODE_CONFIG_CONTENT", None)
+        result = subprocess.run(
+            [
+                uv_bin,
+                "run",
+                "--project",
+                str(smoke_config.root),
+                "--no-sync",
+                "cdx-opencode",
+                "run",
+                "--format",
+                "json",
+                "--model",
+                f"codexproxy/{provider_model.full_model}",
+                "Reply with exactly CODEX_PROXY_SMOKE_OPENCODE",
+            ],
+            cwd=tmp_path,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=smoke_config.timeout_s + 15,
+        )
+        server_log = server.log_path.read_text(encoding="utf-8", errors="replace")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "CODEX_PROXY_SMOKE_OPENCODE" in result.stdout
+    assert "POST /v1/responses" in server_log
+    assert "POST /v1/chat/completions" not in server_log
+
+
+@pytest.mark.smoke_target("clients")
+def test_cline_cli_prompt_e2e(smoke_config: SmokeConfig, tmp_path: Path) -> None:
+    if not shutil.which("cline"):
+        pytest.skip("missing_env: Cline CLI not found")
+    uv_bin = shutil.which("uv")
+    if not uv_bin:
+        pytest.skip("missing_env: uv not found")
+    provider_model = ProviderMatrixDriver(smoke_config).first_model()
+    auth_token = smoke_config.settings.proxy_auth_token
+    isolated_home = tmp_path / "cline-home"
+    isolated_home.mkdir()
+
+    with SmokeServerDriver(
+        smoke_config,
+        name="product-cline-cli",
+        env_overrides={
+            "MODEL": provider_model.full_model,
+            "ANTHROPIC_AUTH_TOKEN": auth_token,
+            "MESSAGING_PLATFORM": "none",
+        },
+    ).run() as server:
+        env = os.environ.copy()
+        env.update(
+            {
+                "HOST": "127.0.0.1",
+                "PORT": str(server.port),
+                "CODEX_PROXY_OPEN_BROWSER": "0",
+                "ANTHROPIC_AUTH_TOKEN": auth_token,
+                "HOME": str(isolated_home),
+                "USERPROFILE": str(isolated_home),
+            }
+        )
+        env.pop("CLINE_PROVIDER_SETTINGS_PATH", None)
+        env.pop("CLINE_SESSION_BACKEND_MODE", None)
+        result = subprocess.run(
+            [
+                uv_bin,
+                "run",
+                "--project",
+                str(smoke_config.root),
+                "--no-sync",
+                "cdx-cline",
+                "--json",
+                "--model",
+                provider_model.full_model,
+                "Reply with exactly CODEX_PROXY_SMOKE_CLINE",
+            ],
+            cwd=tmp_path,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=smoke_config.timeout_s + 15,
+        )
+        server_log = server.log_path.read_text(encoding="utf-8", errors="replace")
+
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "CODEX_PROXY_SMOKE_CLINE" in result.stdout
+    assert "POST /v1/responses" in server_log
+    assert "POST /v1/chat/completions" not in server_log
 
 
 @pytest.mark.smoke_target("cli")
@@ -201,7 +334,7 @@ def test_claude_cli_provider_error_e2e(
     assert "empty or malformed" not in lower
     assert "proxy or gateway intercepting" not in lower
     assert "api error" in lower or "selected model" in lower
-    assert "codexproxy smoke provider rejected the request deliberately" in lower
+    assert "cdx smoke provider rejected the request deliberately" in lower
     assert failed_downstream_requests == 1, server_log
     assert provider_requests == ["/v1/chat/completions"]
 
@@ -240,8 +373,8 @@ def _deliberately_failing_openai_provider() -> Iterator[tuple[str, list[str]]]:
                 {
                     "error": {
                         "type": "invalid_request_error",
-                        "code": "CODEX_PROXY_smoke_failure",
-                        "message": "CodexProxy smoke provider rejected the request deliberately.",
+                        "code": "fcc_smoke_failure",
+                        "message": "CDX smoke provider rejected the request deliberately.",
                     }
                 },
             )

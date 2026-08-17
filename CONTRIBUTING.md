@@ -52,7 +52,7 @@ GitHub CI runs Ruff in check-only mode and also bans `# type: ignore`, `# ty: ig
 
 - Target Python 3.14 and rely on native lazy annotations; do not add `from __future__ import annotations`.
 - Python 3.14 supports multiple exception types without parentheses, such as `except TypeError, ValueError:`.
-- Keep shared Anthropic protocol behavior under `src//core/anthropic/` rather than importing utilities from another provider.
+- Keep shared Anthropic protocol behavior under `src/codexproxy/core/anthropic/` rather than importing utilities from another provider.
 - Keep provider-specific configuration in the provider that owns it.
 - Remove dead compatibility code when completing migrations unless preserving a published interface is explicitly required.
 

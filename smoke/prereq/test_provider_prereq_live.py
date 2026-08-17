@@ -3,7 +3,7 @@ import time
 import httpx
 import pytest
 
-from core.anthropic.stream_contracts import (
+from codexproxy.core.anthropic.stream_contracts import (
     assert_anthropic_stream_contract,
     text_content,
     thinking_content,

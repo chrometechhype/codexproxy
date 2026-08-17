@@ -2,17 +2,17 @@ from unittest.mock import patch
 
 import pytest
 
-from application.errors import UnknownProviderError
-from application.routing import ModelRouter
-from config.provider_catalog import PROVIDER_CATALOG
-from config.reasoning import ReasoningPreference
-from config.settings import Settings
-from core.anthropic.models import (
+from codexproxy.application.errors import UnknownProviderError
+from codexproxy.application.routing import ModelRouter
+from codexproxy.config.provider_catalog import PROVIDER_CATALOG
+from codexproxy.config.reasoning import ReasoningPreference
+from codexproxy.config.settings import Settings
+from codexproxy.core.anthropic.models import (
     Message,
     MessagesRequest,
     TokenCountRequest,
 )
-from core.reasoning import ReasoningControl, ReasoningEffort
+from codexproxy.core.reasoning import ReasoningControl, ReasoningEffort
 
 
 @pytest.fixture
@@ -149,6 +149,20 @@ def test_model_router_routes_prefixed_provider_model_directly(settings):
     assert routed.resolved.provider_model_ref == "deepseek/deepseek-chat"
 
 
+def test_model_router_routes_explicit_opencode_zen_prefix(settings):
+    routed = ModelRouter(settings).resolve_messages_request(
+        MessagesRequest(
+            model="opencode_zen/kimi-k2.6",
+            max_tokens=100,
+            messages=[Message(role="user", content="hello")],
+        )
+    )
+
+    assert routed.request.model == "kimi-k2.6"
+    assert routed.resolved.provider_id == "opencode_zen"
+    assert routed.resolved.provider_model_ref == "opencode_zen/kimi-k2.6"
+
+
 def test_model_router_routes_wafer_provider_model_directly(settings):
     routed = ModelRouter(settings).resolve_messages_request(
         MessagesRequest(
@@ -204,7 +218,7 @@ def test_model_router_routes_gateway_encoded_provider_model_directly(settings):
 def test_model_router_routes_no_thinking_gateway_model_directly(settings):
     routed = ModelRouter(settings).resolve_messages_request(
         MessagesRequest(
-            model="claude-3-freecc-no-thinking/nvidia_nim/deepseek-ai/deepseek-v4-pro",
+            model="claude-3-codexcc-no-thinking/nvidia_nim/deepseek-ai/deepseek-v4-pro",
             max_tokens=100,
             messages=[Message(role="user", content="hello")],
         )
@@ -213,7 +227,7 @@ def test_model_router_routes_no_thinking_gateway_model_directly(settings):
     assert routed.request.model == "deepseek-ai/deepseek-v4-pro"
     assert (
         routed.resolved.original_model
-        == "claude-3-freecc-no-thinking/nvidia_nim/deepseek-ai/deepseek-v4-pro"
+        == "claude-3-codexcc-no-thinking/nvidia_nim/deepseek-ai/deepseek-v4-pro"
     )
     assert routed.resolved.provider_id == "nvidia_nim"
     assert routed.resolved.provider_model == "deepseek-ai/deepseek-v4-pro"
@@ -250,7 +264,7 @@ def test_model_router_routes_token_count_request(settings):
 
 
 def test_model_router_logs_mapping(settings):
-    with patch("application.routing.logger.debug") as mock_log:
+    with patch("codexproxy.application.routing.logger.debug") as mock_log:
         ModelRouter(settings).resolve("claude-2.1")
 
     mock_log.assert_called()

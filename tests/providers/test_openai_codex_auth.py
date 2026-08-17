@@ -10,15 +10,15 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
-from application.connected_accounts import (
+from codexproxy.application.connected_accounts import (
     ConnectedAccountLoginMode,
 )
-from providers.openai_codex import login as openai_login
-from providers.openai_codex.auth import (
+from codexproxy.providers.openai_codex import login as openai_login
+from codexproxy.providers.openai_codex.auth import (
     OpenAIAuthManager,
     OpenAIReconnectRequired,
 )
-from providers.openai_codex.login import BrowserAuthorization
+from codexproxy.providers.openai_codex.login import BrowserAuthorization
 
 
 def _jwt(payload: dict[str, object]) -> str:

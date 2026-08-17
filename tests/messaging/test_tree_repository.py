@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from messaging.models import IncomingMessage, MessageScope
-from messaging.trees import (
+from codexproxy.messaging.models import IncomingMessage, MessageScope
+from codexproxy.messaging.trees import (
     ConversationSnapshot,
     MessageState,
     NodeClaim,
@@ -13,8 +13,8 @@ from messaging.trees import (
     TreeQueueManager,
     TreeSnapshot,
 )
-from messaging.trees.node import MessageNode
-from messaging.trees.snapshot import node_to_snapshot
+from codexproxy.messaging.trees.node import MessageNode
+from codexproxy.messaging.trees.snapshot import node_to_snapshot
 
 TELEGRAM_CHAT = MessageScope(platform="telegram", chat_id="chat")
 ROOT_IDENTITY = TreeIdentity(scope=TELEGRAM_CHAT, root_id="root")

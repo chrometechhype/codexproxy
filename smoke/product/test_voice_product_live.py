@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from messaging.transcription import TranscriptionService
-from providers.nvidia_nim.voice import NvidiaNimTranscriber
+from codexproxy.messaging.transcription import TranscriptionService
+from codexproxy.providers.nvidia_nim.voice import NvidiaNimTranscriber
 from smoke.lib.config import SmokeConfig
 from smoke.lib.e2e import VoiceFixtureDriver
 
@@ -54,14 +54,15 @@ async def test_voice_nim_backend_e2e(smoke_config: SmokeConfig, tmp_path: Path) 
         )
     if smoke_config.settings.whisper_device != "nvidia_nim":
         pytest.skip("missing_env: WHISPER_DEVICE must be nvidia_nim")
-    if not smoke_config.settings.nvidia_nim_api_key.strip():
+    api_key = smoke_config.settings.nvidia_nim_api_key
+    if api_key is None:
         pytest.skip("missing_env: NVIDIA_NIM_API_KEY is required")
 
     wav_path = tmp_path / "voice-nim-product.wav"
     VoiceFixtureDriver.write_tone_wav(wav_path)
     transcriber = NvidiaNimTranscriber(
         model=smoke_config.settings.whisper_model,
-        api_key=smoke_config.settings.nvidia_nim_api_key,
+        api_key=api_key,
     )
     try:
         text = await transcriber.transcribe(wav_path)

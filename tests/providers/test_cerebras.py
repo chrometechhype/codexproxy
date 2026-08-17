@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from config.provider_catalog import CEREBRAS_DEFAULT_BASE
-from providers.base import ProviderConfig
+from codexproxy.config.provider_catalog import CEREBRAS_DEFAULT_BASE
 from tests.providers.request_factory import make_messages_request
 from tests.providers.support import (
     REASONING_OFF,
     immediate_admission,
+    make_provider_config,
     profiled_provider,
     reasoning_for,
 )
@@ -53,7 +53,7 @@ def make_reasoning_tool_history_request():
 
 @pytest.fixture
 def cerebras_config():
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test_cerebras_key",
         base_url=CEREBRAS_DEFAULT_BASE,
         rate_limit=10,
@@ -70,7 +70,7 @@ def cerebras_provider(cerebras_config):
 
 def test_init(cerebras_config):
     """Test provider initialization."""
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         provider = profiled_provider(
             "cerebras", cerebras_config, admission=immediate_admission()
         )
@@ -117,7 +117,7 @@ def test_build_request_body_replays_reasoning_as_tagged_content(cerebras_provide
 def test_replay_is_independent_of_current_turn_reasoning_control():
     provider = profiled_provider(
         "cerebras",
-        ProviderConfig(
+        make_provider_config(
             api_key="test_cerebras_key",
             base_url=CEREBRAS_DEFAULT_BASE,
             rate_limit=10,
@@ -142,7 +142,7 @@ def test_replay_is_independent_of_current_turn_reasoning_control():
 def test_build_request_body_remaps_max_tokens_preserves_message_name(cerebras_provider):
     """Cerebras does not strip message ``name``; ``max_tokens`` maps to completion field."""
     with patch(
-        "providers.openai_chat.request_policy.build_base_request_body"
+        "codexproxy.providers.openai_chat.request_policy.build_base_request_body"
     ) as mock_convert:
         mock_convert.return_value = {
             "model": "llama3.1-8b",
@@ -159,7 +159,7 @@ def test_build_request_body_remaps_max_tokens_preserves_message_name(cerebras_pr
 
 def test_build_request_body_prefers_existing_max_completion_tokens(cerebras_provider):
     with patch(
-        "providers.openai_chat.request_policy.build_base_request_body"
+        "codexproxy.providers.openai_chat.request_policy.build_base_request_body"
     ) as mock_convert:
         mock_convert.return_value = {
             "model": "llama3.1-8b",

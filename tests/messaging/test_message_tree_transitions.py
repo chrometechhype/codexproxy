@@ -3,9 +3,9 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from messaging.models import MessageScope
-from messaging.trees.node import MessageNode, MessageState
-from messaging.trees.runtime import MessageTree
+from codexproxy.messaging.models import MessageScope
+from codexproxy.messaging.trees.node import MessageNode, MessageState
+from codexproxy.messaging.trees.runtime import MessageTree
 
 _SCOPE = MessageScope(platform="telegram", chat_id="chat")
 

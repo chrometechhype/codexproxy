@@ -2,11 +2,11 @@
 set -eu
 
 PACKAGE_NAME="codexproxy"
-CODEX_PROXY_HOME_DIRNAME=".codexproxy"
+CODEX_PROXY_HOME_DIRNAME=".cdx"
 CODEX_PROXY_MACOS_BUNDLE_ID="io.github.alishahryar1.codexproxy"
 CODEX_PROXY_MACOS_OWNER_FILE=".codexproxy-owner"
 # Include retired entry points so older installations are fully stopped and removed.
-CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-claude cdx-codex cdx-pi cdx-init codexproxy"
+CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-claude cdx-codex cdx-pi cdx-opencode cdx-cline cdx-init codexproxy"
 
 dry_run=0
 uv_tool_bin=""
@@ -15,8 +15,8 @@ show_usage() {
     cat <<'USAGE'
 Usage: uninstall.sh [options]
 
-Removes the CodexProxy uv tool and deletes ~/.codexproxy/ after removal is verified.
-Does not remove uv, Claude Code, Codex, Pi, the uv-managed Python runtime, or shared PATH entries.
+Removes the CodexProxy uv tool and deletes ~/.cdx/ after removal is verified.
+Does not remove uv, Claude Code, Codex, Pi, OpenCode, the uv-managed Python runtime, or shared PATH entries.
 
 Options:
   --dry-run                Print commands without running them.
@@ -94,7 +94,7 @@ add_known_uv_paths() {
     hash -r 2>/dev/null || true
 }
 
-CODEX_PROXY_process_ids() {
+fcc_process_ids() {
     command_name=$1
 
     if command -v pgrep >/dev/null 2>&1; then
@@ -120,14 +120,14 @@ CODEX_PROXY_process_ids() {
         ' || true
 }
 
-is_CODEX_PROXY_command_running() {
-    [ -n "$(CODEX_PROXY_process_ids "$1")" ]
+is_fcc_command_running() {
+    [ -n "$(fcc_process_ids "$1")" ]
 }
 
-assert_no_CODEX_PROXY_processes_running() {
+assert_no_fcc_processes_running() {
     running=""
     for command_name in $CODEX_PROXY_COMMANDS; do
-        if is_CODEX_PROXY_command_running "$command_name"; then
+        if is_fcc_command_running "$command_name"; then
             running="${running} ${command_name}"
         fi
     done
@@ -146,7 +146,7 @@ initialize_uv_context() {
     fi
 
     if ! command -v uv >/dev/null 2>&1; then
-        fail "uv is required to remove the CodexProxy tool. Install uv, then rerun this uninstaller; ~/.codexproxy was not deleted."
+        fail "uv is required to remove the CodexProxy tool. Install uv, then rerun this uninstaller; ~/.cdx was not deleted."
     fi
 
     print_command uv tool dir --bin
@@ -154,12 +154,12 @@ initialize_uv_context() {
         :
     else
         status=$?
-        fail "Could not determine the uv tool bin directory (exit code $status); ~/.codexproxy was not deleted."
+        fail "Could not determine the uv tool bin directory (exit code $status); ~/.cdx was not deleted."
     fi
-    [ -n "$uv_tool_bin" ] || fail "uv returned an empty tool bin directory; ~/.codexproxy was not deleted."
+    [ -n "$uv_tool_bin" ] || fail "uv returned an empty tool bin directory; ~/.cdx was not deleted."
 }
 
-uninstall_() {
+uninstall_codexproxy() {
     print_command uv tool uninstall "$PACKAGE_NAME"
     if [ "$dry_run" -eq 1 ]; then
         return 0
@@ -181,10 +181,10 @@ uninstall_() {
     if [ -n "$output" ]; then
         printf '%s\n' "$output" >&2
     fi
-    fail "uv tool uninstall $PACKAGE_NAME failed with exit code $status; ~/.codexproxy was not deleted."
+    fail "uv tool uninstall $PACKAGE_NAME failed with exit code $status; ~/.cdx was not deleted."
 }
 
-verify_CODEX_PROXY_commands_removed() {
+verify_fcc_commands_removed() {
     if [ "$dry_run" -eq 1 ]; then
         printf '+ verify all CodexProxy entry points are absent from the uv tool bin directory\n'
         return 0
@@ -198,11 +198,11 @@ verify_CODEX_PROXY_commands_removed() {
         fi
     done
     if [ -n "$remaining" ]; then
-        fail "CodexProxy entry points remain after uv uninstall:${remaining}; ~/.codexproxy was not deleted."
+        fail "CodexProxy entry points remain after uv uninstall:${remaining}; ~/.cdx was not deleted."
     fi
 }
 
-macos_app_is_CODEX_PROXY_owned() {
+macos_app_is_fcc_owned() {
     app_dir=$1
     owner_file="$app_dir/Contents/$CODEX_PROXY_MACOS_OWNER_FILE"
     [ -d "$app_dir" ] &&
@@ -217,7 +217,7 @@ remove_macos_desktop_app() {
     app_dir="$HOME/Applications/CodexProxy.app"
     desktop_link="$HOME/Desktop/CodexProxy.app"
 
-    if ! macos_app_is_CODEX_PROXY_owned "$app_dir"; then
+    if ! macos_app_is_fcc_owned "$app_dir"; then
         if [ -e "$app_dir" ] || [ -L "$app_dir" ]; then
             printf 'An app not managed by CodexProxy exists at %s; leaving it unchanged.\n' "$app_dir"
         fi
@@ -231,26 +231,26 @@ remove_macos_desktop_app() {
         if [ "$(readlink "$desktop_link")" = "$app_dir" ]; then
             run rm -f "$desktop_link"
         else
-            printf 'A non-CodexProxy link exists at %s; leaving it unchanged.\n' "$desktop_link"
+            printf 'A non-CDX link exists at %s; leaving it unchanged.\n' "$desktop_link"
         fi
     elif [ -e "$desktop_link" ]; then
-        printf 'A non-CodexProxy item exists at %s; leaving it unchanged.\n' "$desktop_link"
+        printf 'A non-CDX item exists at %s; leaving it unchanged.\n' "$desktop_link"
     fi
     if [ -e "$app_dir" ]; then
         run rm -rf "$app_dir"
     fi
 }
 
-purge_CODEX_PROXY_home() {
-    CODEX_PROXY_home="$HOME/$CODEX_PROXY_HOME_DIRNAME"
-    if [ ! -e "$CODEX_PROXY_home" ]; then
-        printf 'No CodexProxy config directory at %s; skipping purge.\n' "$CODEX_PROXY_home"
+purge_fcc_home() {
+    fcc_home="$HOME/$CODEX_PROXY_HOME_DIRNAME"
+    if [ ! -e "$fcc_home" ]; then
+        printf 'No CDX config directory at %s; skipping purge.\n' "$fcc_home"
         return 0
     fi
 
-    run rm -rf "$CODEX_PROXY_home"
-    if [ "$dry_run" -eq 0 ] && [ -e "$CODEX_PROXY_home" ]; then
-        fail "CodexProxy config directory still exists after deletion: $CODEX_PROXY_home"
+    run rm -rf "$fcc_home"
+    if [ "$dry_run" -eq 0 ] && [ -e "$fcc_home" ]; then
+        fail "CDX config directory still exists after deletion: $fcc_home"
     fi
 }
 
@@ -277,26 +277,26 @@ parse_args "$@"
 [ -n "${HOME:-}" ] || fail "HOME is not set; cannot locate CodexProxy data."
 
 step "Checking for running CodexProxy processes"
-assert_no_CODEX_PROXY_processes_running
+assert_no_fcc_processes_running
 
 step "Locating the uv-managed CodexProxy installation"
 initialize_uv_context
 
 step "Removing the CodexProxy uv tool"
-uninstall_
+uninstall_codexproxy
 
 step "Verifying CodexProxy entry points were removed"
-verify_CODEX_PROXY_commands_removed
+verify_fcc_commands_removed
 
 step "Removing the CodexProxy desktop launcher"
 remove_macos_desktop_app
 
-step "Purging CodexProxy config and data from ~/.codexproxy"
-purge_CODEX_PROXY_home
+step "Purging CDX config and data from ~/.cdx"
+purge_fcc_home
 
 if [ "$dry_run" -eq 1 ]; then
     printf '\nDry run complete. No changes were made.\n'
 else
     printf '\nCodexProxy has been removed and verified.\n'
-    printf 'uv, Claude Code, Codex, Pi, the uv-managed Python runtime, and shared PATH entries were left installed.\n'
+    printf 'uv, Claude Code, Codex, Pi, OpenCode, the uv-managed Python runtime, and shared PATH entries were left installed.\n'
 fi

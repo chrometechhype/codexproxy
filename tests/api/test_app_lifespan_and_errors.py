@@ -7,23 +7,22 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from application.errors import (
+from codexproxy.application.errors import (
     ApplicationUnavailableError,
     InvalidRequestError,
 )
-from application.model_metadata import ProviderModelInfo
-from config.settings import Settings
-from messaging.transcription import TranscriptionService
-from providers.nvidia_nim.client import NvidiaNimProvider
-from providers.nvidia_nim.voice import NvidiaNimTranscriber
-from runtime.application import (
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.settings import Settings
+from codexproxy.messaging.transcription import TranscriptionService
+from codexproxy.providers.nvidia_nim.client import NvidiaNimProvider
+from codexproxy.providers.nvidia_nim.voice import NvidiaNimTranscriber
+from codexproxy.runtime.application import (
     ApplicationRuntime,
     startup_failure_message,
-    warn_if_process_auth_token,
 )
-from runtime.asgi import RuntimeASGIApp
-from runtime.bootstrap import _create_transcriber, build_asgi_app
-from runtime.provider_manager import ProviderRuntimeManager
+from codexproxy.runtime.asgi import RuntimeASGIApp
+from codexproxy.runtime.bootstrap import _create_transcriber, build_asgi_app
+from codexproxy.runtime.provider_manager import ProviderRuntimeManager
 from tests.api.support import create_test_app
 
 
@@ -32,33 +31,10 @@ def _settings(**updates: object) -> Settings:
 
 
 @pytest.fixture(autouse=True)
-def _redirect_CODEX_PROXY_home(monkeypatch, tmp_path):
+def _redirect_fcc_home(monkeypatch, tmp_path):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
-
-
-def test_warn_if_process_auth_token_logs_warning(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "process-token")
-    monkeypatch.setitem(Settings.model_config, "env_file", ())
-
-    with patch("runtime.application.logger.warning") as warning:
-        warn_if_process_auth_token(Settings.model_construct())
-
-    warning.assert_called_once()
-    assert "ANTHROPIC_AUTH_TOKEN" in warning.call_args.args[0]
-
-
-def test_warn_if_process_auth_token_skips_explicit_dotenv_config(monkeypatch, tmp_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text("ANTHROPIC_AUTH_TOKEN=\n", encoding="utf-8")
-    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "process-token")
-    monkeypatch.setitem(Settings.model_config, "env_file", (env_file,))
-
-    with patch("runtime.application.logger.warning") as warning:
-        warn_if_process_auth_token(Settings.model_construct())
-
-    warning.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -82,7 +58,7 @@ async def test_runtime_startup_logs_admin_url_without_printed_server_banner():
         patch.object(manager, "start_model_list_refresh") as start_refresh,
         patch.object(manager, "close", new=AsyncMock()),
         patch(
-            "runtime.application.messaging_platform_factory.create_messaging_components",
+            "codexproxy.runtime.application.messaging_platform_factory.create_messaging_components",
             return_value=None,
         ),
         patch.object(logging, "getLogger", return_value=uvicorn_logger) as get_logger,
@@ -125,7 +101,7 @@ def test_application_error_handler_does_not_log_error_message():
     async def _raise_application_secret():
         raise InvalidRequestError(secret)
 
-    with patch("api.app.logger.error") as log_error:
+    with patch("codexproxy.api.app.logger.error") as log_error:
         response = TestClient(app).get("/raise_application_secret")
 
     assert response.status_code == 400
@@ -160,7 +136,7 @@ def test_general_exception_default_log_excludes_exception_message():
     async def _raise_secret():
         raise ValueError(secret)
 
-    with patch("api.app.logger.error") as log_error:
+    with patch("codexproxy.api.app.logger.error") as log_error:
         response = TestClient(app, raise_server_exceptions=False).get("/raise_secret")
 
     assert response.status_code == 500
@@ -197,7 +173,7 @@ async def test_runtime_startup_warms_catalog_before_background_refresh():
         ) as refresh,
         patch.object(manager, "close", new=AsyncMock()),
         patch(
-            "runtime.application.messaging_platform_factory.create_messaging_components",
+            "codexproxy.runtime.application.messaging_platform_factory.create_messaging_components",
             return_value=None,
         ),
     ):
@@ -320,10 +296,10 @@ def test_bootstrap_configures_default_log_and_publishes_only_services(tmp_path):
 
     with (
         patch(
-            "runtime.bootstrap.server_log_path",
+            "codexproxy.runtime.bootstrap.server_log_path",
             return_value=log_path,
         ),
-        patch("runtime.bootstrap.configure_logging") as configure,
+        patch("codexproxy.runtime.bootstrap.configure_logging") as configure,
     ):
         asgi_app = build_asgi_app(settings)
 
@@ -336,13 +312,24 @@ def test_bootstrap_configures_default_log_and_publishes_only_services(tmp_path):
     assert set(api_app.state._state) == {"services"}
 
 
+def test_bootstrap_app_transparently_exposes_fastapi_interface() -> None:
+    with patch("codexproxy.runtime.bootstrap.configure_logging"):
+        asgi_app = build_asgi_app(_settings())
+
+    api_app = cast(FastAPI, asgi_app.app)
+    assert asgi_app.router is api_app.router
+    assert asgi_app.routes is api_app.routes
+    assert asgi_app.state is api_app.state
+    assert asgi_app.openapi == api_app.openapi
+
+
 def test_bootstrap_wires_the_codex_catalog_publisher() -> None:
     publisher = MagicMock()
 
     with (
-        patch("runtime.bootstrap.configure_logging"),
+        patch("codexproxy.runtime.bootstrap.configure_logging"),
         patch(
-            "runtime.bootstrap.CodexModelCatalogPublisher",
+            "codexproxy.runtime.bootstrap.CodexModelCatalogPublisher",
             return_value=publisher,
         ) as publisher_type,
     ):
@@ -362,7 +349,7 @@ def test_bootstrap_honors_process_log_file_override(monkeypatch, tmp_path):
     log_path = tmp_path / "custom.log"
     monkeypatch.setenv("LOG_FILE", str(log_path))
 
-    with patch("runtime.bootstrap.configure_logging") as configure:
+    with patch("codexproxy.runtime.bootstrap.configure_logging") as configure:
         build_asgi_app(_settings())
 
     assert configure.call_args.args[0] == log_path
@@ -383,11 +370,12 @@ def test_bootstrap_constructs_fresh_runtime_owned_transcribers() -> None:
 async def test_bootstrap_constructs_isolated_runtime_resource_graphs() -> None:
     settings = _settings(
         model="nvidia_nim/test-model",
+        nvidia_nim_api_key="test-key",
         voice_note_enabled=True,
         whisper_device="cpu",
     )
 
-    with patch("runtime.bootstrap.configure_logging"):
+    with patch("codexproxy.runtime.bootstrap.configure_logging"):
         first = build_asgi_app(settings)
         second = build_asgi_app(settings)
 

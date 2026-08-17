@@ -4,19 +4,19 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from core.anthropic.stream_contracts import (
+from codexproxy.core.anthropic.stream_contracts import (
     assert_anthropic_stream_contract,
     parse_sse_text,
     text_content,
 )
-from providers.admission import ProviderAdmissionController
-from providers.base import ProviderConfig
-from providers.openai_codex.auth import (
+from codexproxy.providers.admission import ProviderAdmissionController
+from codexproxy.providers.openai_codex.auth import (
     OpenAIAccess,
     OpenAIAuthManager,
 )
-from providers.openai_codex.provider import OpenAICodexProvider
+from codexproxy.providers.openai_codex.provider import OpenAICodexProvider
 from tests.api.support import create_test_app
+from tests.providers.support import make_provider_config
 
 
 class _FakeOpenAIAuth(OpenAIAuthManager):
@@ -71,7 +71,7 @@ async def test_messages_accepts_current_claude_controls_for_openai_provider() ->
         transport=httpx.MockTransport(handler),
     )
     provider = OpenAICodexProvider(
-        ProviderConfig(
+        make_provider_config(
             api_key="",
             base_url="https://chatgpt.com/backend-api/codex",
             rate_limit=100,

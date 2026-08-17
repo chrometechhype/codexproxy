@@ -5,9 +5,11 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_register_real_session_id_moves_pending_to_active_and_maps():
-    from cli.managed.manager import ManagedClaudeSessionManager
+    from codexproxy.cli.managed.manager import ManagedClaudeSessionManager
 
-    with patch("cli.managed.manager.ManagedClaudeSession") as mock_session_cls:
+    with patch(
+        "codexproxy.cli.managed.manager.ManagedClaudeSession"
+    ) as mock_session_cls:
         mock_session = MagicMock()
         mock_session.is_busy = False
         mock_session.stop = AsyncMock(return_value=True)
@@ -36,10 +38,10 @@ async def test_register_real_session_id_moves_pending_to_active_and_maps():
 
 @pytest.mark.asyncio
 async def test_register_real_session_id_missing_temp_id_returns_false():
-    from cli.managed.manager import ManagedClaudeSessionManager
+    from codexproxy.cli.managed.manager import ManagedClaudeSessionManager
 
     manager = ManagedClaudeSessionManager(
-        workspace_path="/tmp", proxy_root_url="http://x"
+        workspace_path="/tmp", proxy_root_url="http://x", auth_token="codexcc"
     )
     ok = await manager.register_real_session_id("missing", "real_1")
     assert ok is False
@@ -47,16 +49,18 @@ async def test_register_real_session_id_missing_temp_id_returns_false():
 
 @pytest.mark.asyncio
 async def test_remove_session_pending_stops_and_returns_true():
-    from cli.managed.manager import ManagedClaudeSessionManager
+    from codexproxy.cli.managed.manager import ManagedClaudeSessionManager
 
-    with patch("cli.managed.manager.ManagedClaudeSession") as mock_session_cls:
+    with patch(
+        "codexproxy.cli.managed.manager.ManagedClaudeSession"
+    ) as mock_session_cls:
         mock_session = MagicMock()
         mock_session.is_busy = False
         mock_session.stop = AsyncMock(return_value=True)
         mock_session_cls.return_value = mock_session
 
         manager = ManagedClaudeSessionManager(
-            workspace_path="/tmp", proxy_root_url="http://x"
+            workspace_path="/tmp", proxy_root_url="http://x", auth_token="codexcc"
         )
         _, temp_id, _ = await manager.get_or_create_session()
 
@@ -67,16 +71,18 @@ async def test_remove_session_pending_stops_and_returns_true():
 
 @pytest.mark.asyncio
 async def test_remove_session_active_removes_temp_mapping():
-    from cli.managed.manager import ManagedClaudeSessionManager
+    from codexproxy.cli.managed.manager import ManagedClaudeSessionManager
 
-    with patch("cli.managed.manager.ManagedClaudeSession") as mock_session_cls:
+    with patch(
+        "codexproxy.cli.managed.manager.ManagedClaudeSession"
+    ) as mock_session_cls:
         mock_session = MagicMock()
         mock_session.is_busy = False
         mock_session.stop = AsyncMock(return_value=True)
         mock_session_cls.return_value = mock_session
 
         manager = ManagedClaudeSessionManager(
-            workspace_path="/tmp", proxy_root_url="http://x"
+            workspace_path="/tmp", proxy_root_url="http://x", auth_token="codexcc"
         )
         _, temp_id, _ = await manager.get_or_create_session()
         await manager.register_real_session_id(temp_id, "real_1")
@@ -92,10 +98,10 @@ async def test_remove_session_active_removes_temp_mapping():
 
 @pytest.mark.asyncio
 async def test_stop_all_reports_and_retains_stop_exceptions():
-    from cli.managed.manager import ManagedClaudeSessionManager
+    from codexproxy.cli.managed.manager import ManagedClaudeSessionManager
 
     manager = ManagedClaudeSessionManager(
-        workspace_path="/tmp", proxy_root_url="http://x"
+        workspace_path="/tmp", proxy_root_url="http://x", auth_token="codexcc"
     )
 
     s1 = MagicMock()

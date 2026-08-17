@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from messaging.models import MessageScope
-from messaging.platforms.voice_flow import (
+from codexproxy.messaging.models import MessageScope
+from codexproxy.messaging.platforms.voice_flow import (
     VOICE_DISABLED_MESSAGE,
     VOICE_TRANSCRIPTION_ERROR_MESSAGE,
     VoiceNoteFlow,
@@ -13,9 +13,9 @@ from messaging.platforms.voice_flow import (
     audio_suffix_from_metadata,
     is_audio_metadata,
 )
-from messaging.trees.runtime import MessageTree
-from messaging.voice import Transcriber
-from messaging.workflow import MessagingWorkflow
+from codexproxy.messaging.trees.runtime import MessageTree
+from codexproxy.messaging.voice import Transcriber
+from codexproxy.messaging.workflow import MessagingWorkflow
 
 VOICE_SCOPE = MessageScope(platform="telegram", chat_id="chat")
 
@@ -881,7 +881,7 @@ async def test_voice_flow_rejects_oversized_audio_before_transcription(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "messaging.platforms.voice_flow.MAX_AUDIO_SIZE_BYTES",
+        "codexproxy.messaging.platforms.voice_flow.MAX_AUDIO_SIZE_BYTES",
         3,
     )
     flow, transcriber = _flow()

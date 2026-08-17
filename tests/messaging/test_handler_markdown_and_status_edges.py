@@ -3,13 +3,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from messaging.command_context import StopOutcome
-from messaging.models import IncomingMessage, MessageScope
-from messaging.node_event_pipeline import process_parsed_cli_event
-from messaging.rendering.telegram_markdown import (
+from codexproxy.messaging.command_context import StopOutcome
+from codexproxy.messaging.models import IncomingMessage, MessageScope
+from codexproxy.messaging.node_event_pipeline import process_parsed_cli_event
+from codexproxy.messaging.rendering.telegram_markdown import (
     render_markdown_to_mdv2,
 )
-from messaging.trees import (
+from codexproxy.messaging.trees import (
     CancellationReason,
     CancellationResult,
     CancellationUiOwner,
@@ -23,8 +23,8 @@ from messaging.trees import (
     TreeIdentity,
     TreeSnapshot,
 )
-from messaging.trees.transitions import CancellationEffect
-from messaging.workflow import MessagingWorkflow
+from codexproxy.messaging.trees.transitions import CancellationEffect
+from codexproxy.messaging.workflow import MessagingWorkflow
 
 _SCOPE = MessageScope(platform="telegram", chat_id="c")
 

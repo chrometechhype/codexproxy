@@ -5,12 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from config.provider_catalog import HUGGINGFACE_DEFAULT_BASE
-from core.anthropic import ReasoningReplayMode
-from core.reasoning import ReasoningEffort, ReasoningPolicy
-from providers.base import ProviderConfig
+from codexproxy.config.provider_catalog import HUGGINGFACE_DEFAULT_BASE
+from codexproxy.core.anthropic import ReasoningReplayMode
+from codexproxy.core.reasoning import ReasoningEffort, ReasoningPolicy
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import immediate_admission, profiled_provider
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+    profiled_provider,
+)
 
 
 def make_request(**overrides):
@@ -19,7 +22,7 @@ def make_request(**overrides):
 
 @pytest.fixture
 def huggingface_config():
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test_hf_key",
         base_url=HUGGINGFACE_DEFAULT_BASE,
         rate_limit=10,
@@ -39,7 +42,7 @@ def test_default_base_url_constant():
 
 
 def test_init_uses_default_base_url_and_api_key(huggingface_config):
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         provider = profiled_provider(
             "huggingface", huggingface_config, admission=immediate_admission()
         )
@@ -52,7 +55,7 @@ def test_init_uses_default_base_url_and_api_key(huggingface_config):
 def test_init_strips_trailing_slash(huggingface_config):
     config = replace(huggingface_config, base_url=f"{HUGGINGFACE_DEFAULT_BASE}/")
 
-    with patch("providers.openai_chat.provider.AsyncOpenAI"):
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI"):
         provider = profiled_provider(
             "huggingface", config, admission=immediate_admission()
         )
@@ -62,7 +65,7 @@ def test_init_strips_trailing_slash(huggingface_config):
 
 def test_build_request_body_keeps_max_tokens(huggingface_provider):
     with patch(
-        "providers.openai_chat.request_policy.build_base_request_body"
+        "codexproxy.providers.openai_chat.request_policy.build_base_request_body"
     ) as mock_convert:
         mock_convert.return_value = {
             "model": "openai/gpt-oss-120b:fastest",

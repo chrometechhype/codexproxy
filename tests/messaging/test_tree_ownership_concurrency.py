@@ -4,10 +4,10 @@ import sys
 
 import pytest
 
-from messaging.models import IncomingMessage, MessageScope
-from messaging.trees import manager as manager_module
-from messaging.trees.manager import TreeQueueManager
-from messaging.trees.transitions import (
+from codexproxy.messaging.models import IncomingMessage, MessageScope
+from codexproxy.messaging.trees import manager as manager_module
+from codexproxy.messaging.trees.manager import TreeQueueManager
+from codexproxy.messaging.trees.transitions import (
     AdmissionRejection,
     CancellationReason,
     CancellationUiOwner,

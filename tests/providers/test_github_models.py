@@ -8,20 +8,24 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from application.model_metadata import ProviderModelInfo
-from config.provider_catalog import GITHUB_MODELS_DEFAULT_BASE
-from core.anthropic.models import Message, MessagesRequest
-from core.anthropic.stream_contracts import parse_sse_text
-from providers.base import ProviderConfig
-from providers.github_models import GitHubModelsProvider
-from providers.github_models.client import GITHUB_MODELS_CATALOG_URL
-from providers.model_listing import ModelListResponseError
-from tests.providers.support import REASONING_ON, immediate_admission
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.provider_catalog import GITHUB_MODELS_DEFAULT_BASE
+from codexproxy.core.anthropic.models import Message, MessagesRequest
+from codexproxy.core.anthropic.stream_contracts import parse_sse_text
+from codexproxy.providers.base import ProviderConfig
+from codexproxy.providers.github_models import GitHubModelsProvider
+from codexproxy.providers.github_models.client import GITHUB_MODELS_CATALOG_URL
+from codexproxy.providers.model_listing import ModelListResponseError
+from tests.providers.support import (
+    REASONING_ON,
+    immediate_admission,
+    make_provider_config,
+)
 
 
 @pytest.fixture
 def github_models_config() -> ProviderConfig:
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test-github-models-token",
         base_url=GITHUB_MODELS_DEFAULT_BASE,
         rate_limit=10,
@@ -71,7 +75,7 @@ def test_default_base_url_constant() -> None:
 def test_init_uses_default_base_url_api_key_and_github_headers(
     github_models_config: ProviderConfig,
 ) -> None:
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         provider = GitHubModelsProvider(
             github_models_config, admission=immediate_admission()
         )
@@ -93,7 +97,7 @@ def test_init_strips_trailing_slash(github_models_config: ProviderConfig) -> Non
         base_url=f"{GITHUB_MODELS_DEFAULT_BASE}/",
     )
 
-    with patch("providers.openai_chat.provider.AsyncOpenAI"):
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI"):
         provider = GitHubModelsProvider(config, admission=immediate_admission())
 
     assert provider._base_url == GITHUB_MODELS_DEFAULT_BASE

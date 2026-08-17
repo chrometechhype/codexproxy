@@ -4,11 +4,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from application.errors import InvalidRequestError
-from core.anthropic.stream_contracts import parse_sse_text
-from core.anthropic.streaming import format_sse_event
-from core.failures import ExecutionFailure, FailureKind
-from core.reasoning import (
+from codexproxy.application.errors import InvalidRequestError
+from codexproxy.core.anthropic.stream_contracts import parse_sse_text
+from codexproxy.core.anthropic.streaming import format_sse_event
+from codexproxy.core.failures import ExecutionFailure, FailureKind
+from codexproxy.core.reasoning import (
     ReasoningControl,
     ReasoningEffort,
     ReasoningPolicy,
@@ -63,7 +63,7 @@ def responses_client():
     provider = FakeProvider(_anthropic_text_stream("Hello from provider"))
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         yield client, provider
@@ -116,7 +116,7 @@ def test_create_response_stream_preserves_output_limit_as_incomplete() -> None:
     )
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -144,7 +144,7 @@ def test_create_response_preflight_rejection_stays_an_ordinary_http_error() -> N
     app = create_test_app()
 
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -185,8 +185,8 @@ def test_create_response_pre_start_provider_error_returns_openai_error() -> None
     provider = PreStartFailingProvider()
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
-        patch("api.response_streams.trace_event") as trace,
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.response_streams.trace_event") as trace,
         TestClient(app) as client,
     ):
         response = client.post(
@@ -208,7 +208,8 @@ def test_create_response_pre_start_provider_error_returns_openai_error() -> None
     terminal_trace = next(
         call.kwargs
         for call in trace.call_args_list
-        if call.kwargs.get("event") == "api.response.terminal_execution_error"
+        if call.kwargs.get("event")
+        == "codexproxy.api.response.terminal_execution_error"
     )
     assert terminal_trace["wire_api"] == "responses"
     assert terminal_trace["request_id"] == request_id
@@ -223,7 +224,7 @@ def test_create_response_post_start_failure_preserves_response_id() -> None:
     provider = PostStartFailingProvider()
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -246,9 +247,9 @@ def test_create_response_stream_bypasses_local_message_optimizations() -> None:
     provider = FakeProvider(_anthropic_text_stream("Provider response"))
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         patch(
-            "api.handlers.messages.try_optimizations",
+            "codexproxy.api.handlers.messages.try_optimizations",
             side_effect=AssertionError("Responses must not use message optimizations"),
         ),
         TestClient(app) as client,
@@ -292,7 +293,7 @@ def test_create_response_stream_preserves_interleaved_reasoning_order() -> None:
     provider = FakeProvider(_anthropic_interleaved_reasoning_stream())
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -324,7 +325,7 @@ def test_create_response_stream_preserves_interleaved_reasoning_order() -> None:
     ]
     assert completed["output"][0]["content"][0]["text"] == "first thought"
     assert completed["output"][1]["content"][0]["text"] == "first answer"
-    assert completed["output"][2]["arguments"] == '{"value":"FCC"}'
+    assert completed["output"][2]["arguments"] == '{"value":"CDX"}'
     assert completed["output"][3]["content"][0]["text"] == "second thought"
     assert completed["output"][4]["content"][0]["text"] == "final answer"
 
@@ -333,7 +334,7 @@ def test_create_response_tool_stream_emits_function_call() -> None:
     provider = FakeProvider(_anthropic_tool_stream())
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -358,16 +359,16 @@ def test_create_response_tool_stream_emits_function_call() -> None:
     call = completed["output"][0]
     assert call["type"] == "function_call"
     assert call["call_id"] == "toolu_1"
-    assert call["arguments"] == '{"value":"FCC"}'
+    assert call["arguments"] == '{"value":"CDX"}'
 
 
 def test_create_response_malformed_provider_function_call_fails_stream() -> None:
     provider = FakeProvider(
-        _anthropic_tool_stream(partial_json='{"value":"FCC" "bad"}')
+        _anthropic_tool_stream(partial_json='{"value":"CDX" "bad"}')
     )
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -399,7 +400,7 @@ def test_create_response_accepts_codex_namespace_tool_request() -> None:
     provider = FakeProvider(_anthropic_tool_stream(tool_name="mcp__node_repl__js"))
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -447,7 +448,7 @@ def test_create_response_accepts_codex_custom_tool_request() -> None:
     )
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -498,7 +499,7 @@ def test_create_response_stream_provider_error_returns_response_failed() -> None
     )
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -528,7 +529,7 @@ def test_create_response_replays_prior_reasoning_as_reasoning_content() -> None:
     provider = FakeProvider(_anthropic_text_stream("done"))
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -586,7 +587,7 @@ def test_create_response_quarantines_malformed_prior_function_call() -> None:
     provider = FakeProvider(_anthropic_text_stream("done"))
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -641,7 +642,7 @@ def test_create_response_preserves_and_resolves_reasoning_effort(
     provider = FakeProvider(_anthropic_text_stream("done"))
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -666,7 +667,7 @@ def test_create_response_maps_redacted_thinking_to_encrypted_reasoning() -> None
     provider = FakeProvider(_anthropic_redacted_thinking_stream())
     app = create_test_app()
     with (
-        patch("api.routes.resolve_provider", return_value=provider),
+        patch("codexproxy.api.routes.resolve_provider", return_value=provider),
         TestClient(app) as client,
     ):
         response = client.post(
@@ -748,7 +749,7 @@ def _anthropic_text_stream(text: str, *, stop_reason: str = "end_turn") -> list[
 
 
 def _anthropic_tool_stream(
-    tool_name: str = "echo", partial_json: str = '{"value":"FCC"}'
+    tool_name: str = "echo", partial_json: str = '{"value":"CDX"}'
 ) -> list[str]:
     return [
         format_sse_event("message_start", {"type": "message_start", "message": {}}),
@@ -913,7 +914,7 @@ def _anthropic_interleaved_reasoning_stream() -> list[str]:
                 "index": 2,
                 "delta": {
                     "type": "input_json_delta",
-                    "partial_json": '{"value":"FCC"}',
+                    "partial_json": '{"value":"CDX"}',
                 },
             },
         ),

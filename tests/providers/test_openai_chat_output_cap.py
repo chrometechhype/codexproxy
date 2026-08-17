@@ -9,14 +9,17 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from config.provider_catalog import GROQ_DEFAULT_BASE
-from providers.base import ProviderConfig
-from providers.openai_chat.output_cap import (
+from codexproxy.config.provider_catalog import GROQ_DEFAULT_BASE
+from codexproxy.providers.groq import GroqProvider
+from codexproxy.providers.openai_chat.output_cap import (
     clamp_output_tokens,
     parse_output_token_cap,
 )
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import immediate_admission, profiled_provider
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+)
 
 
 class _BadRequest(Exception):
@@ -35,10 +38,11 @@ class _BadRequest(Exception):
 
 def test_parse_cap_from_groq_message():
     error = _BadRequest(
-        "max_completion_tokens must be less than or equal to 40960, the maximum "
-        "value for max_completion_tokens is less than the context_window for this model"
+        "`max_completion_tokens` must be less than or equal to `16384`, the maximum "
+        "value for `max_completion_tokens` is less than the `context_window` for this "
+        "model"
     )
-    assert parse_output_token_cap(error) == 40960
+    assert parse_output_token_cap(error) == 16384
 
 
 @pytest.mark.parametrize(
@@ -63,6 +67,30 @@ def test_parse_cap_reads_json_body():
     assert parse_output_token_cap(error) == 12000
 
 
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("Range of max_tokens should be [1, 32768]", 32768),
+        ("range of max_completion_tokens should be [ 1 , `8192` ]", 8192),
+    ],
+)
+def test_parse_cap_from_inclusive_range(message, expected):
+    assert parse_output_token_cap(_BadRequest(message)) == expected
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Range of temperature should be [0, 2] for max_tokens requests",
+        "Range of max_tokens should be [0, 4096]",
+        "Range of max_tokens should be [1, unlimited]",
+        "Range of max_tokens is [1, 4096]",
+    ],
+)
+def test_parse_cap_ignores_unrecognized_ranges(message):
+    assert parse_output_token_cap(_BadRequest(message)) is None
+
+
 def test_parse_cap_ignores_non_400():
     error = _BadRequest("max_tokens must be less than or equal to 40960")
     error.status_code = 500
@@ -71,6 +99,92 @@ def test_parse_cap_ignores_non_400():
 
 def test_parse_cap_ignores_unrelated_400():
     assert parse_output_token_cap(_BadRequest("temperature must be <= 2")) is None
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "temperature must be <= 2; max_tokens is invalid",
+        "max_completion_tokens is invalid; temperature at most 2",
+        "maximum allowed value of 2 for temperature; max_tokens is invalid",
+    ],
+)
+def test_parse_cap_does_not_bind_unrelated_comparator_to_output_field(message):
+    assert parse_output_token_cap(_BadRequest(message)) is None
+
+
+def test_parse_cap_uses_only_the_structured_output_parameter_message():
+    error = _BadRequest(
+        "max_tokens is invalid",
+        body={
+            "errors": [
+                {"param": "temperature", "message": "must not exceed 2"},
+                {"param": "top_p", "message": "<= 1"},
+            ]
+        },
+    )
+
+    assert parse_output_token_cap(error) is None
+
+
+def test_parse_cap_respects_structured_non_output_parameter():
+    body = {
+        "param": "temperature",
+        "message": "max_tokens must not exceed 2",
+    }
+    error = _BadRequest(
+        f"Error code: 400 - {body}",
+        body=body,
+    )
+
+    assert parse_output_token_cap(error) is None
+
+
+def test_parse_cap_does_not_escape_structured_parameter_scope():
+    error = _BadRequest(
+        "invalid request",
+        body={
+            "param": "temperature",
+            "details": {"message": "max_tokens must not exceed 2"},
+        },
+    )
+
+    assert parse_output_token_cap(error) is None
+
+
+def test_parse_cap_ignores_text_outside_structured_error_schema():
+    error = _BadRequest(
+        "invalid request",
+        body={"request": {"message": "max_tokens must not exceed 2"}},
+    )
+
+    assert parse_output_token_cap(error) is None
+
+
+def test_parse_cap_reads_unscoped_structured_message():
+    error = _BadRequest(
+        "invalid request",
+        body={"message": "max_tokens must not exceed 8192"},
+    )
+
+    assert parse_output_token_cap(error) == 8192
+
+
+def test_parse_cap_selects_matching_parameter_from_structured_error_list():
+    error = _BadRequest(
+        "invalid request",
+        body={
+            "errors": [
+                {
+                    "param": "temperature",
+                    "message": "max_tokens must not exceed 2",
+                },
+                {"param": "max_tokens", "message": "<= 8192"},
+            ]
+        },
+    )
+
+    assert parse_output_token_cap(error) == 8192
 
 
 def test_parse_cap_returns_none_without_number():
@@ -112,9 +226,8 @@ def test_clamp_ignores_bool_values():
 
 @pytest.fixture
 def groq_provider():
-    return profiled_provider(
-        "groq",
-        ProviderConfig(
+    return GroqProvider(
+        make_provider_config(
             api_key="test_groq_key",
             base_url=GROQ_DEFAULT_BASE,
             rate_limit=10,
@@ -136,7 +249,18 @@ async def test_create_stream_clamps_and_learns_on_cap_rejection(groq_provider):
     assert body["max_completion_tokens"] == 64000
     model = body["model"]
 
-    error = _BadRequest("max_completion_tokens must be less than or equal to 40960")
+    error = _BadRequest(
+        "invalid request",
+        body={
+            "message": (
+                "`max_completion_tokens` must be less than or equal to `16384`, "
+                "the maximum value for `max_completion_tokens` is less than the "
+                "`context_window` for this model"
+            ),
+            "type": "invalid_request_error",
+            "param": "max_completion_tokens",
+        },
+    )
     create = AsyncMock(side_effect=[error, object()])
 
     with patch.object(groq_provider._client.chat.completions, "create", create):
@@ -147,9 +271,9 @@ async def test_create_stream_clamps_and_learns_on_cap_rejection(groq_provider):
         await attempt.aclose()
 
     assert create.call_count == 2
-    assert create.call_args_list[1].kwargs["max_completion_tokens"] == 40960
-    assert used_body["max_completion_tokens"] == 40960
-    assert groq_provider._model_output_caps[model] == 40960
+    assert create.call_args_list[1].kwargs["max_completion_tokens"] == 16384
+    assert used_body["max_completion_tokens"] == 16384
+    assert groq_provider._model_output_caps[model] == 16384
 
 
 @pytest.mark.asyncio
@@ -191,6 +315,39 @@ async def test_unrelated_400_is_not_clamped_and_propagates(groq_provider):
     with (
         patch.object(groq_provider._client.chat.completions, "create", create),
         pytest.raises(Exception, match="wizard"),
+    ):
+        await groq_provider._create_stream(
+            body,
+            groq_provider._admission.new_retry_session(),
+        )
+
+    assert create.call_count == 1
+    assert groq_provider._model_output_caps == {}
+
+
+@pytest.mark.asyncio
+async def test_mixed_field_400_does_not_retry_or_poison_learned_cap(groq_provider):
+    body = groq_provider._build_request_body(
+        make_messages_request(
+            "llama-3.3-70b-versatile",
+            max_tokens=64000,
+            thinking={"enabled": False},
+        )
+    )
+    error_body = {
+        "param": "temperature",
+        "message": "max_completion_tokens must not exceed 2",
+    }
+    create = AsyncMock(
+        side_effect=_BadRequest(
+            f"Error code: 400 - {error_body}",
+            body=error_body,
+        )
+    )
+
+    with (
+        patch.object(groq_provider._client.chat.completions, "create", create),
+        pytest.raises(Exception, match="temperature"),
     ):
         await groq_provider._create_stream(
             body,

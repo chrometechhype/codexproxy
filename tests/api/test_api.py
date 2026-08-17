@@ -3,9 +3,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from core.failures import ExecutionFailure, FailureKind
-from core.reasoning import ReasoningPolicy
-from providers.nvidia_nim import NvidiaNimProvider
+from codexproxy.core.failures import ExecutionFailure, FailureKind
+from codexproxy.core.reasoning import ReasoningPolicy
+from codexproxy.providers.nvidia_nim import NvidiaNimProvider
 from tests.api.support import create_test_app
 
 app = create_test_app()
@@ -61,7 +61,7 @@ def client():
     """HTTP client with provider resolution stubbed; patch only for this file."""
     with (
         patch(
-            "api.routes.resolve_provider",
+            "codexproxy.api.routes.resolve_provider",
             return_value=mock_provider,
         ),
         TestClient(app) as test_client,
@@ -199,8 +199,8 @@ def test_create_message_pre_start_provider_error_returns_terminal_json(
     }
 
     with (
-        patch("api.response_streams.trace_event") as trace,
-        patch("application.execution.trace_event") as execution_trace,
+        patch("codexproxy.api.response_streams.trace_event") as trace,
+        patch("codexproxy.application.execution.trace_event") as execution_trace,
     ):
         response = client.post("/v1/messages", json=payload)
 
@@ -211,17 +211,18 @@ def test_create_message_pre_start_provider_error_returns_terminal_json(
     route_trace = next(
         call.kwargs
         for call in execution_trace.call_args_list
-        if call.kwargs.get("event") == "api.route.resolved"
+        if call.kwargs.get("event") == "codexproxy.api.route.resolved"
     )
     assert route_trace["request_id"] == request_id
     terminal_trace = next(
         call.kwargs
         for call in trace.call_args_list
-        if call.kwargs.get("event") == "api.response.terminal_execution_error"
+        if call.kwargs.get("event")
+        == "codexproxy.api.response.terminal_execution_error"
     )
     assert terminal_trace == {
         "stage": "egress",
-        "event": "api.response.terminal_execution_error",
+        "event": "codexproxy.api.response.terminal_execution_error",
         "source": "api",
         "wire_api": "messages",
         "request_id": request_id,

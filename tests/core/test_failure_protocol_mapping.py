@@ -2,12 +2,12 @@
 
 import pytest
 
-from core.anthropic.errors import (
+from codexproxy.core.anthropic.errors import (
     anthropic_error_type_for_failure,
     anthropic_failure_payload,
 )
-from core.failures import ExecutionFailure, FailureKind
-from core.openai_responses.errors import (
+from codexproxy.core.failures import ExecutionFailure, FailureKind
+from codexproxy.core.openai_responses.errors import (
     openai_error_type_for_failure,
     openai_failure_payload,
 )

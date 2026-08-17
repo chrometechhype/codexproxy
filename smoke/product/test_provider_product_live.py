@@ -3,9 +3,9 @@ from typing import Any
 import httpx
 import pytest
 
-from application.routing import ModelRouter
-from config.reasoning import ReasoningPreference
-from core.anthropic.stream_contracts import (
+from codexproxy.application.routing import ModelRouter
+from codexproxy.config.reasoning import ReasoningPreference
+from codexproxy.core.anthropic.stream_contracts import (
     SSEEvent,
     parse_sse_lines,
 )
@@ -125,7 +125,7 @@ def test_mistral_native_reasoning_model_e2e(smoke_config: SmokeConfig) -> None:
 
     payload = {
         "model": "claude-opus-4-7",
-        "max_tokens": 256,
+        "max_tokens": 1024,
         "messages": [{"role": "user", "content": "Reply with one short sentence."}],
         "thinking": {"type": "adaptive"},
     }
@@ -302,7 +302,7 @@ def _scenario_adaptive_thinking_history(
 ) -> None:
     payload = {
         "model": "claude-opus-4-7",
-        "max_tokens": 256,
+        "max_tokens": 2048,
         "messages": [
             {"role": "user", "content": "hello"},
             {
@@ -327,7 +327,7 @@ def _scenario_interleaved_history(
 ) -> None:
     payload = {
         "model": "claude-sonnet-4-5-20250929",
-        "max_tokens": 256,
+        "max_tokens": 1024,
         "messages": [
             {"role": "user", "content": "Use the tool."},
             {
@@ -461,7 +461,7 @@ def _scenario_interrupted_tool_turn_resume(
     tool_id = "toolu_interrupted123456789"
     payload = {
         "model": "claude-sonnet-4-5-20250929",
-        "max_tokens": 32,
+        "max_tokens": 256,
         "stream": True,
         "messages": [
             {
@@ -651,7 +651,7 @@ def _server_for_provider(
 
 def _openai_auth_headers(smoke_config: SmokeConfig) -> dict[str, str]:
     headers = {"content-type": "application/json"}
-    token = smoke_config.settings.anthropic_auth_token
+    token = smoke_config.settings.proxy_auth_token
     if token:
         headers["authorization"] = f"Bearer {token}"
     return headers

@@ -4,25 +4,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import messaging.session.persistence as persistence_module
-from application.connected_accounts import (
+import codexproxy.messaging.session.persistence as persistence_module
+from codexproxy.application.connected_accounts import (
     ConnectedAccountState,
     ConnectedAccountStatus,
 )
-from application.model_metadata import ProviderModelInfo
-from config.admin.persistence import PreparedAdminUpdate
-from config.settings import Settings
-from messaging.command_context import StopOutcome
-from messaging.platforms.ports import (
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.admin.persistence import PreparedAdminUpdate
+from codexproxy.config.settings import Settings
+from codexproxy.messaging.command_context import StopOutcome
+from codexproxy.messaging.platforms.ports import (
     InboundMessageHandler,
     MessagingPlatformComponents,
     MessagingStartupNotice,
 )
-from messaging.session import SessionStore
-from messaging.workflow import MessagingWorkflow
-from providers.runtime import ProviderRuntime
-from runtime.application import ApplicationRuntime
-from runtime.provider_manager import ProviderRuntimeManager
+from codexproxy.messaging.session import SessionStore
+from codexproxy.messaging.workflow import MessagingWorkflow
+from codexproxy.providers.runtime import ProviderRuntime
+from codexproxy.runtime.application import ApplicationRuntime
+from codexproxy.runtime.provider_manager import ProviderRuntimeManager
 
 
 class TrackingRuntime(ProviderRuntime):
@@ -201,11 +201,11 @@ async def test_provider_apply_constructs_before_commit_then_publishes(tmp_path) 
 
     with (
         patch(
-            "runtime.application.prepare_admin_update",
+            "codexproxy.runtime.application.prepare_admin_update",
             return_value=prepared,
         ),
         patch(
-            "runtime.application.commit_prepared_admin_update",
+            "codexproxy.runtime.application.commit_prepared_admin_update",
             side_effect=commit,
         ),
     ):
@@ -236,10 +236,10 @@ async def test_candidate_failure_never_commits_and_preserves_current(tmp_path) -
 
     with (
         patch(
-            "runtime.application.prepare_admin_update",
+            "codexproxy.runtime.application.prepare_admin_update",
             return_value=prepared,
         ),
-        patch("runtime.application.commit_prepared_admin_update") as commit,
+        patch("codexproxy.runtime.application.commit_prepared_admin_update") as commit,
         pytest.raises(RuntimeError, match="candidate failed"),
     ):
         await runtime.apply_admin_config({"MODEL": "nvidia_nim/new"})
@@ -264,11 +264,11 @@ async def test_persistence_failure_closes_candidate_and_preserves_current(
 
     with (
         patch(
-            "runtime.application.prepare_admin_update",
+            "codexproxy.runtime.application.prepare_admin_update",
             return_value=prepared,
         ),
         patch(
-            "runtime.application.commit_prepared_admin_update",
+            "codexproxy.runtime.application.commit_prepared_admin_update",
             side_effect=OSError("disk full"),
         ),
         pytest.raises(OSError, match="disk full"),
@@ -302,11 +302,11 @@ async def test_restart_required_apply_commits_without_hot_publication(tmp_path) 
 
     with (
         patch(
-            "runtime.application.prepare_admin_update",
+            "codexproxy.runtime.application.prepare_admin_update",
             return_value=prepared,
         ),
         patch(
-            "runtime.application.commit_prepared_admin_update",
+            "codexproxy.runtime.application.commit_prepared_admin_update",
             return_value=_applied_response(("PORT",)),
         ) as commit,
     ):
@@ -780,7 +780,7 @@ async def test_public_start_retries_transient_partial_messaging_cleanup() -> Non
         ),
         patch.object(manager, "start_model_list_refresh"),
         patch(
-            "runtime.application.messaging_platform_factory.create_messaging_components",
+            "codexproxy.runtime.application.messaging_platform_factory.create_messaging_components",
             return_value=components,
         ),
         patch.object(
@@ -842,7 +842,7 @@ async def test_public_start_retains_persistently_unclean_partial_messaging_graph
         ),
         patch.object(manager, "start_model_list_refresh"),
         patch(
-            "runtime.application.messaging_platform_factory.create_messaging_components",
+            "codexproxy.runtime.application.messaging_platform_factory.create_messaging_components",
             return_value=components,
         ),
         patch.object(
@@ -886,7 +886,7 @@ async def test_messaging_start_failure_is_nonfatal_after_complete_cleanup() -> N
 
     with (
         patch(
-            "runtime.application.messaging_platform_factory.create_messaging_components",
+            "codexproxy.runtime.application.messaging_platform_factory.create_messaging_components",
             side_effect=RuntimeError("messaging unavailable"),
         ),
         patch.object(runtime, "_cleanup_messaging", AsyncMock(return_value=True)),
@@ -905,7 +905,7 @@ async def test_messaging_start_failure_fails_closed_when_cleanup_is_incomplete()
 
     with (
         patch(
-            "runtime.application.messaging_platform_factory.create_messaging_components",
+            "codexproxy.runtime.application.messaging_platform_factory.create_messaging_components",
             side_effect=RuntimeError("messaging unavailable"),
         ),
         patch.object(runtime, "_cleanup_messaging", AsyncMock(return_value=False)),
@@ -931,7 +931,7 @@ async def test_composition_records_runtime_before_workspace_setup() -> None:
 
     with (
         patch(
-            "runtime.application.os.makedirs",
+            "codexproxy.runtime.application.os.makedirs",
             side_effect=OSError("workspace failed"),
         ),
         pytest.raises(OSError, match="workspace failed"),
@@ -976,12 +976,12 @@ async def test_composition_publishes_startup_notice_after_runtime_and_repair() -
 
     with (
         patch(
-            "runtime.application.cli_managed.ManagedClaudeSessionManager",
+            "codexproxy.runtime.application.cli_managed.ManagedClaudeSessionManager",
             return_value=cli_manager,
         ) as manager_constructor,
-        patch("runtime.application.messaging_session.SessionStore"),
+        patch("codexproxy.runtime.application.messaging_session.SessionStore"),
         patch(
-            "runtime.application.messaging_workflow_module.MessagingWorkflow",
+            "codexproxy.runtime.application.messaging_workflow_module.MessagingWorkflow",
             return_value=workflow,
         ),
     ):

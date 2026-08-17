@@ -10,19 +10,19 @@ import pytest
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.types import Message, Scope
 
-from api.request_ids import RequestCorrelationMiddleware
-from api.response_streams import (
+from codexproxy.api.request_ids import RequestCorrelationMiddleware
+from codexproxy.api.response_streams import (
     ManagedStreamingResponse,
     anthropic_sse_streaming_response,
     bind_response_lifetime,
     terminal_execution_error_response,
 )
-from core.anthropic import (
+from codexproxy.core.anthropic import (
     anthropic_error_payload,
     anthropic_failure_payload,
 )
-from core.anthropic.stream_contracts import parse_sse_text
-from core.failures import ExecutionFailure, FailureKind
+from codexproxy.core.anthropic.stream_contracts import parse_sse_text
+from codexproxy.core.failures import ExecutionFailure, FailureKind
 
 
 async def _body_chunks(chunks: list[str]) -> AsyncGenerator[str]:
@@ -595,8 +595,8 @@ async def test_cleanup_failures_are_trace_only_and_do_not_replace_success() -> N
     await bind_response_lifetime(response, release)
 
     with (
-        patch("core.trace.trace_event") as close_trace,
-        patch("api.response_streams.trace_event") as release_trace,
+        patch("codexproxy.core.trace.trace_event") as close_trace,
+        patch("codexproxy.api.response_streams.trace_event") as release_trace,
     ):
         messages = await _serve(response)
 

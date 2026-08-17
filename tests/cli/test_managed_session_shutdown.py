@@ -3,14 +3,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from cli.managed.manager import ManagedClaudeSessionManager
-from cli.managed.session import ManagedClaudeSession
+from codexproxy.cli.managed.manager import ManagedClaudeSessionManager
+from codexproxy.cli.managed.session import ManagedClaudeSession
 
 
 def _manager() -> ManagedClaudeSessionManager:
     return ManagedClaudeSessionManager(
         workspace_path="/tmp",
         proxy_root_url="http://127.0.0.1:8082",
+        auth_token="codexcc",
+    )
+
+
+def _session() -> ManagedClaudeSession:
+    return ManagedClaudeSession(
+        "/tmp",
+        "http://127.0.0.1:8082",
+        auth_token="codexcc",
     )
 
 
@@ -33,7 +42,7 @@ def _completed_process(pid: int) -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_stop_is_idempotent_without_a_live_process() -> None:
-    session = ManagedClaudeSession("/tmp", "http://127.0.0.1:8082")
+    session = _session()
 
     assert await session.stop() is True
 
@@ -44,8 +53,8 @@ async def test_stop_is_idempotent_without_a_live_process() -> None:
     session.process = process
 
     with (
-        patch("cli.managed.session.kill_pid_tree_best_effort") as kill_tree,
-        patch("cli.managed.session.unregister_pid") as unregister,
+        patch("codexproxy.cli.managed.session.kill_pid_tree_best_effort") as kill_tree,
+        patch("codexproxy.cli.managed.session.unregister_pid") as unregister,
     ):
         assert await session.stop() is True
 
@@ -56,16 +65,16 @@ async def test_stop_is_idempotent_without_a_live_process() -> None:
 
 @pytest.mark.asyncio
 async def test_stopped_session_reference_cannot_launch_a_new_process() -> None:
-    session = ManagedClaudeSession("/tmp", "http://127.0.0.1:8082")
+    session = _session()
 
     assert await session.stop() is True
 
     with (
         patch(
-            "cli.managed.session.asyncio.create_subprocess_exec",
+            "codexproxy.cli.managed.session.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=_completed_process(100)),
         ) as create_process,
-        patch("cli.managed.session.trace_event") as trace,
+        patch("codexproxy.cli.managed.session.trace_event") as trace,
         pytest.raises(RuntimeError, match="closed"),
     ):
         async for _ in session.start_task("must not launch"):
@@ -78,7 +87,7 @@ async def test_stopped_session_reference_cannot_launch_a_new_process() -> None:
 
 @pytest.mark.asyncio
 async def test_launch_publication_wins_before_concurrent_stop() -> None:
-    session = ManagedClaudeSession("/tmp", "http://127.0.0.1:8082")
+    session = _session()
     launch_entered = asyncio.Event()
     release_launch = asyncio.Event()
     release_stream = asyncio.Event()
@@ -105,12 +114,12 @@ async def test_launch_publication_wins_before_concurrent_stop() -> None:
 
     with (
         patch(
-            "cli.managed.session.asyncio.create_subprocess_exec",
+            "codexproxy.cli.managed.session.asyncio.create_subprocess_exec",
             side_effect=create_process,
         ),
-        patch("cli.managed.session.kill_pid_tree_best_effort"),
-        patch("cli.managed.session.register_pid"),
-        patch("cli.managed.session.unregister_pid"),
+        patch("codexproxy.cli.managed.session.kill_pid_tree_best_effort"),
+        patch("codexproxy.cli.managed.session.register_pid"),
+        patch("codexproxy.cli.managed.session.unregister_pid"),
     ):
         stream_task = asyncio.create_task(
             _collect_session_events(session, "launch wins")
@@ -135,7 +144,7 @@ async def test_launch_publication_wins_before_concurrent_stop() -> None:
 
 @pytest.mark.asyncio
 async def test_concurrent_stop_wins_before_launch_publication() -> None:
-    session = ManagedClaudeSession("/tmp", "http://127.0.0.1:8082")
+    session = _session()
     stop_entered = asyncio.Event()
     release_stop = asyncio.Event()
     process = MagicMock()
@@ -154,12 +163,12 @@ async def test_concurrent_stop_wins_before_launch_publication() -> None:
 
     with (
         patch(
-            "cli.managed.session.asyncio.create_subprocess_exec",
+            "codexproxy.cli.managed.session.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=unexpected_process),
         ) as create_process,
-        patch("cli.managed.session.kill_pid_tree_best_effort"),
-        patch("cli.managed.session.unregister_pid"),
-        patch("cli.managed.session.trace_event") as trace,
+        patch("codexproxy.cli.managed.session.kill_pid_tree_best_effort"),
+        patch("codexproxy.cli.managed.session.unregister_pid"),
+        patch("codexproxy.cli.managed.session.trace_event") as trace,
     ):
         stop_task = asyncio.create_task(session.stop())
         await stop_entered.wait()
@@ -177,16 +186,16 @@ async def test_concurrent_stop_wins_before_launch_publication() -> None:
 
 @pytest.mark.asyncio
 async def test_normal_sequential_starts_remain_allowed_before_stop() -> None:
-    session = ManagedClaudeSession("/tmp", "http://127.0.0.1:8082")
+    session = _session()
     processes = [_completed_process(104), _completed_process(105)]
 
     with (
         patch(
-            "cli.managed.session.asyncio.create_subprocess_exec",
+            "codexproxy.cli.managed.session.asyncio.create_subprocess_exec",
             new=AsyncMock(side_effect=processes),
         ) as create_process,
-        patch("cli.managed.session.register_pid"),
-        patch("cli.managed.session.unregister_pid"),
+        patch("codexproxy.cli.managed.session.register_pid"),
+        patch("codexproxy.cli.managed.session.unregister_pid"),
     ):
         first = await _collect_session_events(session, "first")
         second = await _collect_session_events(session, "second")
@@ -205,7 +214,7 @@ async def _collect_session_events(
 
 @pytest.mark.asyncio
 async def test_failed_stop_keeps_pid_registered_until_retry_confirms_exit() -> None:
-    session = ManagedClaudeSession("/tmp", "http://127.0.0.1:8082")
+    session = _session()
     process = MagicMock()
     process.pid = 202
     process.returncode = None
@@ -213,8 +222,8 @@ async def test_failed_stop_keeps_pid_registered_until_retry_confirms_exit() -> N
     session.process = process
 
     with (
-        patch("cli.managed.session.kill_pid_tree_best_effort"),
-        patch("cli.managed.session.unregister_pid") as unregister,
+        patch("codexproxy.cli.managed.session.kill_pid_tree_best_effort"),
+        patch("codexproxy.cli.managed.session.unregister_pid") as unregister,
     ):
         assert await session.stop() is False
         unregister.assert_not_called()
@@ -226,7 +235,7 @@ async def test_failed_stop_keeps_pid_registered_until_retry_confirms_exit() -> N
 
 @pytest.mark.asyncio
 async def test_cancelled_stop_keeps_pid_registered_and_can_be_retried() -> None:
-    session = ManagedClaudeSession("/tmp", "http://127.0.0.1:8082")
+    session = _session()
     process = MagicMock()
     process.pid = 303
     process.returncode = None
@@ -241,8 +250,8 @@ async def test_cancelled_stop_keeps_pid_registered_and_can_be_retried() -> None:
     session.process = process
 
     with (
-        patch("cli.managed.session.kill_pid_tree_best_effort"),
-        patch("cli.managed.session.unregister_pid") as unregister,
+        patch("codexproxy.cli.managed.session.kill_pid_tree_best_effort"),
+        patch("codexproxy.cli.managed.session.unregister_pid") as unregister,
     ):
         stopping = asyncio.create_task(session.stop())
         await wait_entered.wait()
@@ -259,7 +268,7 @@ async def test_cancelled_stop_keeps_pid_registered_and_can_be_retried() -> None:
 
 @pytest.mark.asyncio
 async def test_task_failure_keeps_unconfirmed_process_pid_registered() -> None:
-    session = ManagedClaudeSession("/tmp", "http://127.0.0.1:8082")
+    session = _session()
     process = MagicMock()
     process.pid = 404
     process.returncode = None
@@ -268,11 +277,11 @@ async def test_task_failure_keeps_unconfirmed_process_pid_registered() -> None:
 
     with (
         patch(
-            "cli.managed.session.asyncio.create_subprocess_exec",
+            "codexproxy.cli.managed.session.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=process),
         ),
-        patch("cli.managed.session.register_pid") as register,
-        patch("cli.managed.session.unregister_pid") as unregister,
+        patch("codexproxy.cli.managed.session.register_pid") as register,
+        patch("codexproxy.cli.managed.session.unregister_pid") as unregister,
         pytest.raises(RuntimeError, match="read failed"),
     ):
         async for _ in session.start_task("hello"):
@@ -284,7 +293,7 @@ async def test_task_failure_keeps_unconfirmed_process_pid_registered() -> None:
 
 @pytest.mark.asyncio
 async def test_completed_task_wait_unregisters_confirmed_process_pid() -> None:
-    session = ManagedClaudeSession("/tmp", "http://127.0.0.1:8082")
+    session = _session()
     process = MagicMock()
     process.pid = 405
     process.returncode = None
@@ -294,11 +303,11 @@ async def test_completed_task_wait_unregisters_confirmed_process_pid() -> None:
 
     with (
         patch(
-            "cli.managed.session.asyncio.create_subprocess_exec",
+            "codexproxy.cli.managed.session.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=process),
         ),
-        patch("cli.managed.session.register_pid") as register,
-        patch("cli.managed.session.unregister_pid") as unregister,
+        patch("codexproxy.cli.managed.session.register_pid") as register,
+        patch("codexproxy.cli.managed.session.unregister_pid") as unregister,
     ):
         events = [event async for event in session.start_task("hello")]
 

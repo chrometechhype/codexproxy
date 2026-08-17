@@ -5,8 +5,8 @@ import logging
 
 import pytest
 
-from messaging.models import IncomingMessage, MessageScope
-from messaging.trees import (
+from codexproxy.messaging.models import IncomingMessage, MessageScope
+from codexproxy.messaging.trees import (
     CancellationReason,
     CancellationUiOwner,
     FailureResult,
@@ -15,11 +15,11 @@ from messaging.trees import (
     QueueEntry,
     TreeQueueManager,
 )
-from messaging.trees import manager as manager_module
-from messaging.trees import processor as processor_module
-from messaging.trees.node import MessageNode
-from messaging.trees.processor import TreeQueueProcessor
-from messaging.trees.runtime import MessageTree
+from codexproxy.messaging.trees import manager as manager_module
+from codexproxy.messaging.trees import processor as processor_module
+from codexproxy.messaging.trees.node import MessageNode
+from codexproxy.messaging.trees.processor import TreeQueueProcessor
+from codexproxy.messaging.trees.runtime import MessageTree
 
 _SCOPE = MessageScope(platform="telegram", chat_id="chat")
 

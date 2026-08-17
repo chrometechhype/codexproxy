@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from providers.nvidia_nim.voice import (
+from codexproxy.providers.nvidia_nim.voice import (
     _NIM_ASR_MODEL_MAP,
     NvidiaNimTranscriber,
 )

@@ -12,6 +12,8 @@ CODEX_PROXY_COMMANDS = (
     "cdx-claude",
     "cdx-codex",
     "cdx-pi",
+    "cdx-opencode",
+    "cdx-cline",
     "cdx-init",
     "codexproxy",
 )
@@ -66,7 +68,7 @@ class PosixUninstallHarness:
     home: Path
     bin_dir: Path
     tool_bin: Path
-    CODEX_PROXY_home: Path
+    fcc_home: Path
     log: Path
     env: dict[str, str]
 
@@ -121,17 +123,29 @@ def posix_uninstall_harness(tmp_path: Path) -> PosixUninstallHarness:
     home = tmp_path / "home"
     bin_dir = home / ".local" / "bin"
     tool_bin = tmp_path / "tool-bin"
-    CODEX_PROXY_home = home / ".codexproxy"
+    fcc_home = home / ".cdx"
     log = tmp_path / "calls.log"
-    for path in (bin_dir, tool_bin, CODEX_PROXY_home):
+    for path in (bin_dir, tool_bin, fcc_home):
         path.mkdir(parents=True)
-    (CODEX_PROXY_home / "config.json").write_text("{}", encoding="utf-8")
+    (fcc_home / "config.json").write_text("{}", encoding="utf-8")
     for name in CODEX_PROXY_COMMANDS:
         _write_executable(tool_bin / name, "#!/bin/sh\nexit 0\n")
 
     _write_executable(bin_dir / "claude", "#!/bin/sh\nexit 0\n")
     _write_executable(bin_dir / "codex", "#!/bin/sh\nexit 0\n")
     _write_executable(bin_dir / "pi", "#!/bin/sh\nexit 0\n")
+    _write_executable(bin_dir / "opencode", "#!/bin/sh\nexit 0\n")
+    _write_executable(bin_dir / "cline", "#!/bin/sh\nexit 0\n")
+    _write_executable(
+        bin_dir / "pgrep",
+        """#!/bin/sh
+[ -n "${CODEX_PROXY_RUNNING_COMMAND:-}" ] || exit 1
+case "$*" in
+    *"$CODEX_PROXY_RUNNING_COMMAND"*) printf '4242\n'; exit 0 ;;
+    *) exit 1 ;;
+esac
+""",
+    )
     _write_executable(
         bin_dir / "uv",
         """#!/bin/sh
@@ -153,7 +167,7 @@ if [ "${1:-}" = "tool" ] && [ "${2:-}" = "uninstall" ]; then
         echo 'Tool `codexproxy` is not installed' >&2
         exit 2
     fi
-    for name in cdx-desktop cdx-server cdx-claude cdx-codex cdx-pi cdx-init codexproxy; do
+    for name in cdx-desktop cdx-server cdx-claude cdx-codex cdx-pi cdx-opencode cdx-cline cdx-init codexproxy; do
         /bin/rm -f "$FAKE_TOOL_BIN/$name"
     done
     echo "Uninstalled codexproxy"
@@ -166,7 +180,7 @@ exit 43
         bin_dir / "rm",
         """#!/bin/sh
 echo "rm:$*" >> "$CALL_LOG"
-if [ "$FAIL_STEP" = "purge" ] && [ "$*" = "-rf $HOME/.codexproxy" ]; then
+if [ "$FAIL_STEP" = "purge" ] && [ "$*" = "-rf $HOME/.cdx" ]; then
     echo "simulated purge failure" >&2
     exit 44
 fi
@@ -199,11 +213,12 @@ printf '%s\n' "$FAKE_UNAME"
             "CALL_LOG": str(log),
             "FAKE_TOOL_BIN": str(tool_bin),
             "FAKE_UNAME": "Darwin",
+            "CODEX_PROXY_RUNNING_COMMAND": "",
             "FAIL_STEP": "",
         }
     )
     env.pop("XDG_BIN_HOME", None)
-    return PosixUninstallHarness(home, bin_dir, tool_bin, CODEX_PROXY_home, log, env)
+    return PosixUninstallHarness(home, bin_dir, tool_bin, fcc_home, log, env)
 
 
 def test_uninstall_sh_removes_and_verifies_only_fcc(
@@ -213,7 +228,7 @@ def test_uninstall_sh_removes_and_verifies_only_fcc(
 
     assert result.returncode == 0, result.stderr
     assert "CodexProxy has been removed and verified." in result.stdout
-    assert not posix_uninstall_harness.CODEX_PROXY_home.exists()
+    assert not posix_uninstall_harness.fcc_home.exists()
     assert all(
         not (posix_uninstall_harness.tool_bin / name).exists()
         for name in CODEX_PROXY_COMMANDS
@@ -222,12 +237,14 @@ def test_uninstall_sh_removes_and_verifies_only_fcc(
     assert (posix_uninstall_harness.bin_dir / "claude").exists()
     assert (posix_uninstall_harness.bin_dir / "codex").exists()
     assert (posix_uninstall_harness.bin_dir / "pi").exists()
+    assert (posix_uninstall_harness.bin_dir / "opencode").exists()
+    assert (posix_uninstall_harness.bin_dir / "cline").exists()
     assert posix_uninstall_harness.calls() == [
         "uv:tool dir --bin",
         "uv:tool uninstall codexproxy",
         f"rm:-f {posix_uninstall_harness.home / 'Desktop' / 'CodexProxy.app'}",
         f"rm:-rf {posix_uninstall_harness.home / 'Applications' / 'CodexProxy.app'}",
-        f"rm:-rf {posix_uninstall_harness.CODEX_PROXY_home}",
+        f"rm:-rf {posix_uninstall_harness.fcc_home}",
     ]
 
 
@@ -239,7 +256,7 @@ def test_uninstall_sh_is_idempotent_when_tool_is_already_absent(
     result = posix_uninstall_harness.run(fail_step="missing")
 
     assert result.returncode == 0, result.stderr
-    assert not posix_uninstall_harness.CODEX_PROXY_home.exists()
+    assert not posix_uninstall_harness.fcc_home.exists()
     assert "already absent" in result.stdout
 
 
@@ -255,7 +272,7 @@ def test_uninstall_sh_preserves_unrelated_macos_desktop_link(
     result = posix_uninstall_harness.run()
 
     assert result.returncode == 0, result.stderr
-    assert "non-CodexProxy link" in result.stdout
+    assert "non-CDX link" in result.stdout
     assert desktop_link.readlink() == unrelated
 
 
@@ -299,7 +316,7 @@ def test_uninstall_sh_preserves_config_when_tool_removal_is_unconfirmed(
     result = posix_uninstall_harness.run(fail_step=failure)
 
     assert result.returncode != 0
-    assert posix_uninstall_harness.CODEX_PROXY_home.exists()
+    assert posix_uninstall_harness.fcc_home.exists()
     assert "CodexProxy has been removed and verified." not in result.stdout
     assert not any(call.startswith("rm:") for call in posix_uninstall_harness.calls())
 
@@ -310,7 +327,7 @@ def test_uninstall_sh_requires_uv_before_deleting_config(
     result = posix_uninstall_harness.run(include_uv=False)
 
     assert result.returncode != 0
-    assert posix_uninstall_harness.CODEX_PROXY_home.exists()
+    assert posix_uninstall_harness.fcc_home.exists()
     assert "uv is required" in result.stderr
     assert posix_uninstall_harness.calls() == []
 
@@ -321,7 +338,7 @@ def test_uninstall_sh_reports_purge_failure_after_verified_tool_removal(
     result = posix_uninstall_harness.run(fail_step="purge")
 
     assert result.returncode != 0
-    assert posix_uninstall_harness.CODEX_PROXY_home.exists()
+    assert posix_uninstall_harness.fcc_home.exists()
     assert all(
         not (posix_uninstall_harness.tool_bin / name).exists()
         for name in CODEX_PROXY_COMMANDS
@@ -335,7 +352,7 @@ def test_uninstall_sh_dry_run_is_non_mutating(
     result = posix_uninstall_harness.run("--dry-run")
 
     assert result.returncode == 0, result.stderr
-    assert posix_uninstall_harness.CODEX_PROXY_home.exists()
+    assert posix_uninstall_harness.fcc_home.exists()
     assert all(
         (posix_uninstall_harness.tool_bin / name).exists()
         for name in CODEX_PROXY_COMMANDS
@@ -350,7 +367,26 @@ def test_uninstall_sh_rejects_invalid_options_before_mutation(
     result = posix_uninstall_harness.run("--unknown")
 
     assert result.returncode != 0
-    assert posix_uninstall_harness.CODEX_PROXY_home.exists()
+    assert posix_uninstall_harness.fcc_home.exists()
+    assert posix_uninstall_harness.calls() == []
+
+
+@pytest.mark.parametrize("command_name", CODEX_PROXY_COMMANDS)
+def test_uninstall_sh_rejects_running_fcc_before_mutation(
+    posix_uninstall_harness: PosixUninstallHarness,
+    command_name: str,
+) -> None:
+    posix_uninstall_harness.env["CODEX_PROXY_RUNNING_COMMAND"] = command_name
+
+    result = posix_uninstall_harness.run()
+
+    assert result.returncode != 0
+    assert command_name in result.stderr
+    assert posix_uninstall_harness.fcc_home.exists()
+    assert all(
+        (posix_uninstall_harness.tool_bin / name).exists()
+        for name in CODEX_PROXY_COMMANDS
+    )
     assert posix_uninstall_harness.calls() == []
 
 
@@ -371,7 +407,7 @@ def test_uninstall_sh_process_fallback_reads_full_command_line(
     result = posix_uninstall_harness.run()
 
     assert result.returncode != 0
-    assert posix_uninstall_harness.CODEX_PROXY_home.exists()
+    assert posix_uninstall_harness.fcc_home.exists()
     assert posix_uninstall_harness.calls() == []
     assert command_name in result.stderr
 
@@ -381,7 +417,7 @@ class PowerShellUninstallHarness:
     home: Path
     bin_dir: Path
     tool_bin: Path
-    CODEX_PROXY_home: Path
+    fcc_home: Path
     log: Path
     env: dict[str, str]
     powershell: str
@@ -441,17 +477,17 @@ def powershell_uninstall_harness(
     home = tmp_path / "home"
     bin_dir = home / ".local" / "bin"
     tool_bin = tmp_path / "tool-bin"
-    CODEX_PROXY_home = home / ".codexproxy"
+    fcc_home = home / ".cdx"
     app_data = tmp_path / "app-data"
     log = tmp_path / "calls.log"
-    for path in (bin_dir, tool_bin, CODEX_PROXY_home, app_data):
+    for path in (bin_dir, tool_bin, fcc_home, app_data):
         path.mkdir(parents=True)
-    (CODEX_PROXY_home / "config.json").write_text("{}", encoding="utf-8")
+    (fcc_home / "config.json").write_text("{}", encoding="utf-8")
     for name in CODEX_PROXY_COMMANDS:
         (tool_bin / f"{name}.cmd").write_text(
             "@echo off\nexit /b 0\n", encoding="utf-8"
         )
-    for name in ("claude", "codex", "pi"):
+    for name in ("claude", "codex", "pi", "opencode", "cline"):
         (bin_dir / f"{name}.cmd").write_text("@echo off\nexit /b 0\n", encoding="utf-8")
 
     uv_commands = " ".join(CODEX_PROXY_COMMANDS)
@@ -490,7 +526,7 @@ function Remove-Item {
     Add-Content -LiteralPath $env:CALL_LOG -Value "remove:$LiteralPath"
     if (
         $env:FAIL_STEP -eq "purge" -and
-        $LiteralPath -eq (Join-Path $env:USERPROFILE ".codexproxy")
+        $LiteralPath -eq (Join-Path $env:USERPROFILE ".cdx")
     ) {
         throw "simulated purge failure"
     }
@@ -542,7 +578,7 @@ else {
         }
     )
     return PowerShellUninstallHarness(
-        home, bin_dir, tool_bin, CODEX_PROXY_home, log, env, powershell, wrapper
+        home, bin_dir, tool_bin, fcc_home, log, env, powershell, wrapper
     )
 
 
@@ -553,7 +589,7 @@ def test_uninstall_ps1_removes_and_verifies_only_fcc(
 
     assert result.returncode == 0, result.stderr
     assert "CodexProxy has been removed and verified." in result.stdout
-    assert not powershell_uninstall_harness.CODEX_PROXY_home.exists()
+    assert not powershell_uninstall_harness.fcc_home.exists()
     assert all(
         not (powershell_uninstall_harness.tool_bin / f"{name}.cmd").exists()
         for name in CODEX_PROXY_COMMANDS
@@ -562,12 +598,14 @@ def test_uninstall_ps1_removes_and_verifies_only_fcc(
     assert (powershell_uninstall_harness.bin_dir / "claude.cmd").exists()
     assert (powershell_uninstall_harness.bin_dir / "codex.cmd").exists()
     assert (powershell_uninstall_harness.bin_dir / "pi.cmd").exists()
+    assert (powershell_uninstall_harness.bin_dir / "opencode.cmd").exists()
+    assert (powershell_uninstall_harness.bin_dir / "cline.cmd").exists()
     assert powershell_uninstall_harness.calls() == [
         "uv:tool dir --bin",
         "uv:tool uninstall codexproxy",
         f"remove:{Path(powershell_uninstall_harness.env['USERPROFILE']) / 'Desktop' / 'CodexProxy.lnk'}",
         f"remove:{Path(powershell_uninstall_harness.env['APPDATA']) / 'Microsoft' / 'Windows' / 'Start Menu' / 'Programs' / 'CodexProxy.lnk'}",
-        f"remove:{powershell_uninstall_harness.CODEX_PROXY_home}",
+        f"remove:{powershell_uninstall_harness.fcc_home}",
     ]
 
 
@@ -603,7 +641,7 @@ def test_uninstall_ps1_is_idempotent_when_tool_is_already_absent(
     result = powershell_uninstall_harness.run(fail_step="missing")
 
     assert result.returncode == 0, result.stderr
-    assert not powershell_uninstall_harness.CODEX_PROXY_home.exists()
+    assert not powershell_uninstall_harness.fcc_home.exists()
     assert "already absent" in result.stdout
 
 
@@ -615,7 +653,7 @@ def test_uninstall_ps1_preserves_config_when_tool_removal_is_unconfirmed(
     result = powershell_uninstall_harness.run(fail_step=failure)
 
     assert result.returncode != 0
-    assert powershell_uninstall_harness.CODEX_PROXY_home.exists()
+    assert powershell_uninstall_harness.fcc_home.exists()
     assert "CodexProxy has been removed and verified." not in result.stdout
     assert not any(
         call.startswith("remove:") for call in powershell_uninstall_harness.calls()
@@ -628,7 +666,7 @@ def test_uninstall_ps1_requires_uv_before_deleting_config(
     result = powershell_uninstall_harness.run(include_uv=False)
 
     assert result.returncode != 0
-    assert powershell_uninstall_harness.CODEX_PROXY_home.exists()
+    assert powershell_uninstall_harness.fcc_home.exists()
     assert "uv is required" in result.stderr
     assert powershell_uninstall_harness.calls() == []
 
@@ -639,7 +677,7 @@ def test_uninstall_ps1_reports_purge_failure_after_verified_tool_removal(
     result = powershell_uninstall_harness.run(fail_step="purge")
 
     assert result.returncode != 0
-    assert powershell_uninstall_harness.CODEX_PROXY_home.exists()
+    assert powershell_uninstall_harness.fcc_home.exists()
     assert all(
         not (powershell_uninstall_harness.tool_bin / f"{name}.cmd").exists()
         for name in CODEX_PROXY_COMMANDS
@@ -653,7 +691,7 @@ def test_uninstall_ps1_dry_run_is_non_mutating(
     result = powershell_uninstall_harness.run(dry_run=True)
 
     assert result.returncode == 0, result.stderr
-    assert powershell_uninstall_harness.CODEX_PROXY_home.exists()
+    assert powershell_uninstall_harness.fcc_home.exists()
     assert all(
         (powershell_uninstall_harness.tool_bin / f"{name}.cmd").exists()
         for name in CODEX_PROXY_COMMANDS
@@ -679,17 +717,3 @@ def test_uninstallers_guard_running_commands_and_preserve_shared_owners() -> Non
         assert "is not installed" in text
         assert "no tool" not in text
         assert "nothing to uninstall" not in text
-
-
-def test_readme_uninstall_uses_raw_urls_and_verification_contract() -> None:
-    text = (_repo_root() / "README.md").read_text(encoding="utf-8")
-
-    assert (
-        'curl -fsSL "https://raw.githubusercontent.com/'
-        'Alishahryar1/codexproxy/main/scripts/uninstall.sh" | sh'
-    ) in text
-    assert (
-        '& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/'
-        'Alishahryar1/codexproxy/main/scripts/uninstall.ps1")))'
-    ) in text
-    assert "verifies every CodexProxy command is gone" in text

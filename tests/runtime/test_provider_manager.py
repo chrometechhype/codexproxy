@@ -4,14 +4,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from application.errors import ApplicationUnavailableError
-from application.model_metadata import ProviderModelInfo
-from application.ports import RequestRuntimePort
-from config.settings import Settings
-from providers.base import BaseProvider
-from providers.nvidia_nim import NvidiaNimProvider
-from providers.runtime import ProviderRuntime
-from runtime.provider_manager import ProviderRuntimeManager
+from codexproxy.application.errors import ApplicationUnavailableError
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.application.ports import RequestRuntimePort
+from codexproxy.config.settings import Settings
+from codexproxy.providers.base import BaseProvider
+from codexproxy.providers.nvidia_nim import NvidiaNimProvider
+from codexproxy.providers.runtime import ProviderRuntime
+from codexproxy.runtime.provider_manager import ProviderRuntimeManager
 
 
 class FakeRuntime(ProviderRuntime):
@@ -75,7 +75,9 @@ class RecordingModelCatalogPublisher:
 
 
 def _settings(model: str) -> Settings:
-    return Settings().model_copy(update={"model": model})
+    return Settings().model_copy(
+        update={"model": model, "nvidia_nim_api_key": "test-key"}
+    )
 
 
 @pytest.mark.asyncio
@@ -252,7 +254,7 @@ async def test_catalog_publication_failure_is_warning_only_and_secret_safe() -> 
         model_catalog_publisher=publisher,
     )
 
-    with patch("runtime.provider_manager.logger.warning") as warning:
+    with patch("codexproxy.runtime.provider_manager.logger.warning") as warning:
         await manager.warm_referenced_model_cache()
         manager.cache_model_infos(
             "nvidia_nim",
@@ -310,7 +312,7 @@ async def test_hot_replacement_owns_admission_per_provider_generation() -> None:
         return client
 
     with patch(
-        "providers.openai_chat.provider.AsyncOpenAI",
+        "codexproxy.providers.openai_chat.provider.AsyncOpenAI",
         side_effect=create_client,
     ):
         manager = ProviderRuntimeManager(first_settings)
@@ -815,7 +817,7 @@ async def test_replacement_prunes_and_rejects_removed_remote_provider_cache() ->
 async def test_generation_lifecycle_traces_contain_minimal_correlation_fields() -> None:
     factory = RuntimeFactory()
 
-    with patch("runtime.provider_manager.trace_event") as trace:
+    with patch("codexproxy.runtime.provider_manager.trace_event") as trace:
         manager = ProviderRuntimeManager(
             _settings("nvidia_nim/one"),
             runtime_factory=factory,

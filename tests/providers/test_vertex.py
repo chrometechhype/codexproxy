@@ -9,26 +9,29 @@ from google.auth.credentials import Credentials
 from google.auth.exceptions import DefaultCredentialsError, TransportError
 from google.auth.transport.requests import Request
 
-from application.errors import (
+from codexproxy.application.errors import (
     ApplicationUnavailableError,
     InvalidRequestError,
 )
-from application.model_metadata import ProviderModelInfo
-from config.provider_catalog import VERTEX_AI_API_ROOT
-from core.failures import ExecutionFailure, FailureKind
-from core.reasoning import ReasoningEffort, ReasoningPolicy
-from providers.base import ProviderConfig
-from providers.model_listing import ModelListResponseError
-from providers.vertex import VertexProvider
-from providers.vertex.auth import GoogleAccessTokenProvider
-from providers.vertex.endpoint import (
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.provider_catalog import VERTEX_AI_API_ROOT
+from codexproxy.core.failures import ExecutionFailure, FailureKind
+from codexproxy.core.reasoning import ReasoningEffort, ReasoningPolicy
+from codexproxy.providers.model_listing import ModelListResponseError
+from codexproxy.providers.vertex import VertexProvider
+from codexproxy.providers.vertex.auth import GoogleAccessTokenProvider
+from codexproxy.providers.vertex.endpoint import (
     vertex_openai_base_url,
     vertex_publisher_models_url,
     vertex_service_endpoint,
 )
-from providers.vertex.models import extract_vertex_model_page
+from codexproxy.providers.vertex.models import extract_vertex_model_page
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import immediate_admission, reasoning_for
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+    reasoning_for,
+)
 
 _PROJECT_ID = "my-project"
 _GLOBAL_OPENAI_BASE = (
@@ -87,7 +90,7 @@ def _provider(
     token_provider: GoogleAccessTokenProvider | None = None,
 ) -> VertexProvider:
     return VertexProvider(
-        ProviderConfig(api_key="", base_url=VERTEX_AI_API_ROOT),
+        make_provider_config(api_key="", base_url=VERTEX_AI_API_ROOT),
         project_id=_PROJECT_ID,
         location=location,
         admission=immediate_admission(),
@@ -222,8 +225,8 @@ async def test_transient_adc_refresh_failure_is_retryable() -> None:
 def test_vertex_provider_supplies_renewable_token_callback_to_openai() -> None:
     token_provider = _token_provider()
     with (
-        patch("providers.openai_chat.provider.AsyncOpenAI") as openai_client,
-        patch("providers.vertex.client.httpx.AsyncClient"),
+        patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as openai_client,
+        patch("codexproxy.providers.vertex.client.httpx.AsyncClient"),
     ):
         provider = _provider(token_provider=token_provider)
 
@@ -335,9 +338,7 @@ def test_vertex_preserves_caller_thinking_config_only_for_provider_default() -> 
     }
 
 
-def test_vertex_rejects_caller_thinking_config_with_CODEX_PROXY_reasoning_control() -> (
-    None
-):
+def test_vertex_rejects_caller_thinking_config_with_fcc_reasoning_control() -> None:
     provider = _provider()
     request = make_messages_request(
         "google/gemini",

@@ -7,14 +7,14 @@ import openai
 import pytest
 from httpx import Request, Response
 
-from config.provider_catalog import MISTRAL_DEFAULT_BASE
-from core.failures import ExecutionFailure
-from providers.base import ProviderConfig
-from providers.mistral import MistralProvider
+from codexproxy.config.provider_catalog import MISTRAL_DEFAULT_BASE
+from codexproxy.core.failures import ExecutionFailure
+from codexproxy.providers.mistral import MistralProvider
 from tests.providers.request_factory import make_messages_request
 from tests.providers.support import (
     REASONING_OFF,
     immediate_admission,
+    make_provider_config,
     reasoning_for,
 )
 
@@ -25,7 +25,7 @@ def make_request(**overrides):
 
 @pytest.fixture
 def mistral_config():
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test_mistral_key",
         base_url=MISTRAL_DEFAULT_BASE,
         rate_limit=10,
@@ -40,7 +40,7 @@ def mistral_provider(mistral_config):
 
 def test_init(mistral_config):
     """Test provider initialization."""
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         provider = MistralProvider(mistral_config, admission=immediate_admission())
         assert provider._api_key == "test_mistral_key"
         assert provider._base_url == MISTRAL_DEFAULT_BASE
@@ -136,7 +136,7 @@ def test_build_request_body_preserves_tools_tool_choice_and_params(mistral_provi
 
 def test_build_request_body_reasoning_off_uses_native_none():
     provider = MistralProvider(
-        ProviderConfig(
+        make_provider_config(
             api_key="test_mistral_key",
             base_url=MISTRAL_DEFAULT_BASE,
             rate_limit=10,
@@ -153,7 +153,7 @@ def test_build_request_body_reasoning_off_uses_native_none():
 
 def test_reasoning_off_keeps_replay_separate_from_new_turn_compute():
     provider = MistralProvider(
-        ProviderConfig(
+        make_provider_config(
             api_key="test_mistral_key",
             base_url=MISTRAL_DEFAULT_BASE,
             rate_limit=10,
@@ -431,6 +431,45 @@ async def test_stream_response_preserves_mixed_native_content_array(
     event_text = "\n".join(events)
     assert "Native thought." in event_text
     assert "Native text." in event_text
+
+
+@pytest.mark.asyncio
+async def test_stream_response_ignores_unknown_native_content_chunks(
+    mistral_provider,
+):
+    req = make_request()
+
+    mock_chunk = MagicMock()
+    mock_chunk.choices = [
+        MagicMock(
+            delta=MagicMock(
+                content=[
+                    {
+                        "type": "reference",
+                        "reference_ids": ["ref_1"],
+                    }
+                ],
+                reasoning_content=None,
+                tool_calls=None,
+            ),
+            finish_reason="stop",
+        )
+    ]
+    mock_chunk.usage = MagicMock(completion_tokens=1, prompt_tokens=1)
+
+    async def mock_stream():
+        yield mock_chunk
+
+    with patch.object(
+        mistral_provider._client.chat.completions, "create", new_callable=AsyncMock
+    ) as mock_create:
+        mock_create.return_value = mock_stream()
+
+        events = [event async for event in mistral_provider.stream_response(req)]
+
+    event_text = "\n".join(events)
+    assert "reference_ids" not in event_text
+    assert "message_stop" in event_text
 
 
 @pytest.mark.asyncio

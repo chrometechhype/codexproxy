@@ -7,7 +7,7 @@ import subprocess
 import time
 import uuid
 import wave
-from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,9 +16,9 @@ from typing import Any
 import httpx
 import pytest
 
-from cli.claude_env import build_claude_proxy_env
-from config.provider_catalog import SUPPORTED_PROVIDER_IDS
-from core.anthropic.stream_contracts import (
+from codexproxy.cli.claude_env import build_claude_proxy_env
+from codexproxy.config.provider_catalog import SUPPORTED_PROVIDER_IDS
+from codexproxy.core.anthropic.stream_contracts import (
     SSEEvent,
     assert_anthropic_stream_contract,
     event_index,
@@ -26,10 +26,10 @@ from core.anthropic.stream_contracts import (
     parse_sse_lines,
     text_content,
 )
-from messaging.models import IncomingMessage, MessageScope
-from messaging.session import SessionStore
-from messaging.voice import VoiceCancellationResult
-from messaging.workflow import MessagingWorkflow
+from codexproxy.messaging.models import IncomingMessage, MessageScope
+from codexproxy.messaging.session import SessionStore
+from codexproxy.messaging.voice import VoiceCancellationResult
+from codexproxy.messaging.workflow import MessagingWorkflow
 from smoke.lib.child_process import run_captured_text
 from smoke.lib.config import ProviderModel, SmokeConfig, auth_headers
 from smoke.lib.server import RunningServer, start_server
@@ -59,11 +59,13 @@ class SmokeServerDriver:
         *,
         name: str,
         env_overrides: dict[str, str] | None = None,
+        env_unset: Iterable[str] = (),
         command: list[str] | None = None,
     ) -> None:
         self.config = config
         self.name = name
         self.env_overrides = env_overrides
+        self.env_unset = tuple(env_unset)
         self.command = command
 
     @contextmanager
@@ -71,6 +73,7 @@ class SmokeServerDriver:
         with start_server(
             self.config,
             env_overrides=self.env_overrides,
+            env_unset=self.env_unset,
             command=self.command,
             name=self.name,
         ) as server:
@@ -281,7 +284,7 @@ class ClientProtocolDriver:
     ) -> subprocess.CompletedProcess[str]:
         env = build_claude_proxy_env(
             proxy_root_url=server.base_url,
-            auth_token=config.settings.anthropic_auth_token,
+            auth_token=config.settings.proxy_auth_token,
             base_env=os.environ,
         )
         command = [
@@ -341,7 +344,7 @@ class FakePlatform:
         self.handler = handler
 
     def continue_message_sequence_after(self, previous: FakePlatform) -> None:
-        """Model platform-owned message IDs surviving an CodexProxy restart."""
+        """Model platform-owned message IDs surviving an CDX restart."""
         self._counter = previous._counter
 
     async def emit(self, incoming: IncomingMessage) -> None:

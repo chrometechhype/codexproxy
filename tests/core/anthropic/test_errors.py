@@ -1,6 +1,6 @@
 import pytest
 
-from core.anthropic import (
+from codexproxy.core.anthropic import (
     anthropic_error_payload,
     anthropic_status_for_error_type,
 )

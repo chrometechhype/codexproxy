@@ -3,9 +3,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from messaging.models import MessageScope
-from messaging.trees import MessageState
-from messaging.workflow import MessagingWorkflow
+from codexproxy.messaging.models import MessageScope
+from codexproxy.messaging.trees import MessageState
+from codexproxy.messaging.workflow import MessagingWorkflow
 
 _SCOPE = MessageScope(platform="telegram", chat_id="chat_1")
 

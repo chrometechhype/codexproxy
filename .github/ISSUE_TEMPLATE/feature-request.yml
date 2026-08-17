@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an improvement to Free Claude Code.
+description: Suggest an improvement to CodexProxy.
 labels:
   - enhancement
 body:
@@ -7,7 +7,7 @@ body:
     id: what
     attributes:
       label: What?
-      description: What would you like Free Claude Code to do?
+      description: What would you like CodexProxy to do?
       placeholder: Describe the feature.
     validations:
       required: true

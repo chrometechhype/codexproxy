@@ -6,7 +6,7 @@ from collections.abc import Callable
 import pytest
 import pytest_asyncio
 
-from messaging.limiter import MessagingRateLimiter
+from codexproxy.messaging.limiter import MessagingRateLimiter
 
 
 class TestMessagingRateLimiter:

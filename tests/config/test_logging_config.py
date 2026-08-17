@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 from loguru import logger
 
-from config import logging_config
-from config.logging_config import configure_logging
+from codexproxy.config import logging_config
+from codexproxy.config.logging_config import configure_logging
 
 
 def test_configure_logging_creates_parent_directories(tmp_path) -> None:

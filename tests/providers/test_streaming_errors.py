@@ -8,33 +8,36 @@ import httpx
 import openai
 import pytest
 
-from config.nim import NimSettings
-from core.anthropic import OpenAIToolNameCodec
-from core.anthropic.stream_contracts import (
+from codexproxy.config.nim import NimSettings
+from codexproxy.core.anthropic import OpenAIToolNameCodec
+from codexproxy.core.anthropic.stream_contracts import (
     parse_sse_text,
 )
-from core.anthropic.streaming import (
+from codexproxy.core.anthropic.streaming import (
     AnthropicStreamLedger,
     make_response_recovery_body,
     make_text_recovery_body,
 )
-from core.failures import ExecutionFailure
-from core.reasoning import DEFAULT_REASONING_POLICY, ReasoningPolicy
-from providers.admission import UPSTREAM_TRANSIENT_TOTAL_ATTEMPTS
-from providers.base import ProviderConfig
-from providers.nvidia_nim import NvidiaNimProvider
-from providers.openai_chat.provider import (
+from codexproxy.core.failures import ExecutionFailure
+from codexproxy.core.reasoning import DEFAULT_REASONING_POLICY, ReasoningPolicy
+from codexproxy.providers.admission import UPSTREAM_TRANSIENT_TOTAL_ATTEMPTS
+from codexproxy.providers.nvidia_nim import NvidiaNimProvider
+from codexproxy.providers.openai_chat.provider import (
     _OpenAIChatStreamRunner,
 )
-from providers.openai_chat.tool_calls import (
+from codexproxy.providers.openai_chat.tool_calls import (
     OpenAIToolCallAssembler,
     OpenAIToolCallCollector,
     has_committed_sse_output,
     iter_heuristic_tool_use_sse,
 )
-from providers.stream_recovery import TruncatedProviderStreamError
+from codexproxy.providers.stream_recovery import TruncatedProviderStreamError
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import REASONING_OFF, immediate_admission
+from tests.providers.support import (
+    REASONING_OFF,
+    immediate_admission,
+    make_provider_config,
+)
 
 
 class AsyncStreamMock:
@@ -75,7 +78,7 @@ class ClosableAsyncStreamMock(AsyncStreamMock):
 
 def _make_provider():
     """Create a provider instance for testing."""
-    config = ProviderConfig(
+    config = make_provider_config(
         api_key="test_key",
         base_url="https://test.api.nvidia.com/v1",
         rate_limit=10,
@@ -729,6 +732,235 @@ class TestStreamingExceptionHandling:
         )
 
     @pytest.mark.asyncio
+    async def test_function_tag_tool_stream_becomes_one_anthropic_tool_use(self):
+        """Exact control-only function tags use the established tool lifecycle."""
+        provider = _make_provider()
+        request = _make_request(
+            tools=[
+                {
+                    "name": "Bash",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"command": {"type": "string"}},
+                        "required": ["command"],
+                        "additionalProperties": False,
+                    },
+                }
+            ]
+        )
+        raw_call = (
+            "<think>Use the requested command.</think>"
+            "I will invoke Bash now.\n"
+            "<tool_call>\n<function=Bash>\n<parameter=command>\n"
+            "printf CODEX_PROXY_STEP_TOOL\n</parameter>\n</function>\n</tool_call>"
+        )
+        stream_mock = AsyncStreamMock(
+            [
+                _make_chunk(content=raw_call[:43]),
+                _make_chunk(content=raw_call[43:]),
+                _make_chunk(finish_reason="stop"),
+            ]
+        )
+
+        with patch.object(
+            provider._client.chat.completions,
+            "create",
+            new_callable=AsyncMock,
+            return_value=stream_mock,
+        ):
+            events = await _collect_stream(provider, request)
+
+        parsed = parse_sse_text("".join(events))
+        starts = [
+            event.data["content_block"]
+            for event in parsed
+            if event.event == "content_block_start"
+        ]
+        tool_starts = [block for block in starts if block["type"] == "tool_use"]
+        input_json = "".join(
+            event.data.get("delta", {}).get("partial_json", "")
+            for event in parsed
+            if event.event == "content_block_delta"
+            and event.data.get("delta", {}).get("type") == "input_json_delta"
+        )
+        visible_text = "".join(
+            event.data.get("delta", {}).get("text", "")
+            for event in parsed
+            if event.event == "content_block_delta"
+            and event.data.get("delta", {}).get("type") == "text_delta"
+        )
+
+        assert [block["name"] for block in tool_starts] == ["Bash"]
+        assert json.loads(input_json) == {"command": "printf CODEX_PROXY_STEP_TOOL"}
+        assert visible_text == "I will invoke Bash now.\n"
+        assert any(
+            event.event == "content_block_delta"
+            and event.data.get("delta", {}).get("type") == "thinking_delta"
+            for event in parsed
+        )
+        assert any(
+            event.event == "message_delta"
+            and event.data.get("delta", {}).get("stop_reason") == "tool_use"
+            for event in parsed
+        )
+
+    @pytest.mark.asyncio
+    async def test_native_tool_call_disables_function_tag_recovery(self):
+        """Native structured calls win and release earlier candidate text in order."""
+        provider = _make_provider()
+        request = _make_request(
+            tools=[
+                {
+                    "name": "Bash",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"command": {"type": "string"}},
+                    },
+                }
+            ]
+        )
+        held_text = "<tool_call>\n<function=Bash>"
+        stream_mock = AsyncStreamMock(
+            [
+                _make_chunk(content=held_text),
+                _make_tool_calls_chunk(
+                    name="Bash",
+                    arguments='{"command":"printf native"}',
+                    tool_id="call_native",
+                ),
+                _make_chunk(finish_reason="tool_calls"),
+            ]
+        )
+
+        with patch.object(
+            provider._client.chat.completions,
+            "create",
+            new_callable=AsyncMock,
+            return_value=stream_mock,
+        ):
+            events = await _collect_stream(provider, request)
+
+        parsed = parse_sse_text("".join(events))
+        visible_text = "".join(
+            event.data.get("delta", {}).get("text", "")
+            for event in parsed
+            if event.event == "content_block_delta"
+            and event.data.get("delta", {}).get("type") == "text_delta"
+        )
+        tool_starts = [
+            event.data["content_block"]
+            for event in parsed
+            if event.event == "content_block_start"
+            and event.data.get("content_block", {}).get("type") == "tool_use"
+        ]
+
+        assert visible_text == held_text
+        assert [block["id"] for block in tool_starts] == ["call_native"]
+
+    @pytest.mark.asyncio
+    async def test_rejected_function_tag_candidate_bypasses_legacy_heuristics(self):
+        """Rejected reserved text is preserved without a second permissive parse."""
+        provider = _make_provider()
+        request = _make_request(
+            tools=[
+                {
+                    "name": "Bash",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"command": {"type": "string"}},
+                    },
+                }
+            ]
+        )
+        raw = (
+            "<tool_call><function=Unknown></function></tool_call>"
+            "● <function=Bash><parameter=command>printf unsafe</parameter>"
+        )
+        stream_mock = AsyncStreamMock(
+            [_make_chunk(content=raw), _make_chunk(finish_reason="stop")]
+        )
+
+        with patch.object(
+            provider._client.chat.completions,
+            "create",
+            new_callable=AsyncMock,
+            return_value=stream_mock,
+        ):
+            events = await _collect_stream(provider, request)
+
+        parsed = parse_sse_text("".join(events))
+        visible_text = "".join(
+            event.data.get("delta", {}).get("text", "")
+            for event in parsed
+            if event.event == "content_block_delta"
+            and event.data.get("delta", {}).get("type") == "text_delta"
+        )
+        tool_starts = [
+            event
+            for event in parsed
+            if event.event == "content_block_start"
+            and event.data.get("content_block", {}).get("type") == "tool_use"
+        ]
+
+        assert visible_text == raw
+        assert tool_starts == []
+
+    @pytest.mark.asyncio
+    async def test_function_tag_candidate_is_reset_before_early_retry(self):
+        """An abandoned textual candidate cannot leak or duplicate after retry."""
+        provider = _make_provider()
+        request = _make_request(
+            tools=[
+                {
+                    "name": "Bash",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"command": {"type": "string"}},
+                        "required": ["command"],
+                    },
+                }
+            ]
+        )
+        abandoned = "<tool_call>\n<function=Bash>"
+        complete = (
+            "<tool_call>\n<function=Bash>\n<parameter=command>\n"
+            "printf retry\n</parameter>\n</function>\n</tool_call>"
+        )
+        first_stream = AsyncStreamMock(
+            [_make_chunk(content=abandoned)],
+            error=httpx.ReadError("early cutoff"),
+        )
+        second_stream = AsyncStreamMock(
+            [_make_chunk(content=complete), _make_chunk(finish_reason="stop")]
+        )
+
+        with patch.object(
+            provider._client.chat.completions,
+            "create",
+            new_callable=AsyncMock,
+            side_effect=[first_stream, second_stream],
+        ) as mock_create:
+            events = await _collect_stream(provider, request)
+
+        parsed = parse_sse_text("".join(events))
+        visible_text = "".join(
+            event.data.get("delta", {}).get("text", "")
+            for event in parsed
+            if event.event == "content_block_delta"
+            and event.data.get("delta", {}).get("type") == "text_delta"
+        )
+        tool_starts = [
+            event.data["content_block"]
+            for event in parsed
+            if event.event == "content_block_start"
+            and event.data.get("content_block", {}).get("type") == "tool_use"
+        ]
+
+        assert mock_create.await_count == 2
+        assert visible_text == ""
+        assert [block["name"] for block in tool_starts] == ["Bash"]
+
+    @pytest.mark.asyncio
     async def test_precommit_retry_emits_one_unduplicated_downstream_lifecycle(self):
         """An abandoned attempt contributes no frame to the successful replay."""
         provider = _make_provider()
@@ -1319,7 +1551,7 @@ class TestProcessToolCall:
 
     def test_heuristic_tool_use_sse_marks_committed_tool_output(self):
         """Heuristic tool blocks are emitted content, even without OpenAI tool state."""
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         ledger = AnthropicStreamLedger("msg_test", "test-model")
         events = list(
@@ -1341,7 +1573,7 @@ class TestProcessToolCall:
     def test_tool_call_with_id(self):
         """Tool call with id starts a tool block."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         tc = {
@@ -1416,13 +1648,13 @@ class TestProcessToolCall:
                     "id": "call_composed",
                     "function": {
                         "name": codec.encode(original),
-                        "arguments": '{"_CODEX_PROXY_arg_type":"file"}',
+                        "arguments": '{"_fcc_arg_type":"file"}',
                     },
                 },
                 sse,
                 tool_names=codec,
                 tool_name_buffers={},
-                tool_argument_aliases={original: {"_CODEX_PROXY_arg_type": "type"}},
+                tool_argument_aliases={original: {"_fcc_arg_type": "type"}},
                 tool_argument_alias_buffers={},
             )
         )
@@ -1585,7 +1817,7 @@ class TestProcessToolCall:
     def test_tool_call_id_arrives_before_name_still_emits_id_and_name(self):
         """Split-stream tool: id (no name) then name then args; id preserved on start."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         t1 = {
@@ -1614,7 +1846,7 @@ class TestProcessToolCall:
     def test_tool_call_arguments_buffered_until_name(self):
         """Argument deltas before tool name are emitted after the block starts."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         t1 = {
@@ -1638,7 +1870,7 @@ class TestProcessToolCall:
     def test_tool_call_without_id_generates_uuid(self):
         """Tool call without id generates a uuid-based id."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         tc = {
@@ -1653,7 +1885,7 @@ class TestProcessToolCall:
     def test_task_tool_forces_background_false(self):
         """Task tool with run_in_background=true is forced to false."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         args = json.dumps({"run_in_background": True, "prompt": "test"})
@@ -1670,7 +1902,7 @@ class TestProcessToolCall:
     def test_task_tool_chunked_args_forces_background_false(self):
         """Chunked Task args are buffered until valid JSON, then forced to false."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         tc1 = {
@@ -1695,7 +1927,7 @@ class TestProcessToolCall:
     def test_task_tool_invalid_json_logs_warning_on_flush(self, caplog):
         """Invalid JSON args for Task tool emits {} on flush and logs a warning."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         tc = {
@@ -1715,7 +1947,7 @@ class TestProcessToolCall:
     def test_negative_tool_index_fallback(self):
         """tc_index < 0 uses len(tool_indices) as fallback."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         tc = {
@@ -1730,7 +1962,7 @@ class TestProcessToolCall:
     def test_none_tool_index_defaults_to_zero(self):
         """Gemini may stream tool_call deltas with a null index."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         tc = {
@@ -1747,7 +1979,7 @@ class TestProcessToolCall:
     def test_tool_args_emitted_as_delta(self):
         """Arguments are emitted as input_json_delta events."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         tc = {
@@ -1846,7 +2078,7 @@ class TestStreamChunkEdgeCases:
     def test_stream_malformed_tool_args_chunked(self):
         """Chunked tool args that never form valid JSON are flushed with {}."""
         provider = _make_provider()
-        from core.anthropic import AnthropicStreamLedger
+        from codexproxy.core.anthropic import AnthropicStreamLedger
 
         sse = AnthropicStreamLedger("msg_test", "test-model")
         tc1 = {

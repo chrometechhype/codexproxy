@@ -4,20 +4,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from config.provider_catalog import (
+from codexproxy.config.provider_catalog import (
     OLLAMA_CLOUD_DEFAULT_BASE,
     OLLAMA_DEFAULT_BASE,
 )
-from core.anthropic.stream_contracts import (
+from codexproxy.core.anthropic.stream_contracts import (
     parse_sse_text,
     thinking_content,
 )
-from providers.base import ProviderConfig
-from providers.openai_chat import OpenAIChatProvider
+from codexproxy.providers.openai_chat import OpenAIChatProvider
 from tests.providers.request_factory import make_messages_request
 from tests.providers.support import (
     REASONING_OFF,
     immediate_admission,
+    make_provider_config,
     profiled_provider,
     reasoning_for,
 )
@@ -29,7 +29,7 @@ OLLAMA_CLOUD_MODEL = "qwen3-coder:480b"
 def _provider(base_url: str = OLLAMA_DEFAULT_BASE) -> OpenAIChatProvider:
     return profiled_provider(
         "ollama",
-        ProviderConfig(api_key="ollama", base_url=base_url),
+        make_provider_config(api_key="ollama", base_url=base_url),
         admission=immediate_admission(),
     )
 
@@ -37,7 +37,7 @@ def _provider(base_url: str = OLLAMA_DEFAULT_BASE) -> OpenAIChatProvider:
 def _cloud_provider() -> OpenAIChatProvider:
     return profiled_provider(
         "ollama_cloud",
-        ProviderConfig(
+        make_provider_config(
             api_key="ollama-cloud-key",
             base_url=OLLAMA_CLOUD_DEFAULT_BASE,
         ),
@@ -54,7 +54,9 @@ def _cloud_provider() -> OpenAIChatProvider:
     ],
 )
 def test_init_normalizes_openai_base_url(configured: str, expected: str) -> None:
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as openai_client:
+    with patch(
+        "codexproxy.providers.openai_chat.provider.AsyncOpenAI"
+    ) as openai_client:
         provider = _provider(configured)
 
     assert provider._provider_name == "OLLAMA"
@@ -64,7 +66,9 @@ def test_init_normalizes_openai_base_url(configured: str, expected: str) -> None
 
 
 def test_cloud_init_uses_fixed_openai_endpoint_and_api_key() -> None:
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as openai_client:
+    with patch(
+        "codexproxy.providers.openai_chat.provider.AsyncOpenAI"
+    ) as openai_client:
         provider = _cloud_provider()
 
     assert provider._provider_name == "OLLAMA_CLOUD"

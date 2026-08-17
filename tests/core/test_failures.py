@@ -4,7 +4,7 @@ from dataclasses import FrozenInstanceError, fields, is_dataclass
 
 import pytest
 
-from core.failures import (
+from codexproxy.core.failures import (
     ExecutionFailure,
     FailureKind,
     find_execution_failure,

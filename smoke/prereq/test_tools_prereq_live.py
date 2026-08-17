@@ -1,6 +1,6 @@
 import pytest
 
-from core.anthropic.stream_contracts import (
+from codexproxy.core.anthropic.stream_contracts import (
     assert_anthropic_stream_contract,
     has_tool_use,
 )

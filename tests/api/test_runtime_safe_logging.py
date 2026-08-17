@@ -5,9 +5,9 @@ from unittest.mock import patch
 
 import pytest
 
-from config.settings import Settings
-from runtime.application import ApplicationRuntime, best_effort
-from runtime.provider_manager import ProviderRuntimeManager
+from codexproxy.config.settings import Settings
+from codexproxy.runtime.application import ApplicationRuntime, best_effort
+from codexproxy.runtime.provider_manager import ProviderRuntimeManager
 
 
 @pytest.mark.asyncio
@@ -27,7 +27,7 @@ async def test_messaging_start_failure_default_logs_exclude_traceback(caplog):
 
     with (
         patch(
-            "runtime.application.messaging_platform_factory.create_messaging_components",
+            "codexproxy.runtime.application.messaging_platform_factory.create_messaging_components",
             side_effect=RuntimeError("SECRET_RUNTIME_DETAIL"),
         ),
         caplog.at_level(logging.ERROR),

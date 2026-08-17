@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from messaging.models import IncomingMessage, MessageScope
-from messaging.trees import (
+from codexproxy.messaging.models import IncomingMessage, MessageScope
+from codexproxy.messaging.trees import (
     CancellationReason,
     CancellationUiOwner,
     NodeClaim,

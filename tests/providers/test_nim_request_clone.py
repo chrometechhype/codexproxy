@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from providers.nvidia_nim.retry import (
+from codexproxy.providers.nvidia_nim.retry import (
     clone_body_without_reasoning_budget,
 )
 

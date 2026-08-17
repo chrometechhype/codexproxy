@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from messaging.platforms.discord import (
+from codexproxy.messaging.platforms.discord import (
     DISCORD_AVAILABLE,
     DiscordRuntime,
 )
-from messaging.platforms.discord_inbound import get_audio_attachment
-from messaging.platforms.telegram import TelegramRuntime
+from codexproxy.messaging.platforms.discord_inbound import get_audio_attachment
+from codexproxy.messaging.platforms.telegram import TelegramRuntime
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def telegram_platform():
     transcriber = MagicMock()
     transcriber.transcribe = AsyncMock(return_value="Hello from voice")
     transcriber.close = AsyncMock()
-    with patch("messaging.platforms.telegram.TELEGRAM_AVAILABLE", True):
+    with patch("codexproxy.messaging.platforms.telegram.TELEGRAM_AVAILABLE", True):
         platform = TelegramRuntime(
             bot_token="test_token",
             allowed_user_id="12345",
@@ -31,7 +31,7 @@ def telegram_platform():
 @pytest.mark.asyncio
 async def test_telegram_voice_disabled_sends_reply():
     """When voice_note_enabled is False, reply with disabled message."""
-    with patch("messaging.platforms.telegram.TELEGRAM_AVAILABLE", True):
+    with patch("codexproxy.messaging.platforms.telegram.TELEGRAM_AVAILABLE", True):
         telegram_platform = TelegramRuntime(
             bot_token="test_token",
             allowed_user_id="12345",

@@ -1,14 +1,14 @@
-from messaging.rendering.telegram_markdown import (
+from codexproxy.messaging.rendering.telegram_markdown import (
     escape_md_v2,
     escape_md_v2_code,
     mdv2_bold,
     mdv2_code_inline,
     render_markdown_to_mdv2,
 )
-from messaging.transcript import RenderCtx, TranscriptBuffer
-from messaging.transcript.renderer import render_segments
-from messaging.transcript.segments import Segment, SubagentSegment
-from messaging.transcript.subagents import SubagentState
+from codexproxy.messaging.transcript import RenderCtx, TranscriptBuffer
+from codexproxy.messaging.transcript.renderer import render_segments
+from codexproxy.messaging.transcript.segments import Segment, SubagentSegment
+from codexproxy.messaging.transcript.subagents import SubagentState
 
 
 def _ctx() -> RenderCtx:

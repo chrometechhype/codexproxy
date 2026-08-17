@@ -4,14 +4,14 @@ from collections.abc import Mapping, MutableMapping
 
 from fastapi import FastAPI
 
-from api.app import create_app
-from api.ports import ApiServices
-from application.connected_accounts import ConnectedAccountPort
-from config.settings import Settings
-from providers.base import BaseProvider
-from providers.runtime import ProviderRuntime
-from runtime.application import ApplicationRuntime, RestartCallback
-from runtime.provider_manager import ProviderRuntimeManager
+from codexproxy.api.app import create_app
+from codexproxy.api.ports import ApiServices
+from codexproxy.application.connected_accounts import ConnectedAccountPort
+from codexproxy.config.settings import Settings
+from codexproxy.providers.base import BaseProvider
+from codexproxy.providers.runtime import ProviderRuntime
+from codexproxy.runtime.application import ApplicationRuntime, RestartCallback
+from codexproxy.runtime.provider_manager import ProviderRuntimeManager
 
 
 def create_test_app(

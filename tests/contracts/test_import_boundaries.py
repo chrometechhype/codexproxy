@@ -7,22 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_PACKAGE_ROOT = _REPO_ROOT
-_PACKAGE_NAME = _REPO_ROOT.name
-_PACKAGE_DIRS = (
-    "api",
-    "application",
-    "cli",
-    "config",
-    "core",
-    "messaging",
-    "providers",
-    "runtime",
-)
-_LEGACY_NAMESPACE_ROOTS = ("free_claude_code", "codexproxy")
+_PACKAGE_ROOT = _REPO_ROOT / "src" / "codexproxy"
+_PACKAGE_NAME = "codexproxy"
 
 ALLOWED_PACKAGE_DEPENDENCIES: dict[str, set[str]] = {
-    "config": set(),
+    "config": {"core"},
     "core": set(),
     "application": {"config", "core"},
     "messaging": {"core"},
@@ -42,8 +31,8 @@ ALLOWED_PACKAGE_DEPENDENCIES: dict[str, set[str]] = {
 
 IMPORT_EXCEPTIONS: dict[tuple[str, str], str] = {
     (
-        "cli.commands",
-        "runtime.bootstrap",
+        "codexproxy.cli.commands",
+        "codexproxy.runtime.bootstrap",
     ): (
         "Owner: installed server command. "
         "Reason: the command delegates construction to the process composition root."
@@ -51,16 +40,16 @@ IMPORT_EXCEPTIONS: dict[tuple[str, str], str] = {
 }
 
 FACADE_ONLY_BOUNDARIES = {
-    "core.openai_responses",
-    "messaging.trees",
-    "providers.openai_chat",
+    "codexproxy.core.openai_responses",
+    "codexproxy.messaging.trees",
+    "codexproxy.providers.openai_chat",
 }
 
 OPTIONAL_IMPORT_OWNERS = {
-    "librosa": "messaging.transcription",
-    "torch": "messaging.transcription",
-    "transformers": "messaging.transcription",
-    "riva": "providers.nvidia_nim.voice",
+    "librosa": "codexproxy.messaging.transcription",
+    "torch": "codexproxy.messaging.transcription",
+    "transformers": "codexproxy.messaging.transcription",
+    "riva": "codexproxy.providers.nvidia_nim.voice",
 }
 
 
@@ -186,14 +175,17 @@ def test_package_dependencies_follow_declarative_policy() -> None:
         assert source_package is not None
         assert target_package is not None
         assert target_package not in ALLOWED_PACKAGE_DEPENDENCIES[source_package]
-    expected_package_modules = {*_PACKAGE_DIRS}
+    expected_package_modules = {
+        _PACKAGE_NAME,
+        *(f"{_PACKAGE_NAME}.{package}" for package in actual_packages),
+    }
     assert set(modules) >= expected_package_modules
 
 
 def test_first_party_imports_use_the_installable_namespace() -> None:
     offenders = _legacy_first_party_import_offenders(
         _scan_imports(_PACKAGE_ROOT),
-        set(_LEGACY_NAMESPACE_ROOTS),
+        set(ALLOWED_PACKAGE_DEPENDENCIES),
     )
 
     assert offenders == []
@@ -281,18 +273,18 @@ def test_provider_backchannel_detector_reports_untyped_private_access(
     ]
 
 
-def test_legacy_first_party_import_detector_rejects_stale_namespace_imports() -> None:
+def test_legacy_first_party_import_detector_rejects_bare_owner_names() -> None:
     record = ImportRecord(
-        importer="api.routes",
-        imported="free_claude_code.core.anthropic",
+        importer="codexproxy.api.routes",
+        imported="core.anthropic",
         path="codexproxy/api/routes.py",
         line=7,
         inside_function=False,
     )
 
-    assert _legacy_first_party_import_offenders(
-        [record], set(_LEGACY_NAMESPACE_ROOTS)
-    ) == ["codexproxy/api/routes.py:7: api.routes -> free_claude_code.core.anthropic"]
+    assert _legacy_first_party_import_offenders([record], {"api", "core"}) == [
+        "codexproxy/api/routes.py:7: codexproxy.api.routes -> core.anthropic"
+    ]
 
 
 def test_ownership_root_discovery_includes_modules_and_namespace_directories(
@@ -497,7 +489,10 @@ def test_core_does_not_import_provider_transport_sdks() -> None:
     offenders = [
         record.describe()
         for record in _scan_imports(_PACKAGE_ROOT)
-        if (record.importer == "core" or record.importer.startswith("core."))
+        if (
+            record.importer == "codexproxy.core"
+            or record.importer.startswith("codexproxy.core.")
+        )
         and record.imported.split(".", 1)[0] in forbidden_roots
     ]
 
@@ -558,8 +553,8 @@ def test_runtime_imports_without_optional_voice_dependencies() -> None:
             "            raise ModuleNotFoundError(fullname)",
             "        return None",
             "sys.meta_path.insert(0, Blocker())",
-            "import runtime.bootstrap",
-            "import api.app",
+            "import codexproxy.runtime.bootstrap",
+            "import codexproxy.api.app",
         )
     )
 
@@ -574,13 +569,13 @@ def test_runtime_imports_without_optional_voice_dependencies() -> None:
 
 
 def test_supported_messaging_facade_is_explicit() -> None:
-    import messaging as facade
-    from messaging.managed_protocols import (
+    import codexproxy.messaging as facade
+    from codexproxy.messaging.managed_protocols import (
         ManagedClaudeSessionManagerProtocol,
         ManagedClaudeSessionProtocol,
     )
-    from messaging.models import IncomingMessage, MessageScope
-    from messaging.platforms.ports import OutboundMessenger
+    from codexproxy.messaging.models import IncomingMessage, MessageScope
+    from codexproxy.messaging.platforms.ports import OutboundMessenger
 
     expected = {
         "IncomingMessage": IncomingMessage,
@@ -595,7 +590,7 @@ def test_supported_messaging_facade_is_explicit() -> None:
 
 
 def test_message_tree_mutability_stays_behind_its_facade() -> None:
-    import messaging.trees as facade
+    import codexproxy.messaging.trees as facade
 
     for internal_owner in {
         "MessageNode",
@@ -608,15 +603,6 @@ def test_message_tree_mutability_stays_behind_its_facade() -> None:
 
 
 def _module_paths(package_root: Path) -> dict[str, Path]:
-    if package_root == _REPO_ROOT:
-        modules: dict[str, Path] = {}
-        for root in _PACKAGE_DIRS:
-            subtree = package_root / root
-            if not subtree.is_dir():
-                continue
-            for path in subtree.rglob("*.py"):
-                modules[_module_name(subtree, path)] = path
-        return modules
     return {
         _module_name(package_root, path): path for path in package_root.rglob("*.py")
     }
@@ -672,13 +658,9 @@ def _resolve_import_from_base(
 
 def _top_level_package(module: str) -> str | None:
     parts = module.split(".")
-    if not parts:
+    if len(parts) < 2 or parts[0] != _PACKAGE_NAME:
         return None
-    if parts[0] in _PACKAGE_DIRS:
-        return parts[0]
-    if len(parts) >= 2 and parts[0] == _PACKAGE_NAME:
-        return parts[1]
-    return None
+    return parts[1]
 
 
 def _ownership_roots(modules: set[str], package_name: str) -> set[str]:
@@ -687,8 +669,6 @@ def _ownership_roots(modules: set[str], package_name: str) -> set[str]:
         parts = module.split(".")
         if len(parts) >= 2 and parts[0] == package_name:
             roots.add(parts[1])
-        elif parts[0] in _PACKAGE_DIRS:
-            roots.add(parts[0])
     return roots
 
 

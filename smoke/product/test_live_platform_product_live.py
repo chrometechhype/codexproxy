@@ -29,7 +29,7 @@ def test_telegram_live_permissions_e2e(smoke_config: SmokeConfig) -> None:
             "ALLOWED_TELEGRAM_USER_ID required"
         )
 
-    marker = f"CodexProxy product smoke {int(time.time())}"
+    marker = f"CDX product smoke {int(time.time())}"
     sent = httpx.post(
         f"{base_url}/sendMessage",
         json={"chat_id": chat_id, "text": marker},
@@ -77,7 +77,7 @@ def test_discord_live_permissions_e2e(smoke_config: SmokeConfig) -> None:
     )
     assert channel.status_code == 200, channel.text
 
-    marker = f"CodexProxy product smoke {int(time.time())}"
+    marker = f"CDX product smoke {int(time.time())}"
     sent = httpx.post(
         f"{base_url}/channels/{channel_id}/messages",
         headers=headers,

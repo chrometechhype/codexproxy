@@ -5,10 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from config.provider_catalog import VERCEL_AI_GATEWAY_DEFAULT_BASE
-from providers.base import ProviderConfig
+from codexproxy.config.provider_catalog import VERCEL_AI_GATEWAY_DEFAULT_BASE
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import immediate_admission, profiled_provider
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+    profiled_provider,
+)
 
 
 def make_request(**overrides):
@@ -17,7 +20,7 @@ def make_request(**overrides):
 
 @pytest.fixture
 def vercel_config():
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test_vercel_key",
         base_url=VERCEL_AI_GATEWAY_DEFAULT_BASE,
         rate_limit=10,
@@ -39,7 +42,7 @@ def test_default_base_url_constant():
 
 
 def test_init_uses_default_base_url_and_api_key(vercel_config):
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         provider = profiled_provider(
             "vercel",
             vercel_config,
@@ -54,7 +57,7 @@ def test_init_uses_default_base_url_and_api_key(vercel_config):
 def test_init_strips_trailing_slash(vercel_config):
     config = replace(vercel_config, base_url=f"{VERCEL_AI_GATEWAY_DEFAULT_BASE}/")
 
-    with patch("providers.openai_chat.provider.AsyncOpenAI"):
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI"):
         provider = profiled_provider(
             "vercel",
             config,
@@ -66,7 +69,7 @@ def test_init_strips_trailing_slash(vercel_config):
 
 def test_build_request_body_keeps_max_tokens(vercel_provider):
     with patch(
-        "providers.openai_chat.request_policy.build_base_request_body"
+        "codexproxy.providers.openai_chat.request_policy.build_base_request_body"
     ) as mock_convert:
         mock_convert.return_value = {
             "model": "openai/gpt-5.5",

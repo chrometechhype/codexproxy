@@ -2,7 +2,7 @@ import warnings
 
 from fastapi.testclient import TestClient
 
-from core.version import package_version
+from codexproxy.core.version import package_version
 from tests.api.support import create_test_app
 
 

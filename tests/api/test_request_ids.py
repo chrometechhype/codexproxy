@@ -12,7 +12,7 @@ from starlette.datastructures import Headers
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp, Message, Scope
 
-from api.request_ids import (
+from codexproxy.api.request_ids import (
     RequestCorrelationMiddleware,
     get_request_id,
 )
@@ -91,7 +91,7 @@ async def test_correlation_context_and_headers_span_the_complete_stream() -> Non
 
     middleware = RequestCorrelationMiddleware(cast(ASGIApp, app))
     with patch(
-        "api.request_ids.logger.contextualize",
+        "codexproxy.api.request_ids.logger.contextualize",
         side_effect=contextualize,
     ):
         request = asyncio.create_task(

@@ -2,11 +2,11 @@
 
 from unittest.mock import MagicMock, patch
 
-from messaging.platforms.factory import (
+from codexproxy.messaging.platforms.factory import (
     MessagingPlatformOptions,
     create_messaging_components,
 )
-from messaging.platforms.ports import MessagingStartupNotice
+from codexproxy.messaging.platforms.ports import MessagingStartupNotice
 
 
 class TestCreateMessagingComponents:
@@ -21,12 +21,12 @@ class TestCreateMessagingComponents:
         transcriber = MagicMock()
         with (
             patch(
-                "messaging.platforms.factory.MessagingRateLimiter",
+                "codexproxy.messaging.platforms.factory.MessagingRateLimiter",
                 return_value=limiter,
             ) as limiter_cls,
-            patch("messaging.platforms.telegram.TELEGRAM_AVAILABLE", True),
+            patch("codexproxy.messaging.platforms.telegram.TELEGRAM_AVAILABLE", True),
             patch(
-                "messaging.platforms.telegram.TelegramRuntime",
+                "codexproxy.messaging.platforms.telegram.TelegramRuntime",
                 return_value=mock_runtime,
             ) as runtime_cls,
         ):
@@ -86,12 +86,12 @@ class TestCreateMessagingComponents:
         transcriber = MagicMock()
         with (
             patch(
-                "messaging.platforms.factory.MessagingRateLimiter",
+                "codexproxy.messaging.platforms.factory.MessagingRateLimiter",
                 return_value=limiter,
             ) as limiter_cls,
-            patch("messaging.platforms.discord.DISCORD_AVAILABLE", True),
+            patch("codexproxy.messaging.platforms.discord.DISCORD_AVAILABLE", True),
             patch(
-                "messaging.platforms.discord.DiscordRuntime",
+                "codexproxy.messaging.platforms.discord.DiscordRuntime",
                 return_value=mock_runtime,
             ) as runtime_cls,
         ):
@@ -160,10 +160,10 @@ class TestCreateMessagingComponents:
         runtime.outbound = MagicMock()
         with (
             patch(
-                "messaging.platforms.telegram.TelegramRuntime",
+                "codexproxy.messaging.platforms.telegram.TelegramRuntime",
                 return_value=runtime,
             ) as runtime_cls,
-            patch("messaging.platforms.telegram.TELEGRAM_AVAILABLE", True),
+            patch("codexproxy.messaging.platforms.telegram.TELEGRAM_AVAILABLE", True),
         ):
             first = create_messaging_components(
                 "telegram",

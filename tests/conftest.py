@@ -7,44 +7,56 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from config.settings import Settings
-from tests.providers.support import immediate_admission
+from codexproxy.config import env_migrations, paths
+from codexproxy.config.loader import clear_settings_cache
+from tests.providers.support import (
+    immediate_admission,
+    make_provider_config,
+)
 
-# Set mock environment BEFORE any imports that use Settings
+# Set deterministic process overrides before any test resolves Settings.
 os.environ.setdefault("NVIDIA_NIM_API_KEY", "test_key")
 os.environ.setdefault("MODEL", "nvidia_nim/test-model")
 os.environ["PTB_TIMEDELTA"] = "1"
-# Ensure tests don't pick up a server API key from the repo .env
-# (tests expect endpoints to be unauthenticated by default)
+# Tests keep proxy authentication disabled unless a case enables it explicitly.
 os.environ["ANTHROPIC_AUTH_TOKEN"] = ""
-
-Settings.model_config = {**Settings.model_config, "env_file": None}
 
 
 @pytest.fixture(autouse=True)
-def _isolate_from_dotenv(monkeypatch):
-    """Prevent Pydantic BaseSettings from reading the .env file during tests."""
-    monkeypatch.setattr(
-        Settings, "model_config", {**Settings.model_config, "env_file": None}
-    )
+def _isolate_managed_config(monkeypatch, tmp_path):
+    """Keep every test away from real home, checkout, and running-server config."""
+
+    config_dir = tmp_path / ".cdx"
+    monkeypatch.setattr(paths, "config_dir_path", lambda: config_dir)
+    monkeypatch.setattr(env_migrations, "legacy_env_paths", lambda: ())
+    monkeypatch.setattr(env_migrations, "verified_checkout_env_path", lambda: None)
+    clear_settings_cache()
+    yield
+    clear_settings_cache()
 
 
 @pytest.fixture
 def provider_config():
-    from providers.base import ProviderConfig
 
-    return ProviderConfig(
+    return make_provider_config(
         api_key="test_key",
         base_url="https://test.api.nvidia.com/v1",
         rate_limit=10,
         rate_window=60,
+        max_concurrency=5,
+        http_read_timeout=300.0,
+        http_write_timeout=10.0,
+        http_connect_timeout=10.0,
+        proxy=None,
+        log_raw_sse_events=False,
+        log_api_error_tracebacks=False,
     )
 
 
 @pytest.fixture
 def nim_provider(provider_config):
-    from config.nim import NimSettings
-    from providers.nvidia_nim import NvidiaNimProvider
+    from codexproxy.config.nim import NimSettings
+    from codexproxy.providers.nvidia_nim import NvidiaNimProvider
 
     return NvidiaNimProvider(
         provider_config,
@@ -55,35 +67,47 @@ def nim_provider(provider_config):
 
 @pytest.fixture
 def open_router_provider(provider_config):
-    from providers.open_router import OpenRouterProvider
+    from codexproxy.providers.open_router import OpenRouterProvider
 
     return OpenRouterProvider(provider_config, admission=immediate_admission())
 
 
 @pytest.fixture
 def lmstudio_provider(provider_config):
-    from providers.base import ProviderConfig
-    from providers.lmstudio import LMStudioProvider
+    from codexproxy.providers.lmstudio import LMStudioProvider
 
-    lmstudio_config = ProviderConfig(
+    lmstudio_config = make_provider_config(
         api_key="lm-studio",
         base_url="http://localhost:1234/v1",
         rate_limit=provider_config.rate_limit,
         rate_window=provider_config.rate_window,
+        max_concurrency=provider_config.max_concurrency,
+        http_read_timeout=provider_config.http_read_timeout,
+        http_write_timeout=provider_config.http_write_timeout,
+        http_connect_timeout=provider_config.http_connect_timeout,
+        proxy=None,
+        log_raw_sse_events=False,
+        log_api_error_tracebacks=False,
     )
     return LMStudioProvider(lmstudio_config, admission=immediate_admission())
 
 
 @pytest.fixture
 def llamacpp_provider(provider_config):
-    from providers.base import ProviderConfig
-    from providers.openai_chat import create_openai_chat_provider
+    from codexproxy.providers.openai_chat import create_openai_chat_provider
 
-    llamacpp_config = ProviderConfig(
+    llamacpp_config = make_provider_config(
         api_key="llamacpp",
         base_url="http://localhost:8080/v1",
         rate_limit=10,
         rate_window=60,
+        max_concurrency=5,
+        http_read_timeout=300.0,
+        http_write_timeout=10.0,
+        http_connect_timeout=10.0,
+        proxy=None,
+        log_raw_sse_events=False,
+        log_api_error_tracebacks=False,
     )
     return create_openai_chat_provider(
         "llamacpp",
@@ -94,7 +118,7 @@ def llamacpp_provider(provider_config):
 
 @pytest.fixture
 def mock_cli_session():
-    from messaging.managed_protocols import (
+    from codexproxy.messaging.managed_protocols import (
         ManagedClaudeSessionProtocol,
     )
 
@@ -106,7 +130,7 @@ def mock_cli_session():
 
 @pytest.fixture
 def mock_cli_manager():
-    from messaging.managed_protocols import (
+    from codexproxy.messaging.managed_protocols import (
         ManagedClaudeSessionManagerProtocol,
     )
 
@@ -121,7 +145,7 @@ def mock_cli_manager():
 
 @pytest.fixture
 def mock_platform():
-    from messaging.platforms.ports import OutboundMessenger
+    from codexproxy.messaging.platforms.ports import OutboundMessenger
 
     platform = MagicMock(spec=OutboundMessenger)
     platform.send_message = AsyncMock(return_value="msg_123")
@@ -146,7 +170,7 @@ def mock_platform():
 
 @pytest.fixture
 def mock_session_store():
-    from messaging.session import SessionStore
+    from codexproxy.messaging.session import SessionStore
 
     store = MagicMock(spec=SessionStore)
     store.save_tree = MagicMock()
@@ -178,7 +202,7 @@ def incoming_message_factory():
     )
 
     def _create(**kwargs):
-        from messaging.models import IncomingMessage
+        from codexproxy.messaging.models import IncomingMessage
 
         defaults: dict[str, Any] = {
             "text": "hello",

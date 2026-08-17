@@ -9,7 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $PackageName = "codexproxy"
-$FccHomeDirname = ".codexproxy"
+$FccHomeDirname = ".cdx"
 $FccCommands = @(
     # Include retired entry points so older installations are fully stopped and removed.
     "cdx-desktop",
@@ -17,6 +17,8 @@ $FccCommands = @(
     "cdx-claude",
     "cdx-codex",
     "cdx-pi",
+    "cdx-opencode",
+    "cdx-cline",
     "cdx-init",
     "codexproxy"
 )
@@ -27,8 +29,8 @@ function Show-Usage {
     @"
 Usage: uninstall.ps1 [options]
 
-Removes the CodexProxy uv tool and deletes ~/.codexproxy/ after removal is verified.
-Does not remove uv, Claude Code, Codex, Pi, the uv-managed Python runtime, or shared PATH entries.
+Removes the CodexProxy uv tool and deletes ~/.cdx/ after removal is verified.
+Does not remove uv, Claude Code, Codex, Pi, OpenCode, the uv-managed Python runtime, or shared PATH entries.
 
 Options:
   -DryRun                Print commands without running them.
@@ -144,7 +146,7 @@ function Initialize-UvContext {
 
     $uvCommand = Get-ApplicationCommand "uv"
     if (-not $uvCommand) {
-        throw "uv is required to remove the CodexProxy tool. Install uv, then rerun this uninstaller; ~/.codexproxy was not deleted."
+        throw "uv is required to remove the CodexProxy tool. Install uv, then rerun this uninstaller; ~/.cdx was not deleted."
     }
     $script:UvPath = $uvCommand.Source
 
@@ -155,15 +157,15 @@ function Initialize-UvContext {
         if (-not [string]::IsNullOrWhiteSpace($result.Output)) {
             [Console]::Error.WriteLine($result.Output)
         }
-        throw "Could not determine the uv tool bin directory (exit code $($result.ExitCode)); ~/.codexproxy was not deleted."
+        throw "Could not determine the uv tool bin directory (exit code $($result.ExitCode)); ~/.cdx was not deleted."
     }
     $script:UvToolBin = $result.Output.Trim()
     if ([string]::IsNullOrWhiteSpace($script:UvToolBin)) {
-        throw "uv returned an empty tool bin directory; ~/.codexproxy was not deleted."
+        throw "uv returned an empty tool bin directory; ~/.cdx was not deleted."
     }
 }
 
-function Uninstall-FreeClaudeCode {
+function Uninstall-CodexProxy {
     Write-Host "+ uv tool uninstall $PackageName"
     if ($DryRun) {
         return
@@ -187,7 +189,7 @@ function Uninstall-FreeClaudeCode {
     if (-not [string]::IsNullOrWhiteSpace($result.Output)) {
         [Console]::Error.WriteLine($result.Output)
     }
-    throw "uv tool uninstall $PackageName failed with exit code $($result.ExitCode); ~/.codexproxy was not deleted."
+    throw "uv tool uninstall $PackageName failed with exit code $($result.ExitCode); ~/.cdx was not deleted."
 }
 
 function Confirm-FccCommandsRemoved {
@@ -207,7 +209,7 @@ function Confirm-FccCommandsRemoved {
         }
     }
     if ($remaining.Count -gt 0) {
-        throw "CodexProxy entry points remain after uv uninstall: $($remaining -join ', '); ~/.codexproxy was not deleted."
+        throw "CodexProxy entry points remain after uv uninstall: $($remaining -join ', '); ~/.cdx was not deleted."
     }
 }
 
@@ -275,7 +277,7 @@ function Remove-FccDesktopShortcuts {
 function Purge-FccHome {
     $fccHome = Join-Path $env:USERPROFILE $FccHomeDirname
     if (-not (Test-Path -LiteralPath $fccHome)) {
-        Write-Host "No CodexProxy config directory at $fccHome; skipping purge."
+        Write-Host "No CDX config directory at $fccHome; skipping purge."
         return
     }
 
@@ -293,7 +295,7 @@ function Purge-FccHome {
 
     Remove-Item -LiteralPath $fccHome -Recurse -Force
     if (Test-Path -LiteralPath $fccHome) {
-        throw "CodexProxy config directory still exists after deletion: $fccHome"
+        throw "CDX config directory still exists after deletion: $fccHome"
     }
 }
 
@@ -316,7 +318,7 @@ Write-Step "Locating the uv-managed CodexProxy installation"
 Initialize-UvContext
 
 Write-Step "Removing the CodexProxy uv tool"
-Uninstall-FreeClaudeCode
+Uninstall-CodexProxy
 
 Write-Step "Verifying CodexProxy entry points were removed"
 Confirm-FccCommandsRemoved
@@ -324,7 +326,7 @@ Confirm-FccCommandsRemoved
 Write-Step "Removing CodexProxy desktop shortcuts"
 Remove-FccDesktopShortcuts
 
-Write-Step "Purging CodexProxy config and data from ~/.codexproxy"
+Write-Step "Purging CDX config and data from ~/.cdx"
 Purge-FccHome
 
 Write-Host ""
@@ -333,5 +335,5 @@ if ($DryRun) {
 }
 else {
     Write-Host "CodexProxy has been removed and verified."
-    Write-Host "uv, Claude Code, Codex, Pi, the uv-managed Python runtime, and shared PATH entries were left installed."
+    Write-Host "uv, Claude Code, Codex, Pi, OpenCode, the uv-managed Python runtime, and shared PATH entries were left installed."
 }

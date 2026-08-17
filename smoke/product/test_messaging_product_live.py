@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-from messaging.models import MessageScope
-from messaging.platforms.ports import MessagingStartupNotice
-from messaging.trees import MessageState, TreeIdentity
+from codexproxy.messaging.models import MessageScope
+from codexproxy.messaging.platforms.ports import MessagingStartupNotice
+from codexproxy.messaging.trees import MessageState, TreeIdentity
 from smoke.lib.e2e import FakeCLISession, FakePlatformDriver, default_cli_events
 
 pytestmark = [pytest.mark.live, pytest.mark.smoke_target("messaging")]

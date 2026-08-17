@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from cli import desktop_entrypoint
-from cli.desktop_assets import app_icon_bytes, export_app_icon
+from codexproxy.cli import desktop_entrypoint
+from codexproxy.cli.desktop_assets import app_icon_bytes, export_app_icon
 
 
 def test_packaged_icons_have_native_container_headers() -> None:

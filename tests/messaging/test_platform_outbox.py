@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from messaging.platforms.outbox import PlatformOutbox
+from codexproxy.messaging.platforms.outbox import PlatformOutbox
 
 
 def _noop_outbox(*, limiter=None, delete_many=None) -> PlatformOutbox:
@@ -150,7 +150,7 @@ async def test_completed_background_failure_is_observed_and_released() -> None:
     async def fail() -> None:
         raise RuntimeError("background failed")
 
-    with patch("messaging.platforms.outbox.logger.error") as error_log:
+    with patch("codexproxy.messaging.platforms.outbox.logger.error") as error_log:
         outbox.fire_and_forget(fail())
         await asyncio.sleep(0)
         await asyncio.sleep(0)

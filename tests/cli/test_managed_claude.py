@@ -1,7 +1,7 @@
 import os
 
-from cli.claude_env import build_claude_proxy_env
-from cli.managed.claude import (
+from codexproxy.cli.claude_env import build_claude_proxy_env
+from codexproxy.cli.managed.claude import (
     MANAGED_CLAUDE_MODEL_TIER,
     ManagedClaudeConfig,
     ManagedClaudeParseState,
@@ -11,7 +11,7 @@ from cli.managed.claude import (
     extract_managed_claude_session_id,
     parse_managed_claude_stdout_line,
 )
-from cli.managed.diagnostics import classify_managed_claude_stderr
+from codexproxy.cli.managed.diagnostics import classify_managed_claude_stderr
 
 
 def _config(**overrides: object) -> ManagedClaudeConfig:
@@ -127,14 +127,14 @@ def test_managed_claude_uses_native_plan_storage() -> None:
     assert "--settings" not in invocation.argv
 
 
-def test_managed_claude_env_uses_sentinel_when_proxy_auth_blank() -> None:
+def test_managed_claude_env_forwards_retained_proxy_auth_token() -> None:
     env = build_managed_claude_env(
         proxy_root_url="http://localhost:8082",
-        auth_token="",
+        auth_token="codexcc",
         base_env={"ANTHROPIC_AUTH_TOKEN": "stale"},
     )
 
-    assert env["ANTHROPIC_AUTH_TOKEN"] == "cdx-no-auth"
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "codexcc"
 
 
 def test_managed_claude_env_adds_noninteractive_process_policy() -> None:
@@ -223,3 +223,13 @@ def test_managed_claude_parser_returns_raw_for_non_json() -> None:
     )
 
     assert events == [{"type": "raw", "content": "not json"}]
+
+
+def test_managed_claude_parser_returns_raw_for_non_object_json() -> None:
+    events = list(
+        parse_managed_claude_stdout_line(
+            '"not an event"', ManagedClaudeParseState(log_raw_cli_diagnostics=False)
+        )
+    )
+
+    assert events == [{"type": "raw", "content": '"not an event"'}]

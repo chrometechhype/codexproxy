@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from messaging.workflow import MessagingWorkflow
+from codexproxy.messaging.workflow import MessagingWorkflow
 
 
 async def _wait_for_idle(handler: MessagingWorkflow) -> None:

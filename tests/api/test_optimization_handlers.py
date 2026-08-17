@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from api.optimization_handlers import (
+from codexproxy.api.optimization_handlers import (
     try_filepath_mock,
     try_optimizations,
     try_prefix_detection,
@@ -10,8 +10,8 @@ from api.optimization_handlers import (
     try_suggestion_skip,
     try_title_skip,
 )
-from config.settings import Settings
-from core.anthropic.models import (
+from codexproxy.config.settings import Settings
+from codexproxy.core.anthropic.models import (
     ContentBlockText,
     Message,
     MessagesRequest,
@@ -35,7 +35,7 @@ class TestTryPrefixDetection:
         settings.fast_prefix_detection = False
         req = _make_request("x")
         with patch(
-            "api.optimization_handlers.is_prefix_detection_request",
+            "codexproxy.api.optimization_handlers.is_prefix_detection_request",
             return_value=(True, "/ask"),
         ):
             assert try_prefix_detection(req, settings) is None
@@ -46,14 +46,14 @@ class TestTryPrefixDetection:
         req = _make_request("x")
         with (
             patch(
-                "api.optimization_handlers.is_prefix_detection_request",
+                "codexproxy.api.optimization_handlers.is_prefix_detection_request",
                 return_value=(True, "/ask"),
             ),
             patch(
-                "api.optimization_handlers.extract_command_prefix",
+                "codexproxy.api.optimization_handlers.extract_command_prefix",
                 return_value="/ask",
             ),
-            patch("api.optimization_handlers.logger.info") as mock_log_info,
+            patch("codexproxy.api.optimization_handlers.logger.info") as mock_log_info,
         ):
             result = try_prefix_detection(req, settings)
         assert result is not None
@@ -69,7 +69,7 @@ class TestTryPrefixDetection:
         settings.fast_prefix_detection = True
         req = _make_request("x")
         with patch(
-            "api.optimization_handlers.is_prefix_detection_request",
+            "codexproxy.api.optimization_handlers.is_prefix_detection_request",
             return_value=(False, ""),
         ):
             assert try_prefix_detection(req, settings) is None
@@ -81,7 +81,7 @@ class TestTryQuotaMock:
         settings.enable_network_probe_mock = False
         req = _make_request("quota", max_tokens=1)
         with patch(
-            "api.optimization_handlers.is_quota_check_request",
+            "codexproxy.api.optimization_handlers.is_quota_check_request",
             return_value=True,
         ):
             assert try_quota_mock(req, settings) is None
@@ -91,7 +91,7 @@ class TestTryQuotaMock:
         settings.enable_network_probe_mock = True
         req = _make_request("quota", max_tokens=1)
         with patch(
-            "api.optimization_handlers.is_quota_check_request",
+            "codexproxy.api.optimization_handlers.is_quota_check_request",
             return_value=True,
         ):
             result = try_quota_mock(req, settings)
@@ -107,7 +107,7 @@ class TestTryTitleSkip:
         settings.enable_title_generation_skip = False
         req = _make_request("write a 5-10 word title")
         with patch(
-            "api.optimization_handlers.is_title_generation_request",
+            "codexproxy.api.optimization_handlers.is_title_generation_request",
             return_value=True,
         ):
             assert try_title_skip(req, settings) is None
@@ -117,7 +117,7 @@ class TestTryTitleSkip:
         settings.enable_title_generation_skip = True
         req = _make_request("x")
         with patch(
-            "api.optimization_handlers.is_title_generation_request",
+            "codexproxy.api.optimization_handlers.is_title_generation_request",
             return_value=True,
         ):
             result = try_title_skip(req, settings)
@@ -133,7 +133,7 @@ class TestTrySuggestionSkip:
         settings.enable_suggestion_mode_skip = False
         req = _make_request("[SUGGESTION MODE: x]")
         with patch(
-            "api.optimization_handlers.is_suggestion_mode_request",
+            "codexproxy.api.optimization_handlers.is_suggestion_mode_request",
             return_value=True,
         ):
             assert try_suggestion_skip(req, settings) is None
@@ -143,7 +143,7 @@ class TestTrySuggestionSkip:
         settings.enable_suggestion_mode_skip = True
         req = _make_request("x")
         with patch(
-            "api.optimization_handlers.is_suggestion_mode_request",
+            "codexproxy.api.optimization_handlers.is_suggestion_mode_request",
             return_value=True,
         ):
             result = try_suggestion_skip(req, settings)
@@ -159,7 +159,7 @@ class TestTryFilepathMock:
         settings.enable_filepath_extraction_mock = False
         req = _make_request("Command:\nls\nOutput:\nfilepaths")
         with patch(
-            "api.optimization_handlers.is_filepath_extraction_request",
+            "codexproxy.api.optimization_handlers.is_filepath_extraction_request",
             return_value=(True, "ls", "out"),
         ):
             assert try_filepath_mock(req, settings) is None
@@ -170,11 +170,11 @@ class TestTryFilepathMock:
         req = _make_request("x")
         with (
             patch(
-                "api.optimization_handlers.is_filepath_extraction_request",
+                "codexproxy.api.optimization_handlers.is_filepath_extraction_request",
                 return_value=(True, "ls", "a.txt b.txt"),
             ),
             patch(
-                "api.optimization_handlers.extract_filepaths_from_command",
+                "codexproxy.api.optimization_handlers.extract_filepaths_from_command",
                 return_value="a.txt\nb.txt",
             ),
         ):
@@ -190,11 +190,11 @@ class TestTryFilepathMock:
         req = _make_request("x")
         with (
             patch(
-                "api.optimization_handlers.is_filepath_extraction_request",
+                "codexproxy.api.optimization_handlers.is_filepath_extraction_request",
                 return_value=(True, "ls", "out"),
             ),
             patch(
-                "api.optimization_handlers.extract_filepaths_from_command",
+                "codexproxy.api.optimization_handlers.extract_filepaths_from_command",
                 return_value="",
             ),
         ):
@@ -213,7 +213,7 @@ class TestTryOptimizations:
         settings.fast_prefix_detection = True
         req = _make_request("quota", max_tokens=1)
         with patch(
-            "api.optimization_handlers.is_quota_check_request",
+            "codexproxy.api.optimization_handlers.is_quota_check_request",
             return_value=True,
         ):
             result = try_optimizations(req, settings)
@@ -239,7 +239,7 @@ class TestTryOptimizations:
         req.model = "upstream-model"
 
         with patch(
-            "api.optimization_handlers.is_quota_check_request",
+            "codexproxy.api.optimization_handlers.is_quota_check_request",
             return_value=True,
         ):
             result = try_optimizations(

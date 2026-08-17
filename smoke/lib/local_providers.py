@@ -5,7 +5,7 @@ from urllib.parse import urljoin
 import httpx
 import pytest
 
-from providers.openai_chat import openai_v1_base_url
+from codexproxy.providers.openai_chat import openai_v1_base_url
 
 LOCAL_PROVIDER_PROBE_TIMEOUT_S = 1.5
 _ROOT_OR_V1_PROVIDERS = frozenset({"llamacpp", "ollama"})

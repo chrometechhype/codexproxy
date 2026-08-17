@@ -7,55 +7,33 @@
   </picture>
 </h1>
 
-Use Claude Code, Codex, Pi, or their IDE extensions through your own provider-backed proxy.
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json&style=for-the-badge)](https://github.com/astral-sh/uv)
-[![Tested with Pytest](https://img.shields.io/badge/testing-Pytest-00c0ff.svg?style=for-the-badge)](https://github.com/Alishahryar1/codexproxy/actions/workflows/tests.yml)
+[![Testing: Pytest](https://img.shields.io/badge/Testing-Pytest-00c0ff.svg?style=for-the-badge)](https://github.com/Alishahryar1/codexproxy/actions/workflows/tests.yml)
 [![Type checking: Ty](https://img.shields.io/badge/type%20checking-ty-ffcc00.svg?style=for-the-badge)](https://pypi.org/project/ty/)
 [![Code style: Ruff](https://img.shields.io/badge/code%20formatting-ruff-f5a623.svg?style=for-the-badge)](https://github.com/astral-sh/ruff)
 [![Logging: Loguru](https://img.shields.io/badge/logging-loguru-4ecdc4.svg?style=for-the-badge)](https://github.com/Delgan/loguru)
-
-Run your coding agents with free, paid, or local models. Choose and validate providers from one local Admin UI.
 
 [Quick Start](#quick-start) · [Providers](#choose-a-provider) · [Clients](#connect-your-client) · [Integrations](#optional-integrations) · [Manage](#manage-your-installation)
 
 </div>
 
-<div align="center">
-  <img src="assets/pic.png" alt="CodexProxy in action" width="700">
-  <p><em>Claude Code running through the CodexProxy proxy.</em></p>
-</div>
-
-<div align="center">
-  <img src="assets/codex.png" alt="Codex CLI in action through CodexProxy" width="700">
-  <p><em>Codex CLI using the local CodexProxy Responses provider.</em></p>
-</div>
-
-<a id="model-picker"></a>
-
-<div align="center">
-  <img src="assets/cc-model-picker.png" alt="Claude Code model picker showing gateway models" width="700">
-  <p><em>Claude Code native <code>/model</code> picker with CodexProxy gateway models.</em></p>
-</div>
-
-<div align="center">
-  <img src="assets/codex-model-picker.png" alt="Codex model picker showing generated CodexProxy model catalog" width="700">
-  <p><em>Codex native <code>/model</code> picker with the generated CodexProxy catalog.</em></p>
-</div>
-
 ## What You Get
 
-- Launch Claude Code with `cdx-claude`, Codex with `cdx-codex`, or Pi with `cdx-pi`.
-- Run CodexProxy in the background from a desktop launcher on Windows or macOS.
-- Switch among 31 cloud and local providers from the Admin UI.
-- Use each coding agent's native model picker.
-- Route Fable, Opus, Sonnet, Haiku, and fallback traffic to different models.
-- Keep streaming, tool use, reasoning, and image input across compatible models.
-- Connect Claude Code and Codex in VS Code or Claude Code through JetBrains ACP.
-- Optionally run Claude Code sessions through Discord or Telegram with voice-note transcription.
-- Protect the local proxy with optional token authentication.
+- **48 ToS-friendly providers. 1.3B+ free tokens every month.** Use free, paid, subscription, and local models from one searchable UI without putting your account at risk. CDX follows provider terms and removes integrations if they stop being allowed.
+- **5 coding agents. One model catalog.** Run Claude Code, Codex, Pi, OpenCode, or Cline with your CDX models.
+- **Up to 90% fewer terminal-output tokens.** Optional [RTK](https://github.com/rtk-ai/rtk) filters common command output, while five CDX optimizations handle quota probes, command-prefix detection, titles, suggestions, and filepaths without calling a provider.
+- **Terminal, desktop, IDE, or phone.** Work through native launchers, VS Code, Codex App, JetBrains, Discord, or Telegram.
+- **Voice notes in. Code out.** Talk to your agent using local Whisper or NVIDIA NIM transcription.
+- **Agent capabilities stay intact.** Stream responses, use tools, preserve native interleaved thinking for maximum performance, send images, and route Fable, Opus, Sonnet, and Haiku independently with compatible models.
+
+Free-tier availability and limits are controlled by each provider and may change.
+
+<div align="center">
+  <img src="assets/pic.png" alt="Claude Code running with CodexProxy" width="700">
+  <p><em>Claude Code running with CDX.</em></p>
+</div>
 
 ## Quick Start
 
@@ -75,11 +53,9 @@ Windows PowerShell:
 & ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.ps1")))
 ```
 
-Re-run the same command whenever you want to update. You can review the installers before running them: [install.sh](scripts/install.sh) and [install.ps1](scripts/install.ps1).
+Re-run the same command to update. When prompted, choose at least one coding agent and optionally RTK. You can review the installers before running them: [install.sh](scripts/install.sh) and [install.ps1](scripts/install.ps1).
 
-The installer asks which coding agents to install or verify. Choose at least one; skipped agents are left unchanged.
-
-### 2. Start CodexProxy
+### 2. Start CDX
 
 #### Windows
 
@@ -97,22 +73,9 @@ Run:
 cdx-server
 ```
 
-On Windows and macOS, CodexProxy runs in the system tray or menu bar without opening a
-terminal. Use its menu to open Admin, check server status, restart, or quit. On
-Windows, left-clicking the tray icon opens Admin directly.
-
-To print the installed CodexProxy version without starting the server,
-run `cdx-server --version`.
-
-When using `cdx-server`, keep the terminal open. The Admin UI opens in your
-browser once the server is healthy by default. Its address is shown in the
-startup log:
-
-```text
-INFO:     Admin UI: http://127.0.0.1:8082/admin (local-only)
-```
-
-Use the port shown in your terminal if it differs from `8082`.
+CDX opens the Admin UI after starting. On Windows and macOS, use the tray or
+menu-bar icon to open Admin, restart, or quit. When using `cdx-server`, keep its
+terminal open.
 
 <a id="nvidia-nim-provider"></a>
 
@@ -124,8 +87,11 @@ Use the port shown in your terminal if it differs from `8082`.
 4. Leave `MODEL` on the default `nvidia_nim/nvidia/nemotron-3-super-120b-a12b`, or search the model dropdown and select another model.
 5. Click **Validate**, then **Apply**.
 
+To protect the local proxy with a bearer token, enable **Proxy Authentication**
+in Admin.
+
 <div align="center">
-  <img src="assets/admin-page.png" alt="Local admin UI for proxy settings" width="700">
+  <img src="assets/admin-page.png" alt="CodexProxy Admin UI" width="700">
 </div>
 
 ### 4. Run Your Coding Agent
@@ -148,13 +114,33 @@ Pi:
 cdx-pi
 ```
 
-All three launchers use the current Admin UI settings. Use the agent's model picker to choose from the models CodexProxy exposes. Normal CLI arguments still work, for example:
+OpenCode:
+
+```bash
+cdx-opencode
+```
+
+Cline:
+
+```bash
+cdx-cline
+```
+
+All five launchers use the current Admin UI settings. Use the agent's model picker to choose from the models CDX exposes. Normal CLI arguments still work, for example:
 
 ```bash
 cdx-codex exec "hello"
 ```
 
-`cdx-pi` registers CodexProxy only for that Pi process; your existing Pi settings, sessions, credentials, and extensions remain unchanged.
+CDX launchers leave your existing agent settings, sessions, credentials, and
+extensions unchanged.
+
+<a id="model-picker"></a>
+
+<div align="center">
+  <img src="assets/cc-model-picker.png" alt="Claude Code model picker showing CDX models" width="700">
+  <p><em>Select an CDX model from Claude Code's native <code>/model</code> picker.</em></p>
+</div>
 
 ## Choose A Provider
 
@@ -165,18 +151,35 @@ cdx-codex exec "hello"
    models, enter `<provider-id>/<exact-provider-model-id>` manually.
 4. Click **Validate**, then **Apply**.
 
+<details>
+<summary><strong>Provider catalog</strong></summary>
+
 | Provider | Admin UI setting | Example `MODEL` |
 | --- | --- | --- |
 | [NVIDIA NIM](https://build.nvidia.com/settings/api-keys) | `NVIDIA_NIM_API_KEY` | `nvidia_nim/nvidia/nemotron-3-super-120b-a12b` |
-| [OpenAI / ChatGPT](https://learn.chatgpt.com/docs/auth) | Connect ChatGPT in the Admin UI | `openai/<model-id>` |
-| [Azure OpenAI](https://learn.microsoft.com/azure/foundry/openai/how-to/chatgpt) | `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_BASE_URL` | `azure_openai/<deployment-name>` |
 | [OpenRouter](https://openrouter.ai/keys) | `OPENROUTER_API_KEY` | `open_router/openrouter/free` |
+| [Groq](https://console.groq.com/keys) | `GROQ_API_KEY` | `groq/llama-3.3-70b-versatile` |
+| [ClinePass](https://docs.cline.bot/getting-started/clinepass) | `CLINE_API_KEY` | `cline_pass/cline-pass/kimi-k3` |
+| [OpenAI / ChatGPT](https://learn.chatgpt.com/docs/auth) | Connect ChatGPT in the Admin UI | `openai/<model-id>` |
+| [xAI (Grok)](https://console.x.ai/team/default/api-keys) | `XAI_API_KEY` | `xai/grok-4.5` |
+| [QwenCloud Token Plan](https://home.qwencloud.com/api-keys) | `QWENCLOUD_API_KEY` | `qwencloud/qwen3.7-plus` |
+| [QwenCloud Coding Plan](https://home.qwencloud.com/api-keys) | `QWENCLOUD_CODING_API_KEY` | `qwencloud_coding/qwen3.7-plus` |
+| [Together AI](https://api.together.ai/settings/api-keys) | `TOGETHER_API_KEY` | `together/zai-org/GLM-5.2` |
+| [DeepInfra](https://deepinfra.com/dash/api_keys) | `DEEPINFRA_API_KEY` | `deepinfra/deepseek-ai/DeepSeek-V4-Flash` |
+| [SiliconFlow](https://cloud.siliconflow.com/account/ak) | `SILICONFLOW_API_KEY` | `siliconflow/Qwen/Qwen3-32B` |
+| [Nebius Token Factory](https://tokenfactory.nebius.com/project/api-keys) | `NEBIUS_API_KEY` | `nebius/Qwen/Qwen3-30B-A3B` |
+| [Chutes](https://chutes.ai/docs/getting-started/authentication) | `CHUTES_API_KEY` | `chutes/Qwen/Qwen3-32B-TEE` |
+| [Featherless AI](https://featherless.ai/account/api-keys) | `FEATHERLESS_API_KEY` | `featherless/Qwen/Qwen3-32B` |
+| [Agnes AI](https://agnes-ai.com/) | `AGNES_API_KEY` | `agnes/agnes-2.0-flash` |
+| [ZenMux](https://zenmux.ai/platform/pay-as-you-go) | `ZENMUX_API_KEY` | `zenmux/deepseek/deepseek-v4-flash-free` |
+| [W&B Inference](https://wandb.ai/settings) | `WANDB_API_KEY` | `wandb/openai/gpt-oss-20b` |
+| [Azure OpenAI](https://learn.microsoft.com/azure/foundry/openai/how-to/chatgpt) | `AZURE_OPENAI_API_KEY` and `AZURE_OPENAI_BASE_URL` | `azure_openai/<deployment-name>` |
 | [Google AI Studio (Gemini)](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` | `gemini/models/gemini-3.1-flash-lite` |
 | [Google Vertex AI](https://cloud.google.com/vertex-ai/generative-ai/docs/start/openai) | `VERTEX_PROJECT_ID` + ADC | `vertex/google/gemini-3.5-flash` |
 | [DeepSeek](https://platform.deepseek.com/api_keys) | `DEEPSEEK_API_KEY` | `deepseek/deepseek-chat` |
 | [Mistral La Plateforme](https://console.mistral.ai/) | `MISTRAL_API_KEY` | `mistral/devstral-small-latest` |
 | [Mistral Codestral](https://console.mistral.ai/) | `CODESTRAL_API_KEY` | `mistral_codestral/codestral-latest` |
-| [OpenCode Zen](https://opencode.ai/auth) | `OPENCODE_API_KEY` | `opencode/gpt-5.3-codex` |
+| [OpenCode Zen](https://opencode.ai/auth) | `OPENCODE_API_KEY` | `opencode_zen/gpt-5.3-codex` |
 | [OpenCode Go](https://opencode.ai/auth) | `OPENCODE_API_KEY` | `opencode_go/minimax-m2.7` |
 | [Vercel AI Gateway](https://vercel.com/docs/ai-gateway/models-and-providers) | `AI_GATEWAY_API_KEY` | `vercel/openai/gpt-5.5` |
 | [Amazon Bedrock](https://console.aws.amazon.com/bedrock/) | `AWS_BEARER_TOKEN_BEDROCK` | `bedrock/openai.gpt-oss-120b` |
@@ -188,48 +191,55 @@ cdx-codex exec "hello"
 | [Kimi Code](https://www.kimi.com/code/console) | `KIMI_CODE_API_KEY` | `kimi_code/k3` |
 | [MiniMax](https://platform.minimax.io/user-center/basic-information/interface-key) | `MINIMAX_API_KEY` | `minimax/MiniMax-M3` |
 | [Cerebras Inference](https://cloud.cerebras.ai/) | `CEREBRAS_API_KEY` | `cerebras/gpt-oss-120b` |
-| [Groq](https://console.groq.com/keys) | `GROQ_API_KEY` | `groq/llama-3.3-70b-versatile` |
 | [SambaNova](https://cloud.sambanova.ai/apis) | `SAMBANOVA_API_KEY` | `sambanova/Meta-Llama-3.3-70B-Instruct` |
 | [Kilo.ai](https://kilo.ai) | `KILO_API_KEY` | `kilo/kilo-auto/free` |
 | [Fireworks AI](https://fireworks.ai/account/api-keys) | `FIREWORKS_API_KEY` | `fireworks/accounts/fireworks/models/llama-v3p3-70b-instruct` |
+| [Novita AI](https://novita.ai/settings/key-management) | `NOVITA_API_KEY` | `novita/deepseek/deepseek-v4-flash-0731` |
 | [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/) | `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` | `cloudflare/@cf/moonshotai/kimi-k2.6` |
-| [Z.ai](https://z.ai/manage-apikey/apikey-list) | `ZAI_API_KEY` | `zai/glm-5.2` |
+| [Z.ai Coding Plan](https://z.ai/manage-apikey/apikey-list) | `ZAI_API_KEY` | `zai/glm-5.2` |
+| [Z.ai API (pay as you go)](https://z.ai/manage-apikey/apikey-list) | `ZAI_API_KEY` | `zai_api/glm-4.7-flash` |
+| [TokenRouter](https://www.tokenrouter.com/) | `TOKENROUTER_API_KEY` | `tokenrouter/moonshotai/kimi-k3-free` |
+| [NaraRoute](https://router.bynara.id/) | `NARAROUTE_API_KEY` | `nararoute/kimi-k3-free` |
 | [Ollama Cloud](https://ollama.com/settings/keys) | `OLLAMA_API_KEY` | `ollama_cloud/qwen3-coder:480b` |
 | [LM Studio](https://lmstudio.ai/) | `LM_STUDIO_BASE_URL` | `lmstudio/<model-id>` |
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) | `LLAMACPP_BASE_URL` | `llamacpp/<model-id>` |
 | [Ollama](https://ollama.com/) | `OLLAMA_BASE_URL` | `ollama/<model-tag>` |
 
-Important provider notes:
+</details>
+
+<details>
+<summary><strong>Provider-specific setup</strong></summary>
 
 - OpenAI uses your ChatGPT subscription rather than an API key. Connect from
-  **Providers → Connected accounts**; browser PKCE is the default and device
-  code is available for headless setups. CodexProxy stores its own renewable
-  credentials under `~/.codexproxy/auth/` and leaves Codex login untouched. Restart
-  an already-running agent after connecting to refresh its model picker.
+  **Providers → Connected accounts** in the Admin UI. Use device code on
+  headless systems. Restart an already-running agent after connecting.
 - Azure OpenAI uses the deployment names from your resource. Set
   `AZURE_OPENAI_BASE_URL` to its complete v1 endpoint, such as
   `https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1/`, and select a
-  deployment that supports Chat Completions. Azure does not expose custom
-  deployment names through its data-plane model list, so enter the deployment
-  name as a custom model slug.
+  deployment that supports Chat Completions. Enter the deployment name as a
+  custom model slug if it does not appear in the model dropdown.
 - Mistral Codestral uses a separate key from Mistral La Plateforme.
 - Kimi Code subscription keys use `kimi_code/`; Kimi API credit keys use
   `kimi/`. Kimi Code plans are for personal interactive coding-agent use under
   [Kimi's community guidelines](https://www.kimi.com/code/docs/en/kimi-code/community-guidelines.html).
-- OpenCode Zen and OpenCode Go share `OPENCODE_API_KEY` but use different model prefixes.
-- Amazon Bedrock uses its Mantle OpenAI-compatible endpoint. Set
-  `BEDROCK_BASE_URL` to the endpoint for the same region as the API key and
-  select one of the models returned by CodexProxy's model picker.
+- QwenCloud Coding Plan keys use `qwencloud_coding/`; QwenCloud Token Plan keys
+  use `qwencloud/`. The keys and endpoints are not interchangeable. Coding Plan
+  is for local, personal, interactive coding-agent use under the
+  [Coding Plan terms](https://www.alibabacloud.com/help/en/model-studio/coding-plan).
+- OpenCode Zen and OpenCode Go share `OPENCODE_API_KEY` but use the explicit
+  `opencode_zen/` and `opencode_go/` model prefixes.
+- For Amazon Bedrock, set `BEDROCK_BASE_URL` to the URL for the same region as
+  the API key and select one of the listed models.
 - Vertex AI uses Google Application Default Credentials instead of an API key.
   Locally, run `gcloud auth application-default login` once; service-account
   files and attached service accounts also work. Set `VERTEX_PROJECT_ID`, and
-  optionally change `VERTEX_LOCATION` from its `global` default. CodexProxy refreshes
-  expiring access tokens automatically.
+  optionally change `VERTEX_LOCATION` from its `global` default.
 - Cloudflare requires both its API token and account ID.
-- Ollama Cloud connects directly to `ollama.com`; use the exact model IDs shown
-  by CodexProxy's model picker. Local Ollama remains available through the separate
-  `ollama/` prefix.
+- For Ollama Cloud, use the exact model IDs shown in the model picker. Local
+  Ollama uses the separate `ollama/` prefix.
 - Prefer tool-capable models for coding agents. Local models also need enough context for the agent's system prompt and tool definitions.
+
+</details>
 
 <details>
 <summary><strong>Local provider setup</strong></summary>
@@ -240,7 +250,7 @@ Start LM Studio's local server, load a tool-capable model, and use the model ide
 
 ### llama.cpp
 
-Start `llama-server` with its OpenAI-compatible Chat Completions API and enough context for the model. Use the local model ID with the `llamacpp/` prefix. `LLAMACPP_BASE_URL` defaults to `http://localhost:8080/v1`; CodexProxy accepts either the server root or an explicit `/v1` suffix.
+Start `llama-server` with its OpenAI-compatible Chat Completions API and enough context for the model. Use the local model ID with the `llamacpp/` prefix. `LLAMACPP_BASE_URL` defaults to `http://localhost:8080/v1`; CDX accepts either the server root or an explicit `/v1` suffix.
 
 ### Ollama
 
@@ -249,51 +259,41 @@ ollama pull llama3.1
 ollama serve
 ```
 
-Use the tag shown by `ollama list` with the `ollama/` prefix. `OLLAMA_BASE_URL` defaults to `http://localhost:11434`; CodexProxy accepts either the root URL or an explicit `/v1` suffix.
+Use the tag shown by `ollama list` with the `ollama/` prefix. `OLLAMA_BASE_URL` defaults to `http://localhost:11434`; CDX accepts either the root URL or an explicit `/v1` suffix.
 
 </details>
 
-### Optional Model-Tier Routing
+<details>
+<summary><strong>Optional model-tier routing</strong></summary>
 
 `MODEL` is the fallback for every request. Select a model for `MODEL_FABLE`, `MODEL_OPUS`, `MODEL_SONNET`, or `MODEL_HAIKU` to override an individual Claude Code tier; select **None** to use `MODEL`.
 
 For example, route Opus to `nvidia_nim/nvidia/nemotron-3-super-120b-a12b`, Sonnet to `open_router/openrouter/free`, Haiku to `lmstudio/qwen3.5-coder`, and keep `MODEL` on `zai/glm-5.2`.
 
-### Reasoning Control
+</details>
+
+<details>
+<summary><strong>Reasoning control</strong></summary>
 
 Open **Admin UI → Model Config → Reasoning** and select the behavior you want.
 
 | Selection | Behavior |
 | --- | --- |
-| **From client** (default) | Use the effort sent by Claude Code, Codex, or Pi. If none is sent, keep the provider default. |
+| **From client** (default) | Use the effort sent by Claude Code, Codex, Pi, OpenCode, or Cline. If none is sent, keep the provider default. |
 | **Off** | Request reasoning to be disabled. |
 | **Low**, **Medium**, **High**, **X-High**, or **Max** | Override the client with the selected reasoning level. |
 | **Inherit** (Fable, Opus, Sonnet, and Haiku only) | Use the root Reasoning selection. |
 
 Providers that do not support a selected control retain their own behavior.
 
-### Codex System Prompt
-
-CodexProxy prepends a rich proxy-level system prompt to every `/v1/responses` request by default, giving the model coding-agent guidance tuned for CodexProxy's tool set (`shell_command`, `read`, `write`, `apply_patch`, `exec_command`, `view_image`).
-
-| `SYSTEM_PROMPT_MODE` | Behavior |
-| --- | --- |
-| **`default`** (default) | Prepend the built-in CodexProxy system prompt. |
-| **`custom`** | Prepend your own text from `SYSTEM_PROMPT_CUSTOM`. |
-| **`none`** | Pass the client's instructions through unchanged. |
-
-Example:
-
-```dotenv
-SYSTEM_PROMPT_MODE="custom"
-SYSTEM_PROMPT_CUSTOM="You are my personal coding assistant..."
-```
+</details>
 
 <a id="connect-your-client"></a>
 
 ## Connect Your Client
 
-For terminal use, start `cdx-server`, then run `cdx-claude`, `cdx-codex`, or `cdx-pi`. Use the guides below for editor integrations.
+For terminal use, start `cdx-server`, then run `cdx-claude`, `cdx-codex`,
+`cdx-pi`, `cdx-opencode`, or `cdx-cline`. Use the guides below for editor integrations.
 
 <details>
 <summary><strong>Claude Code in VS Code</strong></summary>
@@ -304,7 +304,7 @@ Install the [Claude Code extension](https://marketplace.visualstudio.com/items?i
 "claudeCode.disableLoginPrompt": true,
 "claudeCode.environmentVariables": [
   { "name": "ANTHROPIC_BASE_URL", "value": "http://localhost:8082" },
-  { "name": "ANTHROPIC_AUTH_TOKEN", "value": "freecc" },
+  { "name": "ANTHROPIC_AUTH_TOKEN", "value": "codexcc" },
   { "name": "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "value": "1" },
   { "name": "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "value": "190000" },
   { "name": "DISABLE_AUTOUPDATER", "value": "1" },
@@ -320,37 +320,44 @@ Match the port and authentication token to the Admin UI, then reload the extensi
 <details>
 <summary><strong>Codex App</strong></summary>
 
-Start CodexProxy, then add its provider and generated model catalog to your user-level Codex configuration.
+Start CDX, then edit your Codex configuration:
 
-**Windows** — edit `%USERPROFILE%\.codex\config.toml` and replace `YOUR_USERNAME`:
+- Windows: `%USERPROFILE%\.codex\config.toml`
+- macOS: `~/.codex/config.toml`
 
-```toml
-model_provider = "codexproxy"
-model = "nvidia_nim/nvidia/nemotron-3-super-120b-a12b"
-model_catalog_json = "C:/Users/YOUR_USERNAME/.codexproxy/codex-model-catalog.json"
+Add the matching model-catalog path and replace `YOUR_USERNAME`.
 
-[model_providers.codexproxy]
-name = "CodexProxy"
-base_url = "http://127.0.0.1:8082/v1"
-http_headers = { Authorization = "Bearer freecc" }
-wire_api = "responses"
-```
-
-**macOS** — edit `~/.codex/config.toml` and replace `YOUR_USERNAME`:
+Windows:
 
 ```toml
-model_provider = "codexproxy"
-model = "nvidia_nim/nvidia/nemotron-3-super-120b-a12b"
-model_catalog_json = "/Users/YOUR_USERNAME/.codexproxy/codex-model-catalog.json"
-
-[model_providers.codexproxy]
-name = "CodexProxy"
-base_url = "http://127.0.0.1:8082/v1"
-http_headers = { Authorization = "Bearer freecc" }
-wire_api = "responses"
+model_catalog_json = "C:/Users/YOUR_USERNAME/.cdx/codex-model-catalog.json"
 ```
 
-Match the model, port, and bearer token to the Admin UI. Restart the Codex App after setup or model changes, then use its model picker to select any CodexProxy provider/model slug.
+macOS:
+
+```toml
+model_catalog_json = "/Users/YOUR_USERNAME/.cdx/codex-model-catalog.json"
+```
+
+Then add the shared CDX settings:
+
+```toml
+model_provider = "cdx"
+model = "nvidia_nim/nvidia/nemotron-3-super-120b-a12b"
+
+[model_providers.cdx]
+name = "CodexProxy"
+base_url = "http://127.0.0.1:8082/v1"
+wire_api = "responses"
+
+[model_providers.cdx.auth]
+command = "cdx-codex"
+args = ["--print-proxy-auth-token"]
+```
+
+Match the model and port to the Admin UI. The auth command reads CDX's current
+proxy token automatically. Restart the Codex App after setup or model changes,
+then select an CDX model from its model picker.
 
 </details>
 
@@ -360,17 +367,22 @@ Match the model, port, and bearer token to the Admin UI. Restart the Codex App a
 Install the [Codex extension](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt). Create or edit `~/.codex/config.toml` (`%USERPROFILE%\.codex\config.toml` on Windows):
 
 ```toml
-model_provider = "codexproxy"
+model_provider = "cdx"
 model = "nvidia_nim/nvidia/nemotron-3-super-120b-a12b"
 
-[model_providers.codexproxy]
+[model_providers.cdx]
 name = "CodexProxy"
 base_url = "http://127.0.0.1:8082/v1"
-http_headers = { Authorization = "Bearer freecc" }
 wire_api = "responses"
+
+[model_providers.cdx.auth]
+command = "cdx-codex"
+args = ["--print-proxy-auth-token"]
 ```
 
-Match `model`, the port, and bearer token to the Admin UI, then restart VS Code. For WSL-backed Codex, edit the file inside WSL.
+Match `model` and the port to the Admin UI. The auth command reads CDX's current
+proxy token automatically. Restart VS Code after setup or model changes. For
+WSL-backed Codex, edit the file inside WSL.
 
 </details>
 
@@ -387,7 +399,7 @@ Set the environment for `acp.registry.claude-acp`:
 ```json
 "env": {
   "ANTHROPIC_BASE_URL": "http://localhost:8082",
-  "ANTHROPIC_AUTH_TOKEN": "freecc",
+  "ANTHROPIC_AUTH_TOKEN": "codexcc",
   "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
   "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "190000",
   "DISABLE_AUTOUPDATER": "1",
@@ -403,7 +415,7 @@ Match the port and token to the Admin UI, then restart the IDE.
 <details>
 <summary><strong>Claude Code still asks you to log in</strong></summary>
 
-If Claude Code asks you to log in after you configure the CodexProxy URL and token, open its state file:
+If Claude Code asks you to log in after you configure the CDX URL and token, open its state file:
 
 - Windows: `%USERPROFILE%\.claude.json`
 - macOS/Linux/WSL: `~/.claude.json`
@@ -431,10 +443,6 @@ Restart Claude Code or the IDE after saving the file.
 ## Optional Integrations
 
 Configure integrations from **Admin UI → Messaging**, then click **Validate** and **Apply**.
-
-<div align="center">
-  <img src="assets/admin-messaging.png" alt="Admin UI Messaging view with bot and voice settings" width="700">
-</div>
 
 <details>
 <summary><strong>Discord bot</strong></summary>
@@ -468,44 +476,34 @@ Configure integrations from **Admin UI → Messaging**, then click **Validate** 
 | `/stats` | Show session state. |
 | Standalone `/stop` | Cancel all work. |
 | Reply with `/stop` | Cancel only the selected request while other queued requests continue. |
-| Standalone `/clear` | Reset all CodexProxy state and remove every tracked message in that chat, including user prompts, voice notes, CodexProxy replies, Telegram's online notice, and the clear command itself. |
+| Standalone `/clear` | Reset all CDX state and remove every tracked message in that chat, including user prompts, voice notes, CDX replies, Telegram's online notice, and the clear command itself. |
 | Reply with `/clear` | Delete the selected message and its literal platform reply subtree while preserving its ancestors and siblings. |
 
 <details>
 <summary><strong>Voice notes</strong></summary>
 
-Re-run the installer with the voice backend you need.
+Choose the voice backend you want, then re-run the installer with its option.
+
+| Voice backend | macOS/Linux option | Windows option |
+| --- | --- | --- |
+| NVIDIA NIM transcription | `--voice-nim` | `-VoiceNim` |
+| Local Whisper on CPU or CUDA | `--voice-local` | `-VoiceLocal` |
+| Both backends | `--voice-all` | `-VoiceAll` |
+| Local Whisper with CUDA 13.0 | `--voice-local --torch-backend cu130` | `-VoiceLocal -TorchBackend cu130` |
+
+The examples below install NVIDIA NIM transcription. To use another backend,
+replace the final option with the matching one from the table.
 
 macOS/Linux:
 
 ```bash
-# NVIDIA NIM transcription
 curl -fsSL "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.sh" | sh -s -- --voice-nim
-
-# Local Whisper on CPU or CUDA
-curl -fsSL "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.sh" | sh -s -- --voice-local
-
-# Both backends
-curl -fsSL "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.sh" | sh -s -- --voice-all
-
-# Local Whisper with the CUDA 13.0 PyTorch backend
-curl -fsSL "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.sh" | sh -s -- --voice-local --torch-backend cu130
 ```
 
 Windows PowerShell:
 
 ```powershell
-# NVIDIA NIM transcription
 & ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.ps1"))) -VoiceNim
-
-# Local Whisper on CPU or CUDA
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.ps1"))) -VoiceLocal
-
-# Both backends
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.ps1"))) -VoiceAll
-
-# Local Whisper with the CUDA 13.0 PyTorch backend
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.ps1"))) -VoiceLocal -TorchBackend cu130
 ```
 
 Restart `cdx-server`. In **Admin UI → Messaging → Voice**, enable voice notes, select `cpu`, `cuda`, or `nvidia_nim`, and choose the Whisper model. Local gated models need `HUGGINGFACE_API_KEY`; NVIDIA NIM transcription needs `NVIDIA_NIM_API_KEY`.
@@ -514,24 +512,25 @@ Restart `cdx-server`. In **Admin UI → Messaging → Voice**, enable voice note
 
 ## Manage Your Installation
 
+Run `cdx-server --version` to check the installed version without starting CDX.
+
 ### Update
 
 Re-run the matching command from [Install Or Update](#install).
 
 ### Uninstall
 
-Stop every running CodexProxy command first. The uninstaller verifies every CodexProxy command is gone
-before deleting its managed data.
+Stop every running CDX command before uninstalling.
 
 **Removes**
 
 - CodexProxy, including its desktop launcher and commands
-- `~/.codexproxy/`
+- `~/.cdx/`
 
 **Keeps**
 
 - uv and Python
-- Claude Code, Codex, and Pi
+- Claude Code, Codex, Pi, OpenCode, Cline, and RTK
 - Shared PATH entries
 
 macOS/Linux:

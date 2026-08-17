@@ -3,18 +3,18 @@
 import subprocess
 import sys
 
-from core.anthropic import (
+from codexproxy.core.anthropic import (
     MessagesRequest as PublicMessagesRequest,
 )
-from core.anthropic import (
+from codexproxy.core.anthropic import (
     MessagesResponse,
     TokenCountResponse,
 )
-from core.anthropic.models import MessagesRequest
-from core.openai_responses import (
+from codexproxy.core.anthropic.models import MessagesRequest
+from codexproxy.core.openai_responses import (
     OpenAIResponsesRequest as PublicOpenAIResponsesRequest,
 )
-from core.openai_responses.models import OpenAIResponsesRequest
+from codexproxy.core.openai_responses.models import OpenAIResponsesRequest
 
 
 def test_anthropic_request_model_is_core_owned_and_permissive() -> None:
@@ -26,7 +26,7 @@ def test_anthropic_request_model_is_core_owned_and_permissive() -> None:
         }
     )
 
-    assert MessagesRequest.__module__ == "core.anthropic.models"
+    assert MessagesRequest.__module__ == "codexproxy.core.anthropic.models"
     assert PublicMessagesRequest is MessagesRequest
     assert request.model_extra == {"provider_extension": {"enabled": True}}
 
@@ -40,25 +40,27 @@ def test_responses_request_model_is_core_owned_and_permissive() -> None:
         }
     )
 
-    assert OpenAIResponsesRequest.__module__ == "core.openai_responses.models"
+    assert (
+        OpenAIResponsesRequest.__module__ == "codexproxy.core.openai_responses.models"
+    )
     assert PublicOpenAIResponsesRequest is OpenAIResponsesRequest
     assert request.model_extra == {"provider_extension": {"enabled": True}}
 
 
 def test_anthropic_response_models_are_protocol_owned() -> None:
-    assert MessagesResponse.__module__ == "core.anthropic.models"
-    assert TokenCountResponse.__module__ == "core.anthropic.models"
+    assert MessagesResponse.__module__ == "codexproxy.core.anthropic.models"
+    assert TokenCountResponse.__module__ == "codexproxy.core.anthropic.models"
 
 
 def test_protocol_facades_are_import_order_independent() -> None:
     import_orders = (
         (
-            "core.anthropic",
-            "core.openai_responses",
+            "codexproxy.core.anthropic",
+            "codexproxy.core.openai_responses",
         ),
         (
-            "core.openai_responses",
-            "core.anthropic",
+            "codexproxy.core.openai_responses",
+            "codexproxy.core.anthropic",
         ),
     )
 

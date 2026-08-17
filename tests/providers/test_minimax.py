@@ -5,20 +5,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from application.model_metadata import ProviderModelInfo
-from config.constants import ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS
-from config.provider_catalog import MINIMAX_DEFAULT_BASE
-from core.anthropic.models import Message, MessagesRequest, Tool
-from core.anthropic.stream_contracts import (
+from codexproxy.application.model_metadata import ProviderModelInfo
+from codexproxy.config.constants import ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS
+from codexproxy.config.provider_catalog import MINIMAX_DEFAULT_BASE
+from codexproxy.core.anthropic.models import Message, MessagesRequest, Tool
+from codexproxy.core.anthropic.stream_contracts import (
     parse_sse_text,
     text_content,
     thinking_content,
 )
-from providers.base import ProviderConfig
-from providers.openai_chat import OpenAIChatProvider
+from codexproxy.providers.openai_chat import OpenAIChatProvider
 from tests.providers.support import (
     REASONING_OFF,
     immediate_admission,
+    make_provider_config,
     profiled_provider,
     reasoning_for,
 )
@@ -44,7 +44,7 @@ class AsyncStream:
 def minimax_provider():
     return profiled_provider(
         "minimax",
-        ProviderConfig(
+        make_provider_config(
             api_key="test-minimax-key",
             base_url=MINIMAX_DEFAULT_BASE,
             rate_limit=10,

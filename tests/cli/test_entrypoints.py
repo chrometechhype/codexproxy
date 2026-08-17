@@ -13,19 +13,20 @@ from urllib.request import Request
 
 import pytest
 
-from config.settings import Settings
+from codexproxy.config.settings import Settings
 
 
 def _launcher_settings(
     *,
     port: int = 8082,
-    token: str = "freecc",
+    token: str = "codexcc",
     open_admin_browser: bool = True,
 ) -> Settings:
-    return Settings.model_construct(
+    return Settings(
         host="0.0.0.0",
         port=port,
-        anthropic_auth_token=token,
+        proxy_auth_enabled=False,
+        proxy_auth_token=token,
         model="nvidia_nim/test-model",
         open_admin_browser=open_admin_browser,
     )
@@ -45,40 +46,10 @@ class _JsonResponse:
         return json.dumps(self._payload).encode("utf-8")
 
 
-def test_legacy_env_migration_supports_xdg_path(tmp_path: Path) -> None:
-    """Server startup preserves config from ~/.config/codexproxy/.env."""
-    from cli.commands import _migrate_legacy_env_if_missing
-
-    legacy_env = tmp_path / ".config" / "codexproxy" / ".env"
-    legacy_env.parent.mkdir(parents=True)
-    legacy_env.write_text("MODEL=open_router/free-model\n", encoding="utf-8")
-
-    with patch("pathlib.Path.home", return_value=tmp_path):
-        migrated_from = _migrate_legacy_env_if_missing()
-
-    env_file = tmp_path / ".codexproxy" / ".env"
-    assert migrated_from == legacy_env
-    assert env_file.read_text("utf-8") == "MODEL=open_router/free-model\n"
-
-
-def test_legacy_env_migration_does_not_overwrite_managed_env(
-    tmp_path: Path,
-) -> None:
-    """Legacy migration never overwrites an existing ~/.codexproxy/.env."""
-    from cli.commands import _migrate_legacy_env_if_missing
-
-    managed_env = tmp_path / ".codexproxy" / ".env"
-    managed_env.parent.mkdir(parents=True)
-    managed_env.write_text("MODEL=nvidia_nim/current\n", encoding="utf-8")
-    legacy_env = tmp_path / "codexproxy" / ".env"
-    legacy_env.parent.mkdir(parents=True)
-    legacy_env.write_text("MODEL=deepseek/legacy\n", encoding="utf-8")
-
-    with patch("pathlib.Path.home", return_value=tmp_path):
-        migrated_from = _migrate_legacy_env_if_missing()
-
-    assert migrated_from is None
-    assert managed_env.read_text("utf-8") == "MODEL=nvidia_nim/current\n"
+@pytest.fixture
+def empty_proxy_bypass_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
 
 
 def test_cli_scripts_are_registered() -> None:
@@ -89,12 +60,15 @@ def test_cli_scripts_are_registered() -> None:
     )
 
     assert pyproject["project"]["scripts"] == {
-        "cdx-server": "cli.entrypoints:serve",
-        "codexproxy": "cli.entrypoints:serve",
-        "cdx-codex": "cli.launchers.codex:launch",
-        "cdx-claude": "cli.launchers.claude:launch",
-        "cdx-pi": "cli.launchers.pi:launch",
-        "cdx-desktop": "cli.desktop_entrypoint:launch",
+        "cdx-server": "codexproxy.cli.entrypoints:serve",
+        "cdx-claude": "codexproxy.cli.launchers.claude:launch",
+        "cdx-codex": "codexproxy.cli.launchers.codex:launch",
+        "cdx-pi": "codexproxy.cli.launchers.pi:launch",
+        "cdx-opencode": "codexproxy.cli.launchers.opencode:launch",
+        "cdx-cline": "codexproxy.cli.launchers.cline:launch",
+    }
+    assert pyproject["project"]["gui-scripts"] == {
+        "cdx-desktop": "codexproxy.cli.desktop_entrypoint:launch",
     }
 
 
@@ -102,11 +76,11 @@ def test_cli_scripts_are_registered() -> None:
     "argv",
     [("--version",), ("--version", "--help"), ("--help", "--version")],
 )
-def test_CODEX_PROXY_server_reports_version_without_side_effects(
+def test_fcc_server_reports_version_without_side_effects(
     argv: tuple[str, ...],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from cli import entrypoints
+    from codexproxy.cli import entrypoints
 
     with patch.object(entrypoints, "package_version", return_value="9.8.7"):
         entrypoints.serve(argv)
@@ -119,11 +93,11 @@ def test_version_entrypoint_does_not_import_command_runtime() -> None:
         (
             "import json",
             "import sys",
-            "from cli.entrypoints import serve",
+            "from codexproxy.cli.entrypoints import serve",
             "serve(['--version'])",
             "forbidden = ('uvicorn', 'fastapi', 'openai', "
-            "'cli.commands', "
-            "'runtime.bootstrap')",
+            "'codexproxy.cli.commands', "
+            "'codexproxy.runtime.bootstrap')",
             "print(json.dumps([name for name in forbidden if name in sys.modules]))",
         )
     )
@@ -140,7 +114,7 @@ def test_version_entrypoint_does_not_import_command_runtime() -> None:
 
 
 def test_non_version_entrypoint_delegates_to_server_command() -> None:
-    from cli import commands, entrypoints
+    from codexproxy.cli import commands, entrypoints
 
     with patch.object(commands, "serve") as command:
         entrypoints.serve(())
@@ -150,8 +124,8 @@ def test_non_version_entrypoint_delegates_to_server_command() -> None:
 
 def test_schedule_open_admin_browser_opens_when_health_ready() -> None:
     """Opening /admin runs after /health preflight succeeds."""
-    from cli import commands
-    from config.server_urls import local_admin_url
+    from codexproxy.cli import commands
+    from codexproxy.config.server_urls import local_admin_url
 
     settings = _launcher_settings(port=31337)
     opened_urls: list[str] = []
@@ -181,11 +155,10 @@ def test_schedule_open_admin_browser_opens_when_health_ready() -> None:
 
 
 def test_serve_skips_admin_browser_when_setting_is_disabled() -> None:
-    from cli import commands
+    from codexproxy.cli import commands
 
     settings = _launcher_settings(open_admin_browser=False)
     get_settings = MagicMock(return_value=settings)
-    get_settings.cache_clear = MagicMock()
 
     with (
         patch.object(commands, "get_settings", get_settings),
@@ -204,11 +177,10 @@ def test_serve_skips_admin_browser_when_setting_is_disabled() -> None:
 
 
 def test_serve_supervisor_restarts_when_app_requests_restart() -> None:
-    from cli import commands
+    from codexproxy.cli import commands
 
     settings = _launcher_settings()
     get_settings = MagicMock(side_effect=[settings, settings])
-    get_settings.cache_clear = MagicMock()
     servers: list[object] = []
     restart_callbacks: list[Callable[[], None]] = []
 
@@ -241,22 +213,22 @@ def test_serve_supervisor_restarts_when_app_requests_restart() -> None:
         patch.object(commands.uvicorn, "Server", side_effect=FakeServer),
         patch.object(commands, "build_asgi_app", side_effect=build_asgi_app),
         patch.object(commands, "schedule_open_admin_browser") as schedule_open_admin,
+        patch.object(commands, "clear_settings_cache") as clear_settings_cache,
         patch.object(commands, "kill_all_best_effort") as kill_all,
     ):
         commands.serve()
 
     assert len(servers) == 2
     schedule_open_admin.assert_called_once_with(settings)
-    get_settings.cache_clear.assert_called_once()
+    clear_settings_cache.assert_called_once()
     kill_all.assert_called_once()
 
 
 def test_serve_supervisor_refuses_restart_after_incomplete_shutdown() -> None:
-    from cli import commands
+    from codexproxy.cli import commands
 
     settings = _launcher_settings()
     get_settings = MagicMock(return_value=settings)
-    get_settings.cache_clear = MagicMock()
     servers: list[object] = []
     restart_callbacks: list[Callable[[], None]] = []
 
@@ -283,91 +255,21 @@ def test_serve_supervisor_refuses_restart_after_incomplete_shutdown() -> None:
         patch.object(commands.uvicorn, "Server", side_effect=FakeServer),
         patch.object(commands, "build_asgi_app", side_effect=build_asgi_app),
         patch.object(commands, "schedule_open_admin_browser"),
+        patch.object(commands, "clear_settings_cache") as clear_settings_cache,
         patch.object(commands, "kill_all_best_effort") as kill_all,
     ):
         commands.serve()
 
     assert len(servers) == 1
-    get_settings.cache_clear.assert_not_called()
+    clear_settings_cache.assert_not_called()
     kill_all.assert_called_once()
 
 
-def test_serve_migrates_legacy_env_before_loading_settings(tmp_path: Path) -> None:
-    from cli import commands
-
-    legacy_env = tmp_path / "codexproxy" / ".env"
-    legacy_env.parent.mkdir(parents=True)
-    legacy_env.write_text("MODEL=deepseek/deepseek-chat\n", encoding="utf-8")
-    settings = _launcher_settings()
-    get_settings = MagicMock(return_value=settings)
-    get_settings.cache_clear = MagicMock()
-
-    with (
-        patch("pathlib.Path.home", return_value=tmp_path),
-        patch.object(commands, "get_settings", get_settings),
-        patch.object(commands.ServerSupervisor, "_run_once", return_value=False),
-        patch.object(commands, "kill_all_best_effort"),
-    ):
-        commands.serve()
-
-    assert (tmp_path / ".codexproxy" / ".env").read_text("utf-8") == (
-        "MODEL=deepseek/deepseek-chat\n"
-    )
-    get_settings.assert_called_once_with()
-
-
-def test_serve_migrates_hf_token_before_loading_settings(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    from cli import commands
-
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    (repo / ".env").write_text("HF_TOKEN=legacy-hf\n", encoding="utf-8")
-    settings = _launcher_settings()
-    get_settings = MagicMock(return_value=settings)
-    get_settings.cache_clear = MagicMock()
-    monkeypatch.chdir(repo)
-
-    with (
-        patch("pathlib.Path.home", return_value=tmp_path),
-        patch.object(commands, "get_settings", get_settings),
-        patch.object(commands.ServerSupervisor, "_run_once", return_value=False),
-        patch.object(commands, "kill_all_best_effort"),
-        patch.object(commands, "explicit_env_file_migration_warning"),
-    ):
-        commands.serve()
-
-    assert (repo / ".env").read_text(encoding="utf-8") == (
-        "HUGGINGFACE_API_KEY=legacy-hf\n"
-    )
-    get_settings.assert_called_once_with()
-
-
-def test_config_env_key_migration_warns_for_explicit_env_file(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    from cli import commands
-
-    explicit = tmp_path / "custom.env"
-    explicit.write_text("HF_TOKEN=legacy-hf\n", encoding="utf-8")
-
-    with patch.dict(commands.os.environ, {"CODEX_PROXY_ENV_FILE": str(explicit)}):
-        migrated = commands._migrate_config_env_keys()
-
-    assert migrated == ()
-    assert "HF_TOKEN" in capsys.readouterr().err
-    assert explicit.read_text(encoding="utf-8") == "HF_TOKEN=legacy-hf\n"
-
-
 def test_serve_handles_keyboard_interrupt_without_traceback() -> None:
-    from cli import commands
+    from codexproxy.cli import commands
 
     settings = _launcher_settings()
     get_settings = MagicMock(return_value=settings)
-    get_settings.cache_clear = MagicMock()
 
     with (
         patch.object(commands, "get_settings", get_settings),
@@ -376,20 +278,21 @@ def test_serve_handles_keyboard_interrupt_without_traceback() -> None:
             "_run_once",
             side_effect=KeyboardInterrupt,
         ),
+        patch.object(commands, "clear_settings_cache") as clear_settings_cache,
         patch.object(commands, "kill_all_best_effort") as kill_all,
     ):
         commands.serve()
 
-    get_settings.cache_clear.assert_not_called()
+    clear_settings_cache.assert_not_called()
     kill_all.assert_called_once()
 
 
 def test_claude_child_env_targets_current_proxy_config() -> None:
-    from cli.claude_env import build_claude_proxy_env
+    from codexproxy.cli.claude_env import build_claude_proxy_env
 
     env = build_claude_proxy_env(
         proxy_root_url="http://127.0.0.1:9090",
-        auth_token=" proxy-token ",
+        auth_token="proxy-token",
         base_env={
             "PATH": "keep",
             "ANTHROPIC_API_URL": "https://api.anthropic.com/v1",
@@ -421,26 +324,11 @@ def test_claude_child_env_targets_current_proxy_config() -> None:
     assert "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" not in env
 
 
-def test_claude_child_env_uses_sentinel_for_blank_configured_auth_token() -> None:
-    from cli.claude_env import build_claude_proxy_env
-
-    env = build_claude_proxy_env(
-        proxy_root_url="http://127.0.0.1:8082",
-        auth_token="",
-        base_env={
-            "ANTHROPIC_AUTH_TOKEN": "inherited-token",
-            "ANTHROPIC_API_KEY": "official-key",
-        },
-    )
-
-    assert env["ANTHROPIC_AUTH_TOKEN"] == "cdx-no-auth"
-    assert "ANTHROPIC_API_KEY" not in env
-
-
 def test_launch_claude_passes_args_and_child_env(
     monkeypatch: pytest.MonkeyPatch,
+    empty_proxy_bypass_env: None,
 ) -> None:
-    from cli.launchers.claude import launch
+    from codexproxy.cli.launchers.claude import launch
 
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "old-token")
@@ -449,15 +337,15 @@ def test_launch_claude_passes_args_and_child_env(
     settings = _launcher_settings(port=9191, token="proxy-token")
 
     with (
-        patch("cli.launchers.claude.get_settings", return_value=settings),
-        patch("cli.launchers.claude.preflight_proxy", return_value=None),
+        patch("codexproxy.cli.launchers.claude.get_settings", return_value=settings),
+        patch("codexproxy.cli.launchers.claude.preflight_proxy", return_value=None),
         patch(
-            "cli.launchers.common.shutil.which",
+            "codexproxy.cli.launchers.common.shutil.which",
             return_value="resolved-claude.cmd",
         ),
-        patch("cli.launchers.common.subprocess.Popen") as popen,
-        patch("cli.launchers.common.register_pid") as register_pid,
-        patch("cli.launchers.common.unregister_pid") as unregister_pid,
+        patch("codexproxy.cli.launchers.common.subprocess.Popen") as popen,
+        patch("codexproxy.cli.launchers.common.register_pid") as register_pid,
+        patch("codexproxy.cli.launchers.common.unregister_pid") as unregister_pid,
         pytest.raises(SystemExit) as exc_info,
     ):
         process = popen.return_value
@@ -488,8 +376,9 @@ def test_launch_claude_passes_args_and_child_env(
 def test_launch_codex_passes_responses_config_and_child_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    empty_proxy_bypass_env: None,
 ) -> None:
-    from cli.launchers.codex import launch
+    from codexproxy.cli.launchers.codex import launch
 
     monkeypatch.setenv("OPENAI_API_KEY", "official-key")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
@@ -513,7 +402,9 @@ def test_launch_codex_passes_responses_config_and_child_env(
                         "display_name": "NVIDIA model",
                     },
                     {
-                        "id": ("claude-3-freecc-no-thinking/nvidia_nim/provider-model"),
+                        "id": (
+                            "claude-3-codexcc-no-thinking/nvidia_nim/provider-model"
+                        ),
                         "display_name": "NVIDIA model (no thinking)",
                     },
                     {
@@ -525,23 +416,23 @@ def test_launch_codex_passes_responses_config_and_child_env(
         )
 
     with (
-        patch("cli.launchers.codex.get_settings", return_value=settings),
-        patch("cli.launchers.codex.preflight_proxy", return_value=None),
+        patch("codexproxy.cli.launchers.codex.get_settings", return_value=settings),
+        patch("codexproxy.cli.launchers.codex.preflight_proxy", return_value=None),
         patch(
-            "cli.launchers.common.shutil.which",
+            "codexproxy.cli.launchers.common.shutil.which",
             return_value="resolved-codex.cmd",
         ),
         patch(
-            "cli.launchers.codex.codex_model_catalog_path",
+            "codexproxy.cli.launchers.codex.codex_model_catalog_path",
             return_value=catalog_path,
         ),
         patch(
-            "cli.launchers.codex.open_local_request",
+            "codexproxy.cli.launchers.model_catalog.open_local_request",
             side_effect=fake_urlopen,
         ),
-        patch("cli.launchers.common.subprocess.Popen") as popen,
-        patch("cli.launchers.common.register_pid") as register_pid,
-        patch("cli.launchers.common.unregister_pid") as unregister_pid,
+        patch("codexproxy.cli.launchers.common.subprocess.Popen") as popen,
+        patch("codexproxy.cli.launchers.common.register_pid") as register_pid,
+        patch("codexproxy.cli.launchers.common.unregister_pid") as unregister_pid,
         pytest.raises(SystemExit) as exc_info,
     ):
         process = popen.return_value
@@ -552,9 +443,12 @@ def test_launch_codex_passes_responses_config_and_child_env(
     assert exc_info.value.code == 0
     command = popen.call_args.args[0]
     assert command[0] == "resolved-codex.cmd"
-    assert 'model_provider="codexproxy"' in command
-    assert 'model_providers.codexproxy.base_url="http://127.0.0.1:9191/v1"' in command
-    assert 'model_providers.codexproxy.wire_api="responses"' in command
+    assert 'model_provider="cdx"' in command
+    assert 'model_providers.cdx.base_url="http://127.0.0.1:9191/v1"' in command
+    assert 'model_providers.cdx.auth.command="cdx-codex"' in command
+    assert 'model_providers.cdx.auth.args=["--print-proxy-auth-token"]' in command
+    assert 'model_providers.cdx.wire_api="responses"' in command
+    assert not any("model_providers.cdx.env_key" in arg for arg in command)
     assert f"model_catalog_json={json.dumps(str(catalog_path))}" in command
     assert command[-2:] == ["exec", "hello"]
     assert len(requests) == 1
@@ -568,7 +462,7 @@ def test_launch_codex_passes_responses_config_and_child_env(
         "nvidia_nim/provider-model"
     ]
     child_env = popen.call_args.kwargs["env"]
-    assert child_env["CODEX_PROXY_CODEX_API_KEY"] == "proxy-token"
+    assert "CODEX_PROXY_CODEX_API_KEY" not in child_env
     assert child_env["CODEX_HOME"] == "keep-home"
     assert child_env["NO_PROXY"] == "127.0.0.1,localhost,::1"
     assert child_env["no_proxy"] == child_env["NO_PROXY"]
@@ -582,32 +476,57 @@ def test_launch_codex_passes_responses_config_and_child_env(
     unregister_pid.assert_called_once_with(12345)
 
 
+def test_codex_proxy_auth_command_prints_only_current_token(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from codexproxy.cli.launchers import codex
+
+    settings = _launcher_settings(token=" proxy-token ")
+    with (
+        patch.object(codex, "get_settings", return_value=settings) as get_settings,
+        patch.object(codex, "preflight_proxy") as preflight_proxy,
+        patch.object(codex, "resolve_client_binary") as resolve_client_binary,
+        patch(
+            "codexproxy.cli.launchers.model_catalog.open_local_request"
+        ) as open_local_request,
+        patch.object(codex, "run_client_process") as run_client_process,
+    ):
+        codex.launch(["--print-proxy-auth-token"])
+
+    assert capsys.readouterr() == ("proxy-token\n", "")
+    get_settings.assert_called_once_with()
+    preflight_proxy.assert_not_called()
+    resolve_client_binary.assert_not_called()
+    open_local_request.assert_not_called()
+    run_client_process.assert_not_called()
+
+
 def test_launch_codex_catalog_failure_warns_and_continues(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
-    from cli.launchers.codex import launch
+    from codexproxy.cli.launchers.codex import launch
 
     settings = _launcher_settings(port=9191, token="proxy-token")
 
     with (
-        patch("cli.launchers.codex.get_settings", return_value=settings),
-        patch("cli.launchers.codex.preflight_proxy", return_value=None),
+        patch("codexproxy.cli.launchers.codex.get_settings", return_value=settings),
+        patch("codexproxy.cli.launchers.codex.preflight_proxy", return_value=None),
         patch(
-            "cli.launchers.common.shutil.which",
+            "codexproxy.cli.launchers.common.shutil.which",
             return_value="resolved-codex.cmd",
         ),
         patch(
-            "cli.launchers.codex.codex_model_catalog_path",
+            "codexproxy.cli.launchers.codex.codex_model_catalog_path",
             return_value=tmp_path / "codex-model-catalog.json",
         ),
         patch(
-            "cli.launchers.codex.open_local_request",
+            "codexproxy.cli.launchers.model_catalog.open_local_request",
             side_effect=URLError("boom"),
         ),
-        patch("cli.launchers.common.subprocess.Popen") as popen,
-        patch("cli.launchers.common.register_pid"),
-        patch("cli.launchers.common.unregister_pid"),
+        patch("codexproxy.cli.launchers.common.subprocess.Popen") as popen,
+        patch("codexproxy.cli.launchers.common.register_pid"),
+        patch("codexproxy.cli.launchers.common.unregister_pid"),
         pytest.raises(SystemExit) as exc_info,
     ):
         process = popen.return_value
@@ -626,7 +545,7 @@ def test_launch_codex_catalog_failure_warns_and_continues(
 def test_pi_launcher_builds_scoped_session_command_and_proxy_env(
     tmp_path: Path,
 ) -> None:
-    from cli.launchers.pi import (
+    from codexproxy.cli.launchers.pi import (
         build_pi_launcher_command,
         build_pi_launcher_env,
     )
@@ -634,7 +553,7 @@ def test_pi_launcher_builds_scoped_session_command_and_proxy_env(
     extension = tmp_path / "pi_extension.ts"
     env = build_pi_launcher_env(
         proxy_root_url="http://127.0.0.1:9191/",
-        auth_token=" proxy-token ",
+        auth_token="proxy-token",
         base_env={
             "PATH": "keep",
             "ANTHROPIC_API_KEY": "native-pi-credential",
@@ -666,23 +585,12 @@ def test_pi_launcher_builds_scoped_session_command_and_proxy_env(
     }
 
 
-def test_pi_launcher_uses_no_auth_sentinel_for_blank_token() -> None:
-    from cli.launchers.pi import build_pi_launcher_env
-
-    env = build_pi_launcher_env(
-        proxy_root_url="http://127.0.0.1:8082",
-        auth_token="",
-        base_env={},
-    )
-
-    assert env["CODEX_PROXY_PI_API_KEY"] == "cdx-no-auth"
-
-
 def test_launch_pi_registers_bundled_extension_for_sessions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    empty_proxy_bypass_env: None,
 ) -> None:
-    from cli.launchers.pi import launch
+    from codexproxy.cli.launchers.pi import launch
 
     monkeypatch.setenv("KEEP_ME", "yes")
     monkeypatch.setenv("CODEX_PROXY_PI_API_KEY", "stale-key")
@@ -691,23 +599,23 @@ def test_launch_pi_registers_bundled_extension_for_sessions(
     settings = _launcher_settings(port=9191, token="proxy-token")
 
     with (
-        patch("cli.launchers.pi.get_settings", return_value=settings),
-        patch("cli.launchers.pi.preflight_proxy", return_value=None),
+        patch("codexproxy.cli.launchers.pi.get_settings", return_value=settings),
+        patch("codexproxy.cli.launchers.pi.preflight_proxy", return_value=None),
         patch(
-            "cli.launchers.pi.pi_extension_path",
+            "codexproxy.cli.launchers.pi.pi_extension_path",
             return_value=extension,
         ),
         patch(
-            "cli.launchers.common.shutil.which",
+            "codexproxy.cli.launchers.common.shutil.which",
             return_value="resolved-pi.cmd",
         ),
         patch(
-            "cli.launchers.pi.pi_binary_is_compatible",
+            "codexproxy.cli.launchers.pi.pi_binary_is_compatible",
             return_value=True,
         ),
-        patch("cli.launchers.common.subprocess.Popen") as popen,
-        patch("cli.launchers.common.register_pid"),
-        patch("cli.launchers.common.unregister_pid"),
+        patch("codexproxy.cli.launchers.common.subprocess.Popen") as popen,
+        patch("codexproxy.cli.launchers.common.register_pid"),
+        patch("codexproxy.cli.launchers.common.unregister_pid"),
         pytest.raises(SystemExit) as exc_info,
     ):
         process = popen.return_value
@@ -749,22 +657,22 @@ def test_launch_pi_registers_bundled_extension_for_sessions(
 def test_launch_pi_passes_management_commands_through_without_proxy(
     argv: list[str],
 ) -> None:
-    from cli.launchers.pi import launch
+    from codexproxy.cli.launchers.pi import launch
 
     with (
-        patch("cli.launchers.pi.get_settings") as get_settings,
-        patch("cli.launchers.pi.preflight_proxy") as preflight,
+        patch("codexproxy.cli.launchers.pi.get_settings") as get_settings,
+        patch("codexproxy.cli.launchers.pi.preflight_proxy") as preflight,
         patch(
-            "cli.launchers.common.shutil.which",
+            "codexproxy.cli.launchers.common.shutil.which",
             return_value="resolved-pi",
         ),
         patch(
-            "cli.launchers.pi.pi_binary_is_compatible",
+            "codexproxy.cli.launchers.pi.pi_binary_is_compatible",
             return_value=True,
         ),
-        patch("cli.launchers.common.subprocess.Popen") as popen,
-        patch("cli.launchers.common.register_pid"),
-        patch("cli.launchers.common.unregister_pid"),
+        patch("codexproxy.cli.launchers.common.subprocess.Popen") as popen,
+        patch("codexproxy.cli.launchers.common.register_pid"),
+        patch("codexproxy.cli.launchers.common.unregister_pid"),
         pytest.raises(SystemExit) as exc_info,
     ):
         process = popen.return_value
@@ -782,25 +690,25 @@ def test_launch_pi_fails_closed_when_bundled_extension_is_missing(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
-    from cli.launchers.pi import launch
+    from codexproxy.cli.launchers.pi import launch
 
     settings = _launcher_settings(port=9191)
     with (
-        patch("cli.launchers.pi.get_settings", return_value=settings),
-        patch("cli.launchers.pi.preflight_proxy", return_value=None),
+        patch("codexproxy.cli.launchers.pi.get_settings", return_value=settings),
+        patch("codexproxy.cli.launchers.pi.preflight_proxy", return_value=None),
         patch(
-            "cli.launchers.pi.pi_extension_path",
+            "codexproxy.cli.launchers.pi.pi_extension_path",
             return_value=tmp_path / "missing.ts",
         ),
         patch(
-            "cli.launchers.common.shutil.which",
+            "codexproxy.cli.launchers.common.shutil.which",
             return_value="resolved-pi",
         ),
         patch(
-            "cli.launchers.pi.pi_binary_is_compatible",
+            "codexproxy.cli.launchers.pi.pi_binary_is_compatible",
             return_value=True,
         ),
-        patch("cli.launchers.common.subprocess.Popen") as popen,
+        patch("codexproxy.cli.launchers.common.subprocess.Popen") as popen,
         pytest.raises(SystemExit) as exc_info,
     ):
         launch([])
@@ -811,7 +719,7 @@ def test_launch_pi_fails_closed_when_bundled_extension_is_missing(
 
 
 def test_pi_install_hints_use_official_platform_installers() -> None:
-    from cli.launchers.pi import pi_install_hint
+    from codexproxy.cli.launchers.pi import pi_install_hint
 
     assert "https://pi.dev/install.ps1" in pi_install_hint("win32")
     assert "https://pi.dev/install.sh" in pi_install_hint("darwin")
@@ -831,10 +739,10 @@ def test_pi_binary_compatibility_requires_both_launcher_capabilities(
     return_code: int,
     expected: bool,
 ) -> None:
-    from cli.launchers.pi import pi_binary_is_compatible
+    from codexproxy.cli.launchers.pi import pi_binary_is_compatible
 
     with patch(
-        "cli.launchers.pi.subprocess.run",
+        "codexproxy.cli.launchers.pi.subprocess.run",
         return_value=SimpleNamespace(returncode=return_code, stdout=help_output),
     ):
         assert pi_binary_is_compatible("resolved-pi") is expected
@@ -843,19 +751,19 @@ def test_pi_binary_compatibility_requires_both_launcher_capabilities(
 def test_launch_pi_rejects_unrelated_pi_binary(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from cli.launchers.pi import launch
+    from codexproxy.cli.launchers.pi import launch
 
     with (
         patch(
-            "cli.launchers.common.shutil.which",
+            "codexproxy.cli.launchers.common.shutil.which",
             return_value="unrelated-pi",
         ),
         patch(
-            "cli.launchers.pi.pi_binary_is_compatible",
+            "codexproxy.cli.launchers.pi.pi_binary_is_compatible",
             return_value=False,
         ),
-        patch("cli.launchers.pi.get_settings") as get_settings,
-        patch("cli.launchers.common.subprocess.Popen") as popen,
+        patch("codexproxy.cli.launchers.pi.get_settings") as get_settings,
+        patch("codexproxy.cli.launchers.common.subprocess.Popen") as popen,
         pytest.raises(SystemExit) as exc_info,
     ):
         launch([])
@@ -869,21 +777,21 @@ def test_launch_pi_rejects_unrelated_pi_binary(
 
 
 def test_launch_claude_keyboard_interrupt_kills_child_tree() -> None:
-    from cli.launchers.claude import launch
+    from codexproxy.cli.launchers.claude import launch
 
     settings = _launcher_settings(port=9191, token="proxy-token")
 
     with (
-        patch("cli.launchers.claude.get_settings", return_value=settings),
-        patch("cli.launchers.claude.preflight_proxy", return_value=None),
+        patch("codexproxy.cli.launchers.claude.get_settings", return_value=settings),
+        patch("codexproxy.cli.launchers.claude.preflight_proxy", return_value=None),
         patch(
-            "cli.launchers.common.shutil.which",
+            "codexproxy.cli.launchers.common.shutil.which",
             return_value="resolved-claude.cmd",
         ),
-        patch("cli.launchers.common.subprocess.Popen") as popen,
-        patch("cli.launchers.common.register_pid"),
-        patch("cli.launchers.common.kill_pid_tree_best_effort") as kill_tree,
-        patch("cli.launchers.common.unregister_pid") as unregister_pid,
+        patch("codexproxy.cli.launchers.common.subprocess.Popen") as popen,
+        patch("codexproxy.cli.launchers.common.register_pid"),
+        patch("codexproxy.cli.launchers.common.kill_pid_tree_best_effort") as kill_tree,
+        patch("codexproxy.cli.launchers.common.unregister_pid") as unregister_pid,
         pytest.raises(KeyboardInterrupt),
     ):
         process = popen.return_value
@@ -899,14 +807,14 @@ def test_launch_claude_keyboard_interrupt_kills_child_tree() -> None:
 def test_launch_claude_exits_when_command_cannot_be_resolved(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from cli.launchers.claude import launch
+    from codexproxy.cli.launchers.claude import launch
 
     settings = _launcher_settings()
     with (
-        patch("cli.launchers.claude.get_settings", return_value=settings),
-        patch("cli.launchers.claude.preflight_proxy", return_value=None),
-        patch("cli.launchers.common.shutil.which", return_value=None),
-        patch("cli.launchers.common.subprocess.Popen") as popen,
+        patch("codexproxy.cli.launchers.claude.get_settings", return_value=settings),
+        patch("codexproxy.cli.launchers.claude.preflight_proxy", return_value=None),
+        patch("codexproxy.cli.launchers.common.shutil.which", return_value=None),
+        patch("codexproxy.cli.launchers.common.subprocess.Popen") as popen,
         pytest.raises(SystemExit) as exc_info,
     ):
         launch([])
@@ -921,16 +829,16 @@ def test_launch_claude_exits_when_command_cannot_be_resolved(
 def test_launch_claude_unreachable_proxy_exits_with_hint(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    from cli.launchers.claude import launch
+    from codexproxy.cli.launchers.claude import launch
 
     settings = _launcher_settings(port=9393)
     with (
-        patch("cli.launchers.claude.get_settings", return_value=settings),
+        patch("codexproxy.cli.launchers.claude.get_settings", return_value=settings),
         patch(
-            "cli.launchers.claude.preflight_proxy",
+            "codexproxy.cli.launchers.claude.preflight_proxy",
             return_value="connection refused",
         ),
-        patch("cli.launchers.common.subprocess.Popen") as popen,
+        patch("codexproxy.cli.launchers.common.subprocess.Popen") as popen,
         pytest.raises(SystemExit) as exc_info,
     ):
         launch([])

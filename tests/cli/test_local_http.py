@@ -1,4 +1,4 @@
-"""Local CodexProxy transport must never escape through an outbound proxy."""
+"""Local CDX transport must never escape through an outbound proxy."""
 
 import threading
 from collections.abc import Iterator
@@ -7,8 +7,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from cli.launchers.common import preflight_proxy
-from cli.local_http import with_local_proxy_bypass
+from codexproxy.cli.launchers.common import preflight_proxy
+from codexproxy.cli.local_http import with_local_proxy_bypass
 
 
 @contextmanager
@@ -44,10 +44,10 @@ def test_proxy_preflight_connects_directly_when_http_proxy_is_configured(
         monkeypatch.delenv("NO_PROXY", raising=False)
         monkeypatch.delenv("no_proxy", raising=False)
 
-        with _status_server(200) as (CODEX_PROXY_url, CODEX_PROXY_hits):
-            assert preflight_proxy(CODEX_PROXY_url) is None
+        with _status_server(200) as (fcc_url, fcc_hits):
+            assert preflight_proxy(fcc_url) is None
 
-    assert CODEX_PROXY_hits == ["/health"]
+    assert fcc_hits == ["/health"]
     assert forward_proxy_hits == []
 
 
@@ -61,13 +61,13 @@ def test_child_proxy_bypass_preserves_existing_proxy_policy() -> None:
 
     env = with_local_proxy_bypass(
         base_env,
-        proxy_root_url="http://codexproxy.internal:8082",
+        proxy_root_url="http://cdx.internal:8082",
     )
 
     assert env["HTTP_PROXY"] == "http://proxy.example:3128"
     assert env["KEEP_ME"] == "yes"
     assert env["NO_PROXY"] == (
-        "example.com,localhost,10.0.0.0/8,127.0.0.1,::1,codexproxy.internal"
+        "example.com,localhost,10.0.0.0/8,127.0.0.1,::1,cdx.internal"
     )
     assert env["no_proxy"] == env["NO_PROXY"]
     assert base_env["NO_PROXY"] == "example.com, localhost"

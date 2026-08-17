@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from core.openai_responses import OpenAIResponsesRequest
+from codexproxy.core.openai_responses import OpenAIResponsesRequest
 
 
 def test_responses_request_preserves_defaults_and_unknown_extensions() -> None:

@@ -5,21 +5,22 @@ import openai
 import pytest
 from httpx import Request, Response
 
-from config.nim import NimSettings
-from config.provider_catalog import NVIDIA_NIM_DEFAULT_BASE
-from core.failures import ExecutionFailure
-from core.reasoning import ReasoningEffort, ReasoningPolicy
-from providers.admission import UPSTREAM_TRANSIENT_TOTAL_ATTEMPTS
-from providers.nvidia_nim import NvidiaNimProvider
-from providers.nvidia_nim.tool_schema import (
+from codexproxy.config.nim import NimSettings
+from codexproxy.config.provider_catalog import NVIDIA_NIM_DEFAULT_BASE
+from codexproxy.core.failures import ExecutionFailure
+from codexproxy.core.reasoning import ReasoningEffort, ReasoningPolicy
+from codexproxy.providers.admission import UPSTREAM_TRANSIENT_TOTAL_ATTEMPTS
+from codexproxy.providers.nvidia_nim import NvidiaNimProvider
+from codexproxy.providers.nvidia_nim.tool_schema import (
     NIM_TOOL_ARGUMENT_ALIASES_KEY,
 )
-from providers.stream_recovery import RecoveryHoldbackBuffer
+from codexproxy.providers.stream_recovery import RecoveryHoldbackBuffer
 from tests.providers.request_factory import make_messages_request
 from tests.providers.support import (
     REASONING_OFF,
     REASONING_ON,
     immediate_admission,
+    make_provider_config,
     reasoning_for,
 )
 
@@ -130,7 +131,7 @@ def _make_internal_server_error(message: str) -> openai.InternalServerError:
 @pytest.mark.asyncio
 async def test_init(provider_config):
     """Test provider initialization."""
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         provider = NvidiaNimProvider(
             provider_config,
             nim_settings=NimSettings(),
@@ -144,16 +145,15 @@ async def test_init(provider_config):
 @pytest.mark.asyncio
 async def test_init_uses_configurable_timeouts():
     """Test that provider passes configurable read/write/connect timeouts to client."""
-    from providers.base import ProviderConfig
 
-    config = ProviderConfig(
+    config = make_provider_config(
         api_key="test_key",
         base_url="https://test.api.nvidia.com/v1",
         http_read_timeout=600.0,
         http_write_timeout=15.0,
         http_connect_timeout=5.0,
     )
-    with patch("providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
+    with patch("codexproxy.providers.openai_chat.provider.AsyncOpenAI") as mock_openai:
         NvidiaNimProvider(
             config, nim_settings=NimSettings(), admission=immediate_admission()
         )
@@ -724,7 +724,7 @@ async def test_native_minimax_tool_markup_restores_nim_argument_aliases(nim_prov
         f"{namespace}<tool_call>"
         f'{namespace}<invoke name="Grep">'
         f"{namespace}<pattern>needle{namespace}</pattern>"
-        f"{namespace}<_CODEX_PROXY_arg_type>py{namespace}</_CODEX_PROXY_arg_type>"
+        f"{namespace}<_fcc_arg_type>py{namespace}</_fcc_arg_type>"
         f"{namespace}</invoke>"
         f"{namespace}</tool_call>"
     )
@@ -848,7 +848,7 @@ async def test_midstream_native_tool_suffix_failure_recovers_without_duplication
             new_callable=AsyncMock,
         ) as mock_create,
         patch(
-            "providers.stream_recovery.RecoveryHoldbackBuffer",
+            "codexproxy.providers.stream_recovery.RecoveryHoldbackBuffer",
             side_effect=immediate_holdback,
         ),
     ):
@@ -887,9 +887,7 @@ async def test_stream_response_restores_aliased_tool_arguments(nim_provider):
     )
     mock_chunk = _tool_call_chunk(
         name="Grep",
-        arguments=json.dumps(
-            {"pattern": "needle", "-A": 2, "_CODEX_PROXY_arg_type": "py"}
-        ),
+        arguments=json.dumps({"pattern": "needle", "-A": 2, "_fcc_arg_type": "py"}),
     )
 
     async def mock_stream():
@@ -909,13 +907,13 @@ async def test_stream_response_restores_aliased_tool_arguments(nim_provider):
     properties = create_kwargs["tools"][0]["function"]["parameters"]["properties"]
     assert "-A" in properties
     assert "type" not in properties
-    assert "_CODEX_PROXY_arg_A" not in properties
-    assert "_CODEX_PROXY_arg_type" in properties
+    assert "_fcc_arg_A" not in properties
+    assert "_fcc_arg_type" in properties
 
     deltas = _input_json_deltas(events)
     assert len(deltas) == 1
     assert json.loads(deltas[0]) == {"pattern": "needle", "-A": 2, "type": "py"}
-    assert "_CODEX_PROXY_arg_type" not in deltas[0]
+    assert "_fcc_arg_type" not in deltas[0]
 
 
 @pytest.mark.asyncio
@@ -944,7 +942,7 @@ async def test_stream_response_buffers_chunked_aliased_tool_arguments(nim_provid
     )
     second_chunk = _tool_call_chunk(
         name=None,
-        arguments='"_CODEX_PROXY_arg_type": "py"}',
+        arguments='"_fcc_arg_type": "py"}',
         tool_id="call_chunked",
     )
 
@@ -991,7 +989,7 @@ async def test_stream_response_restores_nested_aliased_tool_arguments(nim_provid
     mock_chunk = _tool_call_chunk(
         name="NotionLike",
         arguments=json.dumps(
-            {"parent": {"_CODEX_PROXY_arg_type": "page_id", "id": "page_123"}}
+            {"parent": {"_fcc_arg_type": "page_id", "id": "page_123"}}
         ),
     )
 

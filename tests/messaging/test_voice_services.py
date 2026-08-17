@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from messaging.models import MessageScope
-from messaging.voice import (
+from codexproxy.messaging.models import MessageScope
+from codexproxy.messaging.voice import (
     PendingVoiceClaim,
     PendingVoiceRegistry,
     VoiceCancellationResult,
