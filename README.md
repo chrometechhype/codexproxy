@@ -44,13 +44,13 @@ Free-tier availability and limits are controlled by each provider and may change
 macOS/Linux:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.sh" | sh
+curl -fsSL "https://raw.githubusercontent.com/chrometechhype/codexproxy/refs/heads/main/scripts/install.sh" | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.ps1")))
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/chrometechhype/codexproxy/refs/heads/main/scripts/install.ps1")))
 ```
 
 Re-run the same command to update. When prompted, choose at least one coding agent and optionally RTK. You can review the installers before running them: [install.sh](scripts/install.sh) and [install.ps1](scripts/install.ps1).
