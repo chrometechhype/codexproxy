@@ -4,35 +4,26 @@ set -eu
 REPO_ARCHIVE_URL="https://github.com/Alishahryar1/codexproxy/archive/refs/heads/main.zip"
 PYTHON_VERSION="3.14.0"
 MIN_UV_VERSION="0.11.16"
-CLAUDE_INSTALL_URL="https://claude.ai/install.sh"
 CODEX_INSTALL_URL="https://chatgpt.com/codex/install.sh"
-PI_INSTALL_URL="https://pi.dev/install.sh"
-OPENCODE_INSTALL_URL="https://opencode.ai/install"
-MIN_OPENCODE_VERSION="1.18.18"
 MIN_CLINE_VERSION="3.0.55"
 RTK_VERSION="0.44.2"
 RTK_RELEASE_BASE_URL="https://github.com/rtk-ai/rtk/releases/download/v$RTK_VERSION"
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 CODEX_PROXY_MACOS_BUNDLE_ID="io.github.alishahryar1.codexproxy"
 CODEX_PROXY_MACOS_OWNER_FILE=".codexproxy-owner"
-# Include retired entry points so updates reject older CDX processes before replacement.
-CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-claude cdx-codex cdx-pi cdx-opencode cdx-cline cdx-init codexproxy"
+CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-codex cdx-cline cdx-init codexproxy"
 
 dry_run=0
 voice_nim=0
 voice_local=0
 voice_all=0
-install_claude=1
 install_codex=1
-install_pi=1
-install_opencode=1
 install_cline=0
 enable_rtk=0
 torch_backend=""
 temporary_file=""
 temporary_binary=""
 tool_bin=""
-pi_available=0
 rtk_path=""
 
 show_usage() {
@@ -96,25 +87,10 @@ choose_coding_agents() {
     exec 4>"$selection_output"
 
     while :; do
-        if prompt_yes_no "Install or verify Claude Code for cdx-claude?"; then
-            install_claude=1
-        else
-            install_claude=0
-        fi
         if prompt_yes_no "Install or verify Codex for cdx-codex?"; then
             install_codex=1
         else
             install_codex=0
-        fi
-        if prompt_yes_no "Install or verify Pi for cdx-pi?"; then
-            install_pi=1
-        else
-            install_pi=0
-        fi
-        if prompt_yes_no "Install or verify OpenCode for cdx-opencode?"; then
-            install_opencode=1
-        else
-            install_opencode=0
         fi
 
         if [ "$install_cline" -eq 1 ]; then
@@ -128,7 +104,7 @@ choose_coding_agents() {
             install_cline=0
         fi
 
-        if [ "$install_claude" -eq 1 ] || [ "$install_codex" -eq 1 ] || [ "$install_pi" -eq 1 ] || [ "$install_opencode" -eq 1 ] || [ "$install_cline" -eq 1 ]; then
+        if [ "$install_codex" -eq 1 ] || [ "$install_cline" -eq 1 ]; then
             break
         fi
         printf 'Select at least one coding agent.\n\n' >&4
@@ -212,8 +188,6 @@ add_known_bin_directories() {
     if [ -n "${HOME:-}" ]; then
         add_path_entry "$HOME/.local/bin"
         add_path_entry "$HOME/.cargo/bin"
-        add_path_entry "$HOME/.opencode/bin"
-        add_path_entry "${XDG_DATA_HOME:-$HOME/.local/share}/pi-node/current/bin"
     fi
 
     export PATH
@@ -224,9 +198,9 @@ add_npm_bin_directories() {
     [ "$dry_run" -eq 0 ] || return 0
     add_known_bin_directories
     if command -v npm >/dev/null 2>&1; then
-        pi_npm_prefix=$(npm prefix -g 2>/dev/null || npm config get prefix 2>/dev/null || true)
-        if [ -n "$pi_npm_prefix" ]; then
-            add_path_entry "$pi_npm_prefix/bin"
+        npm_prefix=$(npm prefix -g 2>/dev/null || npm config get prefix 2>/dev/null || true)
+        if [ -n "$npm_prefix" ]; then
+            add_path_entry "$npm_prefix/bin"
             export PATH
             hash -r 2>/dev/null || true
         fi
@@ -354,31 +328,6 @@ verify_command() {
 
     command_path=$(command -v "$command_name" 2>/dev/null) || fail "$display_name was installed, but '$command_name' is not available on PATH."
     run "$command_path" --version
-}
-
-pi_command_is_compatible() {
-    pi_command_path=$(command -v pi 2>/dev/null) || return 1
-    pi_help=$("$pi_command_path" --help 2>/dev/null) || return 1
-    case "$pi_help" in
-        *--extension*) ;;
-        *) return 1 ;;
-    esac
-    case "$pi_help" in
-        *--models*) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
-verify_pi_command() {
-    if [ "$dry_run" -eq 1 ]; then
-        printf '+ pi --help (verify --extension and --models support)\n'
-        print_command pi --version
-        return 0
-    fi
-
-    pi_command_path=$(command -v pi 2>/dev/null) || fail "Pi was installed, but 'pi' is not available on PATH."
-    pi_command_is_compatible || fail "The 'pi' command at $pi_command_path is not a compatible Pi Coding Agent."
-    run "$pi_command_path" --version
 }
 
 verify_rtk_command() {
@@ -509,153 +458,18 @@ run_rtk_init() {
     fail "RTK configuration failed with exit code $status. Correct the reported RTK error, then rerun the installer."
 }
 
-ensure_rtk_claude_config_directory() {
-    if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
-        rtk_claude_config_directory=$CLAUDE_CONFIG_DIR
-    else
-        [ -n "${HOME:-}" ] || fail "HOME is required to configure RTK for Claude Code."
-        rtk_claude_config_directory="$HOME/.claude"
-    fi
-    run mkdir -p "$rtk_claude_config_directory"
-}
-
 configure_rtk_for_selected_agents() {
     [ "$enable_rtk" -eq 1 ] || return 0
 
     step "Installing and configuring RTK token optimization"
     ensure_rtk
 
-    if [ "$install_claude" -eq 1 ]; then
-        ensure_rtk_claude_config_directory
-        run_rtk_init init --global --auto-patch
-    fi
     if [ "$install_codex" -eq 1 ]; then
         run_rtk_init init --global --codex
-    fi
-    if [ "$install_pi" -eq 1 ] && [ "$pi_available" -eq 1 ]; then
-        run_rtk_init init --global --agent pi
-    fi
-    if [ "$install_opencode" -eq 1 ]; then
-        run_rtk_init init --global --opencode
     fi
     if [ "$install_cline" -eq 1 ]; then
         printf 'Optional for each project: cd <project> && RTK_TELEMETRY_DISABLED=1 rtk init --agent cline\n'
     fi
-}
-
-ensure_claude() {
-    if command -v claude >/dev/null 2>&1; then
-        printf 'Claude Code already found on PATH; verifying it.\n'
-    else
-        download_and_run "$CLAUDE_INSTALL_URL" bash "Claude Code"
-        add_known_bin_directories
-    fi
-
-    verify_command claude "Claude Code"
-}
-
-ensure_codex() {
-    if command -v codex >/dev/null 2>&1; then
-        printf 'Codex already found on PATH; verifying it.\n'
-    else
-        download_and_run "$CODEX_INSTALL_URL" sh "Codex" 1
-        add_known_bin_directories
-    fi
-
-    verify_command codex "Codex"
-}
-
-ensure_pi() {
-    pi_available=0
-    add_npm_bin_directories
-    existing_pi_path=$(command -v pi 2>/dev/null || true)
-
-    if [ "$dry_run" -eq 1 ] && command -v pi >/dev/null 2>&1; then
-        printf 'Pi already found on PATH; verifying it.\n'
-    elif pi_command_is_compatible; then
-        printf 'Pi already found on PATH; verifying it.\n'
-    else
-        if [ -n "$existing_pi_path" ]; then
-            printf "The existing 'pi' command at %s is not Pi Coding Agent; installing Pi.\n" "$existing_pi_path"
-        fi
-        download_and_run "$PI_INSTALL_URL" sh "Pi"
-        add_npm_bin_directories
-
-        if [ "$dry_run" -eq 0 ]; then
-            current_pi_path=$(command -v pi 2>/dev/null || true)
-            if [ -z "$current_pi_path" ] ||
-                { [ -n "$existing_pi_path" ] &&
-                    [ "$current_pi_path" = "$existing_pi_path" ] &&
-                    ! pi_command_is_compatible; }; then
-                printf 'Pi was not installed; continuing without it.\n'
-                return 0
-            fi
-        fi
-    fi
-
-    verify_pi_command
-    pi_available=1
-}
-
-current_opencode_version() {
-    if output=$(opencode --version 2>/dev/null); then
-        :
-    else
-        return 1
-    fi
-
-    version=$(printf '%s\n' "$output" | awk '
-        /^[[:space:]]*((opencode( version)?[[:space:]]+)|v)?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?[[:space:]]*$/ &&
-        match($0, /[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?/) {
-            print substr($0, RSTART, RLENGTH)
-            exit
-        }
-    ')
-    [ -n "$version" ] || return 1
-    printf '%s\n' "$version"
-}
-
-verify_opencode_command() {
-    if [ "$dry_run" -eq 1 ]; then
-        print_command opencode --version
-        return 0
-    fi
-
-    command_path=$(command -v opencode 2>/dev/null) || fail "OpenCode was installed, but 'opencode' is not available on PATH."
-    version=$(current_opencode_version) || fail "OpenCode is present, but 'opencode --version' did not return a valid semantic version."
-    if ! stable_version_is_supported "$version" "$MIN_OPENCODE_VERSION"; then
-        fail "Stable OpenCode V1 $MIN_OPENCODE_VERSION or newer is required; found OpenCode $version after installation."
-    fi
-    printf 'Verified OpenCode %s.\n' "$version"
-}
-
-ensure_opencode() {
-    if [ "$dry_run" -eq 1 ]; then
-        if command -v opencode >/dev/null 2>&1; then
-            print_command opencode --version
-            printf 'A compatible OpenCode will be preserved; an older version will be upgraded with opencode upgrade.\n'
-        else
-            download_and_run "$OPENCODE_INSTALL_URL" bash "OpenCode"
-        fi
-        verify_opencode_command
-        return 0
-    fi
-
-    if command -v opencode >/dev/null 2>&1; then
-        version=$(current_opencode_version) || fail "OpenCode is present, but 'opencode --version' did not return a valid semantic version."
-        if stable_version_is_supported "$version" "$MIN_OPENCODE_VERSION"; then
-            printf 'OpenCode %s already satisfies >=%s; leaving it unchanged.\n' "$version" "$MIN_OPENCODE_VERSION"
-            return 0
-        fi
-        printf 'OpenCode %s does not satisfy stable V1 >=%s; upgrading it with OpenCode.\n' "$version" "$MIN_OPENCODE_VERSION"
-        run opencode upgrade
-        add_known_bin_directories
-    else
-        download_and_run "$OPENCODE_INSTALL_URL" bash "OpenCode"
-        add_known_bin_directories
-    fi
-
-    verify_opencode_command
 }
 
 current_cline_version() {
@@ -723,25 +537,21 @@ ensure_cline() {
     verify_cline_command
 }
 
-ensure_selected_coding_agents() {
-    if [ "$install_claude" -eq 1 ]; then
-        step "Ensuring Claude Code is installed"
-        ensure_claude
+ensure_codex() {
+    if command -v codex >/dev/null 2>&1; then
+        printf 'Codex already found on PATH; verifying it.\n'
+    else
+        download_and_run "$CODEX_INSTALL_URL" sh "Codex" 1
+        add_known_bin_directories
     fi
 
+    verify_command codex "Codex"
+}
+
+ensure_selected_coding_agents() {
     if [ "$install_codex" -eq 1 ]; then
         step "Ensuring Codex is installed"
         ensure_codex
-    fi
-
-    if [ "$install_pi" -eq 1 ]; then
-        step "Checking or installing Pi"
-        ensure_pi
-    fi
-
-    if [ "$install_opencode" -eq 1 ]; then
-        step "Ensuring OpenCode is installed"
-        ensure_opencode
     fi
 
     if [ "$install_cline" -eq 1 ]; then
@@ -749,7 +559,7 @@ ensure_selected_coding_agents() {
         ensure_cline
     fi
 
-    if [ "$install_claude" -eq 0 ] && [ "$install_codex" -eq 0 ] && [ "$pi_available" -eq 0 ] && [ "$install_opencode" -eq 0 ] && [ "$install_cline" -eq 0 ]; then
+    if [ "$install_codex" -eq 0 ] && [ "$install_cline" -eq 0 ]; then
         fail "No selected coding agent was installed. Re-run the installer and choose at least one."
     fi
 }
@@ -936,7 +746,7 @@ configure_and_verify_codexproxy() {
 
     if [ "$dry_run" -eq 1 ]; then
         print_command uv tool dir --bin
-        printf '+ verify cdx-desktop, cdx-server, cdx-claude, cdx-codex, cdx-pi, cdx-opencode, and cdx-cline in the uv tool bin directory\n'
+        printf '+ verify cdx-desktop, cdx-server, cdx-codex, and cdx-cline in the uv tool bin directory\n'
         print_command cdx-server --version
         return 0
     fi
@@ -954,7 +764,7 @@ configure_and_verify_codexproxy() {
     export PATH
     hash -r 2>/dev/null || true
 
-    for command_name in cdx-desktop cdx-server cdx-claude cdx-codex cdx-pi cdx-opencode cdx-cline; do
+    for command_name in cdx-desktop cdx-server cdx-codex cdx-cline; do
         [ -x "$tool_bin/$command_name" ] || fail "CodexProxy installation did not create $tool_bin/$command_name."
     done
 
@@ -1067,9 +877,6 @@ fi
 
 step "Checking installation prerequisites"
 require_command curl
-if [ "$install_claude" -eq 1 ] || [ "$install_opencode" -eq 1 ]; then
-    require_command bash
-fi
 require_command sh
 require_command mktemp
 if [ "$enable_rtk" -eq 1 ] && ! command -v rtk >/dev/null 2>&1; then
@@ -1107,17 +914,8 @@ else
     else
         printf '\nCodexProxy is installed and verified. Start the proxy with: cdx-server\n'
     fi
-    if [ "$install_claude" -eq 1 ]; then
-        printf 'Run Claude Code with: cdx-claude\n'
-    fi
     if [ "$install_codex" -eq 1 ]; then
         printf 'Run Codex with: cdx-codex\n'
-    fi
-    if [ "$pi_available" -eq 1 ]; then
-        printf 'Run Pi with: cdx-pi\n'
-    fi
-    if [ "$install_opencode" -eq 1 ]; then
-        printf 'Run OpenCode with: cdx-opencode\n'
     fi
     if [ "$install_cline" -eq 1 ]; then
         printf 'Run Cline with: cdx-cline\n'

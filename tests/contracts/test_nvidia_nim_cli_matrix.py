@@ -4,13 +4,13 @@ from pathlib import Path
 from typing import cast
 
 from codexproxy.config.settings import Settings
-from smoke.lib.claude_cli_matrix import (
-    ClaudeCliRun,
-    _build_claude_cli_command,
+from smoke.lib.proxy_cli_matrix import (
+    ProxyCliRun,
+    _build_proxy_cli_command,
     _subagent_probe_options,
     make_outcome,
     regression_failures,
-    run_claude_cli,
+    run_proxy_cli,
     write_matrix_report,
 )
 from smoke.lib.config import DEFAULT_TARGETS, SmokeConfig
@@ -40,7 +40,7 @@ def test_nvidia_nim_cli_matrix_report_shape_and_redaction(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setenv("NVIDIA_NIM_API_KEY", "secret-nim-key")
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "redacted"),
         returncode=0,
         stdout="CODEX_PROXY_NIM_BASIC secret-nim-key",
@@ -98,7 +98,7 @@ def test_cli_matrix_normalizes_missing_captured_output(
         )
 
     monkeypatch.setattr(
-        "smoke.lib.claude_cli_matrix.run_captured_text",
+        "smoke.lib.proxy_cli_matrix.run_captured_text",
         fake_run_captured_text,
     )
     server = RunningServer(
@@ -108,7 +108,7 @@ def test_cli_matrix_normalizes_missing_captured_output(
         process=cast(subprocess.Popen[bytes], object()),
     )
 
-    run = run_claude_cli(
+    run = run_proxy_cli(
         claude_bin="claude",
         server=server,
         config=_smoke_config(tmp_path),
@@ -137,7 +137,7 @@ def test_openrouter_free_cli_matrix_report_shape_and_redaction(
     tmp_path: Path, monkeypatch
 ) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "secret-openrouter-key")
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "redacted"),
         returncode=0,
         stdout="CODEX_PROXY_OPENROUTER_FREE_BASIC secret-openrouter-key",
@@ -178,7 +178,7 @@ def test_openrouter_free_cli_matrix_report_shape_and_redaction(
 
 
 def test_nvidia_nim_cli_matrix_regression_detection(tmp_path: Path) -> None:
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout="",
@@ -205,7 +205,7 @@ def test_nvidia_nim_cli_matrix_regression_detection(tmp_path: Path) -> None:
 def test_nvidia_nim_cli_matrix_model_feature_failures_do_not_regress(
     tmp_path: Path,
 ) -> None:
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout="ordinary answer",
@@ -231,7 +231,7 @@ def test_nvidia_nim_cli_matrix_model_feature_failures_do_not_regress(
 def test_nvidia_nim_cli_raw_payload_log_counts_as_proxy_request(
     tmp_path: Path,
 ) -> None:
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout="ordinary answer",
@@ -256,7 +256,7 @@ def test_nvidia_nim_cli_raw_payload_log_counts_as_proxy_request(
 
 
 def test_cli_matrix_missing_agent_catalog_is_harness_bug(tmp_path: Path) -> None:
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout="ordinary answer",
@@ -288,7 +288,7 @@ def test_cli_matrix_agent_catalog_without_agent_use_is_model_feature_failure(
     tmp_path: Path,
 ) -> None:
     marker = "CODEX_PROXY_OPENROUTER_FREE_TASK"
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout=(
@@ -322,7 +322,7 @@ def test_cli_matrix_agent_catalog_without_agent_use_is_model_feature_failure(
 
 def test_cli_matrix_agent_use_result_and_marker_pass(tmp_path: Path) -> None:
     marker = "CODEX_PROXY_OPENROUTER_FREE_TASK"
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout=(
@@ -360,7 +360,7 @@ def test_cli_matrix_agent_prompt_text_without_tool_evidence_does_not_pass(
     tmp_path: Path,
 ) -> None:
     marker = "CODEX_PROXY_OPENROUTER_FREE_TASK"
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout=f"{marker}\nAgent should read the file.",
@@ -392,7 +392,7 @@ def test_cli_matrix_agent_prompt_text_without_tool_evidence_does_not_pass(
 def test_cli_matrix_unclassified_provider_error_is_model_feature_failure(
     tmp_path: Path,
 ) -> None:
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout="Provider API request failed. (request_id=req_123)",
@@ -422,7 +422,7 @@ def test_cli_matrix_unclassified_provider_error_is_model_feature_failure(
 def test_nvidia_nim_cli_timeout_is_not_model_missing(
     tmp_path: Path,
 ) -> None:
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=None,
         stdout='{"type":"assistant","content":[{"type":"text","text":"CODEX_PROXY_NIM_TOOL"}]}',
@@ -447,7 +447,7 @@ def test_nvidia_nim_cli_timeout_is_not_model_missing(
 
 
 def test_nvidia_nim_cli_success_beats_verbose_timeout_words(tmp_path: Path) -> None:
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout="CODEX_PROXY_NIM_THINK",
@@ -475,7 +475,7 @@ def test_nvidia_nim_cli_success_beats_verbose_timeout_words(tmp_path: Path) -> N
 def test_cli_matrix_uuid_429_does_not_count_as_upstream_unavailable(
     tmp_path: Path,
 ) -> None:
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout='{"uuid":"d3c76eea-3634-4299-aec0-e7634b3716da"}',
@@ -500,7 +500,7 @@ def test_cli_matrix_uuid_429_does_not_count_as_upstream_unavailable(
 def test_cli_matrix_real_http_429_counts_as_upstream_unavailable(
     tmp_path: Path,
 ) -> None:
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=0,
         stdout="ordinary answer",
@@ -528,7 +528,7 @@ def test_cli_matrix_real_http_429_counts_as_upstream_unavailable(
 def test_cli_matrix_deterministic_provider_400_is_not_upstream_unavailable(
     tmp_path: Path,
 ) -> None:
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=("claude", "-p", "x"),
         returncode=1,
         stdout="",
@@ -553,7 +553,7 @@ def test_cli_matrix_deterministic_provider_400_is_not_upstream_unavailable(
 
 
 def test_cli_matrix_default_command_uses_bare_mode() -> None:
-    command = _build_claude_cli_command(
+    command = _build_proxy_cli_command(
         claude_bin="claude",
         prompt="hello",
         tools="Read",
@@ -566,7 +566,7 @@ def test_cli_matrix_default_command_uses_bare_mode() -> None:
 
 def test_cli_matrix_subagent_command_uses_agent_without_bare_or_task() -> None:
     bare, tools, pre_tool_args, extra_args = _subagent_probe_options("{}")
-    command = _build_claude_cli_command(
+    command = _build_proxy_cli_command(
         claude_bin="claude",
         prompt="hello",
         tools=tools,

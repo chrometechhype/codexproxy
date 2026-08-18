@@ -1059,7 +1059,7 @@ def test_normalizes_tool_result_content_array_to_string(deepseek_provider):
 
 
 def test_strips_document_blocks_for_deepseek(deepseek_provider):
-    """Document blocks (e.g. PDFs from Claude Code) are stripped since DeepSeek can't process them."""
+    """Document blocks are stripped since DeepSeek can't process them."""
     request = MessagesRequest.model_validate(
         {
             "model": "m",

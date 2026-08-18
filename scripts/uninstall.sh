@@ -6,7 +6,7 @@ CODEX_PROXY_HOME_DIRNAME=".cdx"
 CODEX_PROXY_MACOS_BUNDLE_ID="io.github.alishahryar1.codexproxy"
 CODEX_PROXY_MACOS_OWNER_FILE=".codexproxy-owner"
 # Include retired entry points so older installations are fully stopped and removed.
-CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-claude cdx-codex cdx-pi cdx-opencode cdx-cline cdx-init codexproxy"
+CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-codex cdx-cline cdx-init codexproxy"
 
 dry_run=0
 uv_tool_bin=""
@@ -16,7 +16,7 @@ show_usage() {
 Usage: uninstall.sh [options]
 
 Removes the CodexProxy uv tool and deletes ~/.cdx/ after removal is verified.
-Does not remove uv, Claude Code, Codex, Pi, OpenCode, the uv-managed Python runtime, or shared PATH entries.
+Does not remove uv, Codex, Cline, the uv-managed Python runtime, or shared PATH entries.
 
 Options:
   --dry-run                Print commands without running them.
@@ -298,5 +298,5 @@ if [ "$dry_run" -eq 1 ]; then
     printf '\nDry run complete. No changes were made.\n'
 else
     printf '\nCodexProxy has been removed and verified.\n'
-    printf 'uv, Claude Code, Codex, Pi, OpenCode, the uv-managed Python runtime, and shared PATH entries were left installed.\n'
+    printf 'uv, Codex, Cline, the uv-managed Python runtime, and shared PATH entries were left installed.\n'
 fi

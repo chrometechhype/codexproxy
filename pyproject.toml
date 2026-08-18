@@ -30,10 +30,7 @@ dependencies = [
 
 [project.scripts]
 cdx-server = "codexproxy.cli.entrypoints:serve"
-cdx-claude = "codexproxy.cli.launchers.claude:launch"
 cdx-codex = "codexproxy.cli.launchers.codex:launch"
-cdx-pi = "codexproxy.cli.launchers.pi:launch"
-cdx-opencode = "codexproxy.cli.launchers.opencode:launch"
 cdx-cline = "codexproxy.cli.launchers.cline:launch"
 
 [project.gui-scripts]

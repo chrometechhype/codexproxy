@@ -11,7 +11,7 @@ and how contributors should extend it.
 ## System Overview
 
 CodexProxy is a local proxy for agent clients. It accepts Anthropic
-Messages traffic from Claude Code and Pi clients and OpenAI Responses traffic
+Messages traffic from agent CLI clients and OpenAI Responses traffic
 from Codex and OpenCode clients, routes the request to a configured upstream
 provider, and preserves the wire protocol expected by the caller.
 
@@ -19,14 +19,13 @@ There are three runtime surfaces:
 
 - HTTP proxy: FastAPI routes expose Anthropic-compatible, Responses-compatible,
   health, model-listing, stop, and admin endpoints.
-- CLI launchers: wrapper entrypoints prepare Claude Code, Codex, Pi, and
-  OpenCode sessions so they target the local proxy.
+- CLI launchers: wrapper entrypoints prepare agent CLI sessions so they target the local proxy.
 - Messaging bridge: optional Discord or Telegram adapters turn chat messages
   into managed client CLI sessions.
 
 ```mermaid
 flowchart LR
-    ClaudeCode[Claude Code CLI and Extensions] --> ProxyAPI[FastAPI Proxy]
+    AgentCLI[Agent CLI] --> ProxyAPI[FastAPI Proxy]
     Codex[Codex CLI, IDE, and App] --> ProxyAPI
     Pi[Pi Coding Agent] --> ProxyAPI
     OpenCode[OpenCode CLI] --> ProxyAPI
@@ -158,17 +157,10 @@ for real prompts against supported providers:
 - `cdx-server`, the Windows/macOS CDX Desktop shell, and the local Admin UI for
   configuring supported providers, model routing, auth, server tools, messaging,
   and diagnostics.
-- `cdx-claude`, Claude Code, and the Anthropic-compatible proxy behavior Claude
-  Code relies on, including streaming text, native/interleaved thinking, tool
-  use/results, model discovery, token counting, retries/recovery, and supported
-  local server-tool behavior.
 - `cdx-codex`, Codex CLI/extensions, and the streaming OpenAI Responses behavior
   Codex relies on, including native/interleaved reasoning, function and custom
   tool calls, generated `/model` catalog support, Responses stream lifecycle
   events, and Responses-to-Anthropic conversion at the adapter boundary.
-- `cdx-pi`, Pi, and the Anthropic-compatible proxy behavior Pi relies on,
-  including an CDX-scoped model catalog, streaming text and reasoning, and tool
-  use/results.
 - `cdx-opencode`, stable OpenCode V1, and the OpenAI Responses behavior it
   relies on, including an CDX-scoped model catalog and process-local provider
   configuration.
@@ -226,9 +218,7 @@ Console scripts are registered in [pyproject.toml](pyproject.toml):
 - `cdx-server` calls `codexproxy.cli.entrypoints:serve`.
 - `cdx-desktop` is a GUI script calling
   `codexproxy.cli.desktop_entrypoint:launch` on Windows and macOS.
-- `cdx-claude` calls `codexproxy.cli.launchers.claude:launch`.
 - `cdx-codex` calls `codexproxy.cli.launchers.codex:launch`.
-- `cdx-pi` calls `codexproxy.cli.launchers.pi:launch`.
 - `cdx-opencode` calls `codexproxy.cli.launchers.opencode:launch`.
 - `cdx-cline` calls `codexproxy.cli.launchers.cline:launch`.
 
@@ -239,7 +229,7 @@ per-user application bundle and desktop link. [scripts/uninstall.sh](scripts/uni
 and [scripts/uninstall.ps1](scripts/uninstall.ps1) remove those exact desktop
 artifacts, the CDX uv tool, and the managed `~/.cdx/` tree from
 [config/paths.py](src/codexproxy/config/paths.py); they do not remove
-uv, Claude Code, Codex, Pi, OpenCode, Cline, or uv-managed Python runtimes. [scripts/ci.sh](scripts/ci.sh) and
+uv, Codex, Cline, or uv-managed Python runtimes. [scripts/ci.sh](scripts/ci.sh) and
 [scripts/ci.ps1](scripts/ci.ps1) mirror [.github/workflows/tests.yml](.github/workflows/tests.yml)
 for local pre-push verification.
 
@@ -364,8 +354,8 @@ token. The API boundary checks the boolean first and uses constant-time token
 comparison only when enforcement is enabled.
 
 Model routing remains tiered: `MODEL` is the fallback route;
-`MODEL_FABLE`, `MODEL_OPUS`, `MODEL_SONNET`, and `MODEL_HAIKU` are optional
-overrides. [config/model_refs.py](src/codexproxy/config/model_refs.py) owns
+`MODEL_SONNET` and `MODEL_HAIKU` are optional overrides.
+[config/model_refs.py](src/codexproxy/config/model_refs.py) owns
 model-ref parsing, while [config/reasoning.py](src/codexproxy/config/reasoning.py)
 owns the typed reasoning vocabulary.
 
@@ -531,7 +521,7 @@ It supports two forms:
 - Gateway model IDs decoded by [core/gateway_model_ids.py](src/codexproxy/core/gateway_model_ids.py).
 
 If the incoming model is not direct, `ModelRouter` maps it by Claude tier. Names
-containing `fable`, `opus`, `sonnet`, or `haiku` use the matching tier override when set,
+containing `sonnet` or `haiku` use the matching tier override when set,
 otherwise they fall back to `MODEL`.
 
 The router also selects the applicable reasoning preference. Direct provider
@@ -1133,10 +1123,10 @@ request remains ordered and unchanged for provider execution.
 The Messages handler runs these only after model routing and after local server-tool
 handling. Each optimization is controlled by settings flags.
 
-Claude Code auto-mode safety-classifier requests are a message-only routing
+Agent auto-mode safety-classifier requests are a message-only routing
 policy, not a short-circuit response. After routing, the Messages handler detects the
 narrow classifier prompt shape and forces reasoning off before provider execution
-so Claude Code receives a parser-readable `<block>yes</block>` or
+so the agent receives a parser-readable `<block>yes</block>` or
 `<block>no</block>` verdict.
 
 Local `web_search` and `web_fetch` handling lives under
@@ -1161,18 +1151,12 @@ adds the configured CDX host and standard loopback names to both `NO_PROXY` and
 participate in this local boundary.
 
 [cli/claude_env.py](src/codexproxy/cli/claude_env.py) owns the canonical
-Claude Code proxy environment used by every CDX-launched Claude process. It
+proxy environment used by every CDX-launched Claude process. It
 strips inherited `ANTHROPIC_*` variables, sets `ANTHROPIC_BASE_URL`, enables
 gateway model discovery, configures the auto-compact window, disables
 nonessential Anthropic traffic, and always sets the retained non-empty
 `ANTHROPIC_AUTH_TOKEN`. Server-side authentication enablement does not alter the
 client environment.
-
-[cli/launchers/claude.py](src/codexproxy/cli/launchers/claude.py) owns the installed
-`cdx-claude` launcher:
-
-- `cdx-claude` applies the shared proxy environment without changing the user's
-  Claude command arguments.
 
 [cli/launchers/codex.py](src/codexproxy/cli/launchers/codex.py) owns the installed
 `cdx-codex` launcher:
@@ -1204,24 +1188,6 @@ nested `provider/model` routes. It removes Claude-only compatibility aliases,
 deduplicates normal and no-thinking forms deterministically, and is shared by
 Codex, OpenCode, and Cline. Each launcher remains responsible for translating those
 neutral entries into its client's configuration format.
-
-[cli/launchers/pi.py](src/codexproxy/cli/launchers/pi.py) owns the installed
-`cdx-pi` launcher and [cli/launchers/pi_extension.ts](src/codexproxy/cli/launchers/pi_extension.ts)
-is its bundled Pi adapter:
-
-- Session commands load the extension from its absolute installed path and
-  scope Pi to the ephemeral `codexproxy/**` provider, whose model IDs
-  retain CDX's nested `provider/model` routing reference.
-- The extension fetches CDX's `/v1/models` catalog before registration, projects
-  only routable provider-model IDs, and registers an `anthropic-messages`
-  provider targeting the local proxy. Catalog failure is fail-closed so Pi never
-  silently falls back to a different provider.
-- Catalog discovery and provider inference use HTTP bearer authorization. Pi's
-  provider API-key field remains its process-local credential carrier.
-- CDX connection values live only in child-process `CODEX_PROXY_PI_*` variables. Native
-  Pi credentials and persistent configuration remain untouched.
-- Pi package-management, configuration, help, and version commands pass through
-  unchanged because they do not create an CDX-backed session.
 
 [cli/launchers/opencode.py](src/codexproxy/cli/launchers/opencode.py) and
 [cli/launchers/opencode_config.py](src/codexproxy/cli/launchers/opencode_config.py)
@@ -1272,14 +1238,14 @@ own the installed `cdx-cline` launcher for Cline CLI 3.0.55 or newer:
   command-line routing remain CDX-owned; deliberately switching providers
   inside the running Cline process is an explicit opt-out for that process.
 
-[cli/managed/](src/codexproxy/cli/managed/) owns managed Claude Code subprocesses used by
+[cli/managed/](src/codexproxy/cli/managed/) owns managed agent subprocesses used by
 Discord and Telegram messaging. Managed task invocations extend the same proxy
 environment only with non-interactive terminal settings, optional `--resume`,
-optional `--fork-session`, `--model fable`, and `--output-format stream-json`.
-Messaging pins this Claude tier alias so phone sessions route through
-`MODEL_FABLE` or the `MODEL` fallback instead of inheriting a user's interactive
-`/model` picker state. Managed execution does not override Claude's
-`plansDirectory`; plan files use Claude's native user-level location so the
+optional `--fork-session`, `--model`, and `--output-format stream-json`.
+Messaging pins this model alias so phone sessions route through
+`MODEL` instead of inheriting a user's interactive `/model` picker state.
+Managed execution does not override the agent's `plansDirectory`; plan files
+use the agent's native user-level location so the
 project workspace may reside on any filesystem volume. The managed session
 parser extracts persistent Claude session IDs and yields Claude stream-json
 events to the messaging event parser. Managed Claude

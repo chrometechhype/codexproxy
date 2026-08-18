@@ -18,9 +18,8 @@ body:
       label: CLI
       description: If the problem occurred while using a coding CLI, select it.
       options:
-        - Claude Code (cdx-claude)
         - Codex (cdx-codex)
-        - Pi (cdx-pi)
+        - Cline (cdx-cline)
 
   - type: input
     id: selected-models
@@ -28,17 +27,6 @@ body:
       label: Selected model(s)
       description: If relevant, enter each model exactly as shown in the selector or configuration.
       placeholder: nvidia_nim/nvidia/nemotron-3-super-120b-a12b
-
-  - type: textarea
-    id: model-mappings
-    attributes:
-      label: Model mappings
-      description: If relevant, enter the model mappings used when the problem occurred.
-      placeholder: |
-        MODEL_FABLE=
-        MODEL_OPUS=
-        MODEL_SONNET=
-        MODEL_HAIKU=
 
   - type: input
     id: providers

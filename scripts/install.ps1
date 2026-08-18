@@ -15,37 +15,23 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $RepoArchiveUrl = "https://github.com/Alishahryar1/codexproxy/archive/refs/heads/main.zip"
-# Windows on ARM emulates x64, whose Python package ecosystem has broader wheel support.
 $PythonRequest = "cpython-3.14.0-windows-x86_64-none"
 $MinUvVersion = "0.11.16"
-$ClaudeInstallUrl = "https://claude.ai/install.ps1"
 $CodexInstallUrl = "https://chatgpt.com/codex/install.ps1"
-$PiInstallUrl = "https://pi.dev/install.ps1"
-$OpenCodeReleaseBaseUrl = "https://github.com/anomalyco/opencode/releases/latest/download"
-$MinOpenCodeVersion = "1.18.18"
 $MinClineVersion = "3.0.55"
 $RtkVersion = "0.44.2"
 $RtkReleaseBaseUrl = "https://github.com/rtk-ai/rtk/releases/download/v$RtkVersion"
 $RtkWindowsAssetName = "rtk-x86_64-pc-windows-msvc.zip"
 $RtkWindowsAssetSha256 = "3a1e114edce9080f8a10663e9c87488363a82f14a5ca8aab2ad416817f89d47c"
 $UvInstallUrl = "https://astral.sh/uv/install.ps1"
-$script:InstallClaudeCode = $true
 $script:InstallCodex = $true
-$script:InstallPi = $true
-$script:InstallOpenCode = $true
 $script:InstallCline = $false
-$script:PiAvailable = $false
 $script:EnableRtk = $Rtk.IsPresent
 $FccCommands = @(
-    # Include retired entry points so updates reject older CDX processes before replacement.
     "cdx-desktop",
     "cdx-server",
-    "cdx-claude",
     "cdx-codex",
-    "cdx-pi",
-    "cdx-opencode",
     "cdx-cline",
-    "cdx-init",
     "codexproxy"
 )
 
@@ -101,15 +87,12 @@ function Read-YesNo {
 
 function Select-CodingAgents {
     while ($true) {
-        $script:InstallClaudeCode = Read-YesNo "Install or verify Claude Code for cdx-claude?"
         $script:InstallCodex = Read-YesNo "Install or verify Codex for cdx-codex?"
-        $script:InstallPi = Read-YesNo "Install or verify Pi for cdx-pi?"
-        $script:InstallOpenCode = Read-YesNo "Install or verify OpenCode for cdx-opencode?"
         $script:InstallCline = Read-YesNo `
             -Prompt "Install or verify Cline CLI for cdx-cline?" `
             -DefaultYes $script:InstallCline
 
-        if ($script:InstallClaudeCode -or $script:InstallCodex -or $script:InstallPi -or $script:InstallOpenCode -or $script:InstallCline) {
+        if ($script:InstallCodex -or $script:InstallCline) {
             break
         }
         Write-Host "Select at least one coding agent."
@@ -242,11 +225,9 @@ function Add-PathEntry {
 function Add-KnownBinDirectories {
     if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
         Add-PathEntry (Join-Path $env:USERPROFILE ".local\bin")
-        Add-PathEntry (Join-Path $env:USERPROFILE ".opencode\bin")
     }
     if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
         Add-PathEntry (Join-Path $env:LOCALAPPDATA "Programs\OpenAI\Codex\bin")
-        Add-PathEntry (Join-Path $env:LOCALAPPDATA "pi-node\current")
     }
     if (-not [string]::IsNullOrWhiteSpace($env:APPDATA)) {
         Add-PathEntry (Join-Path $env:APPDATA "npm")
@@ -368,39 +349,6 @@ function Confirm-Application {
     Invoke-NativeCommand -FilePath $command.Source -Arguments @("--version")
 }
 
-function Test-PiApplication {
-    param($Command)
-
-    try {
-        $helpOutput = (& $Command.Source --help 2>$null | Out-String)
-    }
-    catch {
-        return $false
-    }
-    return (
-        $LASTEXITCODE -eq 0 -and
-        $helpOutput.Contains("--extension") -and
-        $helpOutput.Contains("--models")
-    )
-}
-
-function Confirm-PiApplication {
-    if ($DryRun) {
-        Write-Host "+ pi --help (verify --extension and --models support)"
-        Write-Host "+ pi --version"
-        return
-    }
-
-    $command = Get-ApplicationCommand "pi"
-    if (-not $command) {
-        throw "Pi was installed, but 'pi' is not available on PATH."
-    }
-    if (-not (Test-PiApplication $command)) {
-        throw "The 'pi' command at '$($command.Source)' is not a compatible Pi Coding Agent."
-    }
-    Invoke-NativeCommand -FilePath $command.Source -Arguments @("--version")
-}
-
 function Install-Rtk {
     $archiveUrl = "$RtkReleaseBaseUrl/$RtkWindowsAssetName"
     if ($DryRun) {
@@ -481,20 +429,6 @@ function Invoke-RtkCommand {
     }
 }
 
-function Ensure-RtkClaudeConfigDirectory {
-    $claudeConfigDirectory = $env:CLAUDE_CONFIG_DIR
-    if ([string]::IsNullOrWhiteSpace($claudeConfigDirectory)) {
-        $claudeConfigDirectory = Join-Path $env:USERPROFILE ".claude"
-    }
-
-    if ($DryRun) {
-        Write-Host "+ mkdir $(Format-Argument $claudeConfigDirectory)"
-        return
-    }
-
-    New-Item -ItemType Directory -Force -Path $claudeConfigDirectory | Out-Null
-}
-
 function Confirm-RtkApplication {
     if ($DryRun) {
         Invoke-RtkCommand -Arguments @("--version")
@@ -528,6 +462,20 @@ function Ensure-Rtk {
     Confirm-RtkApplication
 }
 
+function Ensure-RtkConfigDirectory {
+    $configDirectory = $env:CLAUDE_CONFIG_DIR
+    if ([string]::IsNullOrWhiteSpace($configDirectory)) {
+        $configDirectory = Join-Path $env:USERPROFILE ".claude"
+    }
+
+    if ($DryRun) {
+        Write-Host "+ mkdir $(Format-Argument $configDirectory)"
+        return
+    }
+
+    New-Item -ItemType Directory -Force -Path $configDirectory | Out-Null
+}
+
 function Configure-RtkForSelectedAgents {
     if (-not $script:EnableRtk) {
         return
@@ -536,34 +484,14 @@ function Configure-RtkForSelectedAgents {
     Write-Step "Installing and configuring RTK token optimization"
     Ensure-Rtk
 
-    if ($script:InstallClaudeCode) {
-        Ensure-RtkClaudeConfigDirectory
-        Invoke-RtkCommand -Arguments @("init", "--global", "--auto-patch")
-    }
+    Ensure-RtkConfigDirectory
+    Invoke-RtkCommand -Arguments @("init", "--global", "--auto-patch")
     if ($script:InstallCodex) {
         Invoke-RtkCommand -Arguments @("init", "--global", "--codex")
-    }
-    if ($script:InstallPi -and $script:PiAvailable) {
-        Invoke-RtkCommand -Arguments @("init", "--global", "--agent", "pi")
-    }
-    if ($script:InstallOpenCode) {
-        Invoke-RtkCommand -Arguments @("init", "--global", "--opencode")
     }
     if ($script:InstallCline) {
         Write-Host "Optional for each project: cd <project>; `$env:RTK_TELEMETRY_DISABLED='1'; rtk init --agent cline"
     }
-}
-
-function Ensure-ClaudeCode {
-    if (Get-ApplicationCommand "claude") {
-        Write-Host "Claude Code already found on PATH; verifying it."
-    }
-    else {
-        Invoke-DownloadedPowerShellInstaller -Url $ClaudeInstallUrl -Name "Claude Code"
-        Add-KnownBinDirectories
-    }
-
-    Confirm-Application -CommandName "claude" -DisplayName "Claude Code"
 }
 
 function Ensure-Codex {
@@ -578,46 +506,13 @@ function Ensure-Codex {
     Confirm-Application -CommandName "codex" -DisplayName "Codex"
 }
 
-function Ensure-Pi {
-    $script:PiAvailable = $false
-    Add-NpmBinDirectories
-    $existingPi = Get-ApplicationCommand "pi"
-    if ($existingPi -and ($DryRun -or (Test-PiApplication $existingPi))) {
-        Write-Host "Pi already found on PATH; verifying it."
-    }
-    else {
-        if ($existingPi) {
-            Write-Host "The existing 'pi' command at '$($existingPi.Source)' is not Pi Coding Agent; installing Pi."
-        }
-        Invoke-DownloadedPowerShellInstaller -Url $PiInstallUrl -Name "Pi"
-        Add-NpmBinDirectories
-
-        if (-not $DryRun) {
-            $currentPi = Get-ApplicationCommand "pi"
-            $unchangedIncompatiblePi = (
-                $currentPi -and
-                $existingPi -and
-                $currentPi.Source -eq $existingPi.Source -and
-                -not (Test-PiApplication $currentPi)
-            )
-            if ((-not $currentPi) -or $unchangedIncompatiblePi) {
-                Write-Host "Pi was not installed; continuing without it."
-                return
-            }
-        }
-    }
-
-    Confirm-PiApplication
-    $script:PiAvailable = $true
-}
-
 function Convert-SemanticVersionOutput {
     param([string] $Output)
 
     if ([string]::IsNullOrWhiteSpace($Output)) {
         return ""
     }
-    if ($Output -match '(?m)^\s*(?:(?:uv|opencode|cline)(?:\s+version)?\s+|v)?(?<version>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?)(?:\s+\([^\r\n]*\))?\s*$') {
+    if ($Output -match '(?m)^\s*(?:(?:uv|cline)(?:\s+version)?\s+|v)?(?<version>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?)(?:\s+\([^\r\n]*\))?\s*$') {
         return $Matches["version"]
     }
     return ""
@@ -641,125 +536,6 @@ function Test-SupportedStableVersion {
     $normalizedVersion = $parsedVersion -replace '\+.*$', ''
     $normalizedMinimum = $parsedMinimum -replace '\+.*$', ''
     return ([version] $normalizedVersion) -ge ([version] $normalizedMinimum)
-}
-
-function Get-OpenCodeVersion {
-    param([string] $OpenCodePath)
-
-    $output = Invoke-Utf8NativeCapture -FilePath $OpenCodePath -Arguments @("--version")
-    $version = Convert-SemanticVersionOutput $output
-    if ([string]::IsNullOrWhiteSpace($version)) {
-        throw "OpenCode is present, but 'opencode --version' did not return a valid semantic version."
-    }
-    return $version
-}
-
-function Confirm-OpenCodeApplication {
-    if ($DryRun) {
-        Write-Host "+ opencode --version"
-        return
-    }
-
-    $command = Get-ApplicationCommand "opencode"
-    if (-not $command) {
-        throw "OpenCode was installed, but 'opencode' is not available on PATH."
-    }
-    $version = Get-OpenCodeVersion $command.Source
-    if (-not (Test-SupportedStableVersion -Version $version -Minimum $MinOpenCodeVersion)) {
-        throw "Stable OpenCode V1 $MinOpenCodeVersion or newer is required; found OpenCode $version after installation."
-    }
-    Write-Host "Verified OpenCode $version."
-}
-
-function Get-OpenCodeWindowsAssetName {
-    $architecture = $env:PROCESSOR_ARCHITEW6432
-    if ([string]::IsNullOrWhiteSpace($architecture)) {
-        $architecture = $env:PROCESSOR_ARCHITECTURE
-    }
-    if ([string]::IsNullOrWhiteSpace($architecture)) {
-        $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-    }
-
-    switch ($architecture.ToUpperInvariant()) {
-        "ARM64" { return "opencode-windows-arm64.zip" }
-        "AMD64" { return "opencode-windows-x64-baseline.zip" }
-        "X64" { return "opencode-windows-x64-baseline.zip" }
-        "X86_64" { return "opencode-windows-x64-baseline.zip" }
-        default { throw "OpenCode does not provide a supported Windows release for architecture '$architecture'." }
-    }
-}
-
-function Install-OpenCode {
-    $assetName = Get-OpenCodeWindowsAssetName
-    $archiveUrl = "$OpenCodeReleaseBaseUrl/$assetName"
-    $installDirectory = Join-Path $env:USERPROFILE ".opencode\bin"
-    if ($DryRun) {
-        Write-Host "+ irm $archiveUrl -OutFile <temporary-archive>"
-        Write-Host "+ extract and install opencode.exe to $(Format-Argument $installDirectory)"
-        return
-    }
-
-    $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ("cdx-opencode-" + [guid]::NewGuid().ToString("N"))
-    $archivePath = Join-Path $temporaryRoot $assetName
-    $extractPath = Join-Path $temporaryRoot "extracted"
-    $temporaryInstallPath = Join-Path $installDirectory (".opencode-" + [guid]::NewGuid().ToString("N") + ".exe")
-    try {
-        New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
-        Write-Host "+ irm $archiveUrl -OutFile $(Format-Argument $archivePath)"
-        Invoke-RestMethod -Uri $archiveUrl -OutFile $archivePath -ErrorAction Stop
-        if ((-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) -or ((Get-Item -LiteralPath $archivePath).Length -eq 0)) {
-            throw "The OpenCode release archive was empty."
-        }
-
-        Expand-Archive -LiteralPath $archivePath -DestinationPath $extractPath
-        $executables = @(Get-ChildItem -LiteralPath $extractPath -Recurse -File -Filter "opencode.exe")
-        if ($executables.Count -ne 1) {
-            throw "The OpenCode release archive did not contain exactly one opencode.exe."
-        }
-
-        New-Item -ItemType Directory -Force -Path $installDirectory | Out-Null
-        Copy-Item -LiteralPath $executables[0].FullName -Destination $temporaryInstallPath
-        if ((-not (Test-Path -LiteralPath $temporaryInstallPath -PathType Leaf)) -or ((Get-Item -LiteralPath $temporaryInstallPath).Length -eq 0)) {
-            throw "The extracted OpenCode executable was empty."
-        }
-        Move-Item -LiteralPath $temporaryInstallPath -Destination (Join-Path $installDirectory "opencode.exe") -Force
-    }
-    finally {
-        Remove-Item -LiteralPath $temporaryInstallPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Ensure-OpenCode {
-    if ($DryRun) {
-        if (Get-ApplicationCommand "opencode") {
-            Write-Host "+ opencode --version"
-            Write-Host "A compatible OpenCode will be preserved; an older version will be upgraded with opencode upgrade."
-        }
-        else {
-            Install-OpenCode
-        }
-        Confirm-OpenCodeApplication
-        return
-    }
-
-    $command = Get-ApplicationCommand "opencode"
-    if ($command) {
-        $version = Get-OpenCodeVersion $command.Source
-        if (Test-SupportedStableVersion -Version $version -Minimum $MinOpenCodeVersion) {
-            Write-Host "OpenCode $version already satisfies >=$MinOpenCodeVersion; leaving it unchanged."
-            return
-        }
-        Write-Host "OpenCode $version does not satisfy stable V1 >=$MinOpenCodeVersion; upgrading it with OpenCode."
-        Invoke-NativeCommand -FilePath $command.Source -Arguments @("upgrade")
-        Add-KnownBinDirectories
-    }
-    else {
-        Install-OpenCode
-        Add-KnownBinDirectories
-    }
-
-    Confirm-OpenCodeApplication
 }
 
 function Get-ClineVersion {
@@ -831,24 +607,9 @@ function Ensure-Cline {
 }
 
 function Ensure-SelectedCodingAgents {
-    if ($script:InstallClaudeCode) {
-        Write-Step "Ensuring Claude Code is installed"
-        Ensure-ClaudeCode
-    }
-
     if ($script:InstallCodex) {
         Write-Step "Ensuring Codex is installed"
         Ensure-Codex
-    }
-
-    if ($script:InstallPi) {
-        Write-Step "Checking or installing Pi"
-        Ensure-Pi
-    }
-
-    if ($script:InstallOpenCode) {
-        Write-Step "Ensuring OpenCode is installed"
-        Ensure-OpenCode
     }
 
     if ($script:InstallCline) {
@@ -856,7 +617,7 @@ function Ensure-SelectedCodingAgents {
         Ensure-Cline
     }
 
-    if ((-not $script:InstallClaudeCode) -and (-not $script:InstallCodex) -and (-not $script:PiAvailable) -and (-not $script:InstallOpenCode) -and (-not $script:InstallCline)) {
+    if ((-not $script:InstallCodex) -and (-not $script:InstallCline)) {
         throw "No selected coding agent was installed. Re-run the installer and choose at least one."
     }
 }
@@ -985,7 +746,6 @@ function Export-FccDesktopIcon {
         return
     }
 
-    # PowerShell does not wait when directly invoking a Windows GUI executable.
     $process = Start-Process `
         -FilePath $DesktopCommand `
         -ArgumentList @("--export-icon", ('"' + $IconPath + '"')) `
@@ -1011,7 +771,7 @@ function Configure-AndConfirmCodexProxy {
     if ($DryRun) {
         Write-Host "+ uv tool update-shell"
         Write-Host "+ uv tool dir --bin"
-        Write-Host "+ verify cdx-desktop, cdx-server, cdx-claude, cdx-codex, cdx-pi, cdx-opencode, and cdx-cline in the uv tool bin directory"
+        Write-Host "+ verify cdx-desktop, cdx-server, cdx-codex, cdx-cline, and cdx-init in the uv tool bin directory"
         Write-Host "+ cdx-server --version"
         Export-FccDesktopIcon `
             -DesktopCommand "<uv-tool-bin>\cdx-desktop.exe" `
@@ -1038,7 +798,7 @@ function Configure-AndConfirmCodexProxy {
         [IO.Path]::AltDirectorySeparatorChar
     )
     $installedCommands = @{}
-    foreach ($commandName in @("cdx-desktop", "cdx-server", "cdx-claude", "cdx-codex", "cdx-pi", "cdx-opencode", "cdx-cline")) {
+    foreach ($commandName in $FccCommands) {
         $command = Get-ApplicationCommand $commandName
         if (-not $command) {
             throw "CodexProxy installation did not create '$commandName'."
@@ -1170,17 +930,8 @@ if ($DryRun) {
 else {
     Write-Host "CodexProxy is installed and verified. Open the CodexProxy desktop shortcut to run it in the background."
     Write-Host "For terminal use, start the proxy with: cdx-server"
-    if ($script:InstallClaudeCode) {
-        Write-Host "Run Claude Code with: cdx-claude"
-    }
     if ($script:InstallCodex) {
         Write-Host "Run Codex with: cdx-codex"
-    }
-    if ($script:PiAvailable) {
-        Write-Host "Run Pi with: cdx-pi"
-    }
-    if ($script:InstallOpenCode) {
-        Write-Host "Run OpenCode with: cdx-opencode"
     }
     if ($script:InstallCline) {
         Write-Host "Run Cline with: cdx-cline"

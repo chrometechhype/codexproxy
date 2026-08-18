@@ -9,10 +9,7 @@ import pytest
 CODEX_PROXY_COMMANDS = (
     "cdx-desktop",
     "cdx-server",
-    "cdx-claude",
     "cdx-codex",
-    "cdx-pi",
-    "cdx-opencode",
     "cdx-cline",
     "cdx-init",
     "codexproxy",
@@ -131,9 +128,7 @@ def posix_uninstall_harness(tmp_path: Path) -> PosixUninstallHarness:
     for name in CODEX_PROXY_COMMANDS:
         _write_executable(tool_bin / name, "#!/bin/sh\nexit 0\n")
 
-    _write_executable(bin_dir / "claude", "#!/bin/sh\nexit 0\n")
     _write_executable(bin_dir / "codex", "#!/bin/sh\nexit 0\n")
-    _write_executable(bin_dir / "pi", "#!/bin/sh\nexit 0\n")
     _write_executable(bin_dir / "opencode", "#!/bin/sh\nexit 0\n")
     _write_executable(bin_dir / "cline", "#!/bin/sh\nexit 0\n")
     _write_executable(
@@ -167,7 +162,7 @@ if [ "${1:-}" = "tool" ] && [ "${2:-}" = "uninstall" ]; then
         echo 'Tool `codexproxy` is not installed' >&2
         exit 2
     fi
-    for name in cdx-desktop cdx-server cdx-claude cdx-codex cdx-pi cdx-opencode cdx-cline cdx-init codexproxy; do
+    for name in cdx-desktop cdx-server cdx-codex cdx-opencode cdx-cline cdx-init codexproxy; do
         /bin/rm -f "$FAKE_TOOL_BIN/$name"
     done
     echo "Uninstalled codexproxy"
@@ -234,9 +229,7 @@ def test_uninstall_sh_removes_and_verifies_only_fcc(
         for name in CODEX_PROXY_COMMANDS
     )
     assert (posix_uninstall_harness.bin_dir / "uv").exists()
-    assert (posix_uninstall_harness.bin_dir / "claude").exists()
     assert (posix_uninstall_harness.bin_dir / "codex").exists()
-    assert (posix_uninstall_harness.bin_dir / "pi").exists()
     assert (posix_uninstall_harness.bin_dir / "opencode").exists()
     assert (posix_uninstall_harness.bin_dir / "cline").exists()
     assert posix_uninstall_harness.calls() == [
@@ -487,7 +480,7 @@ def powershell_uninstall_harness(
         (tool_bin / f"{name}.cmd").write_text(
             "@echo off\nexit /b 0\n", encoding="utf-8"
         )
-    for name in ("claude", "codex", "pi", "opencode", "cline"):
+    for name in ("codex", "opencode", "cline"):
         (bin_dir / f"{name}.cmd").write_text("@echo off\nexit /b 0\n", encoding="utf-8")
 
     uv_commands = " ".join(CODEX_PROXY_COMMANDS)
@@ -595,9 +588,7 @@ def test_uninstall_ps1_removes_and_verifies_only_fcc(
         for name in CODEX_PROXY_COMMANDS
     )
     assert (powershell_uninstall_harness.bin_dir / "uv.cmd").exists()
-    assert (powershell_uninstall_harness.bin_dir / "claude.cmd").exists()
     assert (powershell_uninstall_harness.bin_dir / "codex.cmd").exists()
-    assert (powershell_uninstall_harness.bin_dir / "pi.cmd").exists()
     assert (powershell_uninstall_harness.bin_dir / "opencode.cmd").exists()
     assert (powershell_uninstall_harness.bin_dir / "cline.cmd").exists()
     assert powershell_uninstall_harness.calls() == [

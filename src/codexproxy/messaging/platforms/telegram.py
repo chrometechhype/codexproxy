@@ -242,7 +242,7 @@ class TelegramRuntime:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         if update.message:
-            await update.message.reply_text("👋 Hello! I am the Claude Code Proxy Bot.")
+            await update.message.reply_text("👋 Hello! I am the CodexProxy Bot.")
         await self._on_telegram_message(update, context)
 
     async def _on_telegram_message(

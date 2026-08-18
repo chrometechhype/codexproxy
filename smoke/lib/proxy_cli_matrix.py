@@ -1,4 +1,4 @@
-"""Claude Code CLI characterization helpers for provider smoke matrices."""
+"""Proxy CLI characterization helpers for provider smoke matrices."""
 
 import json
 import os
@@ -36,7 +36,7 @@ _SUBAGENT_SYSTEM_PROMPT = (
 
 
 @dataclass(frozen=True, slots=True)
-class ClaudeCliRun:
+class ProxyCliRun:
     command: tuple[str, ...]
     returncode: int | None
     stdout: str
@@ -67,7 +67,7 @@ class CliMatrixOutcome:
     log_excerpt: str
 
 
-def run_claude_cli(
+def run_proxy_cli(
     *,
     claude_bin: str,
     server: RunningServer,
@@ -81,12 +81,12 @@ def run_claude_cli(
     session_id: str | None = None,
     resume_session_id: str | None = None,
     no_session_persistence: bool = True,
-) -> ClaudeCliRun:
-    """Run Claude Code CLI against the local smoke proxy."""
+) -> ProxyCliRun:
+    """Run proxy CLI against the local smoke proxy."""
     cwd.mkdir(parents=True, exist_ok=True)
 
     cmd = list(
-        _build_claude_cli_command(
+        _build_proxy_cli_command(
             claude_bin=claude_bin,
             prompt=prompt,
             tools=tools,
@@ -118,7 +118,7 @@ def run_claude_cli(
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
-        return ClaudeCliRun(
+        return ProxyCliRun(
             command=tuple(cmd),
             returncode=None,
             stdout=_coerce_timeout_text(exc.stdout),
@@ -127,7 +127,7 @@ def run_claude_cli(
             timed_out=True,
         )
 
-    return ClaudeCliRun(
+    return ProxyCliRun(
         command=tuple(cmd),
         returncode=result.returncode,
         stdout=_coerce_timeout_text(result.stdout),
@@ -136,7 +136,7 @@ def run_claude_cli(
     )
 
 
-def _build_claude_cli_command(
+def _build_proxy_cli_command(
     *,
     claude_bin: str,
     prompt: str,
@@ -230,7 +230,7 @@ def token_evidence(
     *,
     feature: str,
     marker: str,
-    run: ClaudeCliRun,
+    run: ProxyCliRun,
     log_delta: str,
 ) -> dict[str, Any]:
     """Collect compact evidence for a CLI feature probe."""
@@ -258,7 +258,7 @@ def token_evidence(
 
 def classify_probe(
     *,
-    run: ClaudeCliRun,
+    run: ProxyCliRun,
     log_delta: str,
     marker: str,
     requires_tool_result: bool = False,
@@ -315,7 +315,7 @@ def make_outcome(
     source: str,
     feature: str,
     marker: str,
-    run: ClaudeCliRun,
+    run: ProxyCliRun,
     log_delta: str,
     log_path: Path,
     requires_tool_result: bool = False,
@@ -364,7 +364,7 @@ def write_matrix_report(
     target: str,
     filename_prefix: str,
 ) -> Path:
-    """Write a Claude CLI compatibility matrix report."""
+    """Write a proxy CLI compatibility matrix report."""
     config.results_dir.mkdir(parents=True, exist_ok=True)
     path = (
         config.results_dir
@@ -577,7 +577,7 @@ def _compact_command(
     workspace = model_dir / "compact_command"
     session_id = str(uuid.uuid4())
     offset = read_log_offset(server.log_path)
-    first = run_claude_cli(
+    first = run_proxy_cli(
         claude_bin=claude_bin,
         server=server,
         config=smoke_config,
@@ -587,7 +587,7 @@ def _compact_command(
         session_id=session_id,
         no_session_persistence=False,
     )
-    second = run_claude_cli(
+    second = run_proxy_cli(
         claude_bin=claude_bin,
         server=server,
         config=smoke_config,
@@ -598,7 +598,7 @@ def _compact_command(
         no_session_persistence=False,
     )
     log_delta = read_log_delta(server.log_path, offset)
-    run = ClaudeCliRun(
+    run = ProxyCliRun(
         command=(*first.command, "&&", *second.command),
         returncode=second.returncode if first.returncode == 0 else first.returncode,
         stdout=f"{first.stdout}\n{second.stdout}",
@@ -638,7 +638,7 @@ def _run_probe(
     requires_task: bool = False,
 ) -> CliMatrixOutcome:
     offset = read_log_offset(server.log_path)
-    run = run_claude_cli(
+    run = run_proxy_cli(
         claude_bin=claude_bin,
         server=server,
         config=smoke_config,

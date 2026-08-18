@@ -41,11 +41,9 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
         "drop_in_claude_code_replacement",
         "Claude-compatible API, CLI, and editor protocol flows work",
         ("tests/api/test_api.py", "tests/cli/test_cli.py"),
-        ("test_probe_and_models_routes", "test_claude_cli_prompt_when_available"),
+        ("test_probe_and_models_routes",),
         (
             "test_api_basic_conversation_e2e",
-            "test_claude_cli_adaptive_thinking_e2e",
-            "test_claude_cli_provider_error_e2e",
             "test_nvidia_nim_cli_matrix_e2e",
             "test_openrouter_free_cli_matrix_e2e",
             "test_vscode_protocol_e2e",
@@ -54,7 +52,6 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
         ("api", "cli", "clients", "nvidia_nim_cli", "openrouter_free_cli"),
         (
             "configured provider",
-            "CODEX_PROXY_SMOKE_CLAUDE_BIN for real Claude CLI",
             "NVIDIA_NIM_API_KEY",
             "OPENROUTER_API_KEY",
         ),
@@ -74,32 +71,6 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
         ("api", "providers"),
         ("configured provider credentials or local provider endpoint",),
         "missing providers are missing_env unless CODEX_PROXY_ALLOW_NO_PROVIDER_SMOKE=1",
-    ),
-    FeatureCoverage(
-        "pi_cli_integration",
-        "Pi discovers CDX models and sends Anthropic Messages through the proxy",
-        ("tests/cli/test_entrypoints.py",),
-        ("test_probe_and_models_routes",),
-        ("test_pi_cli_prompt_e2e",),
-        ("clients",),
-        ("Pi CLI", "configured provider credentials or local provider endpoint"),
-        "skip only when Pi is absent; configured providers must pass",
-    ),
-    FeatureCoverage(
-        "opencode_cli_integration",
-        "OpenCode discovers CDX models and sends Responses through the proxy",
-        (
-            "tests/cli/test_opencode_launcher.py",
-            "tests/cli/test_model_catalog.py",
-        ),
-        ("test_probe_and_models_routes",),
-        ("test_opencode_cli_prompt_e2e",),
-        ("clients",),
-        (
-            "stable OpenCode V1 CLI",
-            "configured provider credentials or local provider endpoint",
-        ),
-        "skip only when OpenCode is absent; configured providers must pass",
     ),
     FeatureCoverage(
         "cline_cli_integration",
@@ -162,7 +133,6 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
             "test_provider_adaptive_thinking_history_e2e",
             "test_provider_reasoning_tool_continuation_e2e",
             "test_gemini_thought_signature_tool_continuation_e2e",
-            "test_claude_cli_adaptive_thinking_e2e",
             "test_route_reasoning_config_e2e",
         ),
         ("providers", "cli", "config"),
@@ -418,8 +388,6 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
         ("tests/cli/test_cli.py",),
         ("test_claude_cli_prompt_when_available",),
         (
-            "test_claude_cli_adaptive_thinking_e2e",
-            "test_claude_cli_multiturn_tool_protocol_e2e",
             "test_nvidia_nim_cli_matrix_e2e",
             "test_openrouter_free_cli_matrix_e2e",
         ),
@@ -524,7 +492,6 @@ FEATURE_INVENTORY: tuple[FeatureCoverage, ...] = (
         (
             "test_api_error_shape_e2e",
             "test_provider_error_e2e",
-            "test_claude_cli_provider_error_e2e",
         ),
         ("api", "providers", "cli"),
         ("configured provider for provider error scenario",),

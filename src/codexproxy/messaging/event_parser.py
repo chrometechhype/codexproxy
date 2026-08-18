@@ -1,7 +1,7 @@
-"""CLI event parser for Claude Code CLI output.
+"""CLI event parser for proxy agent output.
 
 This parser emits an ordered stream of low-level events suitable for building a
-Claude Code-like transcript in messaging UIs.
+proxy-like transcript in messaging UIs.
 """
 
 from typing import Any

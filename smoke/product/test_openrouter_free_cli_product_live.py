@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from smoke.lib.claude_cli_matrix import (
+from smoke.lib.proxy_cli_matrix import (
     CliMatrixOutcome,
     regression_failures,
     run_cli_feature_probes,

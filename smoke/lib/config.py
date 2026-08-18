@@ -242,14 +242,14 @@ class SmokeConfig:
         return models
 
     def nvidia_nim_cli_models(self) -> list[ProviderModel]:
-        """Return the NVIDIA NIM models for Claude Code CLI characterization."""
+        """Return the NVIDIA NIM models for proxy CLI characterization."""
         return [
             ProviderModel(provider="nvidia_nim", full_model=full_model, source=source)
             for full_model, source in nvidia_nim_cli_model_refs().items()
         ]
 
     def openrouter_free_cli_models(self) -> list[ProviderModel]:
-        """Return OpenRouter free models for Claude Code CLI characterization."""
+        """Return OpenRouter free models for proxy CLI characterization."""
         return [
             ProviderModel(provider="open_router", full_model=full_model, source=source)
             for full_model, source in openrouter_free_cli_model_refs().items()

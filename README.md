@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/app-icon.svg" alt="CodexProxy icon" width="80">
+
 <h1>
   <picture>
     <source media="(prefers-color-scheme: light)" srcset="assets/codexproxy-wordmark-light.svg">
@@ -15,24 +17,24 @@
 [![Code style: Ruff](https://img.shields.io/badge/code%20formatting-ruff-f5a623.svg?style=for-the-badge)](https://github.com/astral-sh/ruff)
 [![Logging: Loguru](https://img.shields.io/badge/logging-loguru-4ecdc4.svg?style=for-the-badge)](https://github.com/Delgan/loguru)
 
-[Quick Start](#quick-start) · [Providers](#choose-a-provider) · [Clients](#connect-your-client) · [Integrations](#optional-integrations) · [Manage](#manage-your-installation)
+[Quick Start](#quick-start) · [Providers](#choose-a-provider) · [Integrations](#optional-integrations) · [Manage](#manage-your-installation)
 
 </div>
 
 ## What You Get
 
 - **48 ToS-friendly providers. 1.3B+ free tokens every month.** Use free, paid, subscription, and local models from one searchable UI without putting your account at risk. CDX follows provider terms and removes integrations if they stop being allowed.
-- **5 coding agents. One model catalog.** Run Claude Code, Codex, Pi, OpenCode, or Cline with your CDX models.
+- **2 coding agents. One model catalog.** Run Codex or Cline with your CDX models.
 - **Up to 90% fewer terminal-output tokens.** Optional [RTK](https://github.com/rtk-ai/rtk) filters common command output, while five CDX optimizations handle quota probes, command-prefix detection, titles, suggestions, and filepaths without calling a provider.
 - **Terminal, desktop, IDE, or phone.** Work through native launchers, VS Code, Codex App, JetBrains, Discord, or Telegram.
 - **Voice notes in. Code out.** Talk to your agent using local Whisper or NVIDIA NIM transcription.
-- **Agent capabilities stay intact.** Stream responses, use tools, preserve native interleaved thinking for maximum performance, send images, and route Fable, Opus, Sonnet, and Haiku independently with compatible models.
+- **Agent capabilities stay intact.** Stream responses, use tools, preserve native interleaved thinking for maximum performance, send images, and route Sonnet and Haiku independently with compatible models.
 
 Free-tier availability and limits are controlled by each provider and may change.
 
 <div align="center">
-  <img src="assets/pic.png" alt="Claude Code running with CodexProxy" width="700">
-  <p><em>Claude Code running with CDX.</em></p>
+  <img src="assets/pic.png" alt="A coding agent running with CodexProxy" width="700">
+  <p><em>A coding agent running with CDX.</em></p>
 </div>
 
 ## Quick Start
@@ -101,7 +103,7 @@ Codex:
 cdx-codex
 ```
 
-All five launchers use the current Admin UI settings. Use the agent's model picker to choose from the models CDX exposes. Normal CLI arguments still work, for example:
+Codex and Cline both use the current Admin UI settings. Use the agent's model picker to choose from the models CDX exposes. Normal CLI arguments still work, for example:
 
 ```bash
 cdx-codex exec "hello"
@@ -109,13 +111,6 @@ cdx-codex exec "hello"
 
 CDX launchers leave your existing agent settings, sessions, credentials, and
 extensions unchanged.
-
-<a id="model-picker"></a>
-
-<div align="center">
-  <img src="assets/cc-model-picker.png" alt="Claude Code model picker showing CDX models" width="700">
-  <p><em>Select an CDX model from Claude Code's native <code>/model</code> picker.</em></p>
-</div>
 
 ## Choose A Provider
 
@@ -154,8 +149,6 @@ extensions unchanged.
 | [DeepSeek](https://platform.deepseek.com/api_keys) | `DEEPSEEK_API_KEY` | `deepseek/deepseek-chat` |
 | [Mistral La Plateforme](https://console.mistral.ai/) | `MISTRAL_API_KEY` | `mistral/devstral-small-latest` |
 | [Mistral Codestral](https://console.mistral.ai/) | `CODESTRAL_API_KEY` | `mistral_codestral/codestral-latest` |
-| [OpenCode Zen](https://opencode.ai/auth) | `OPENCODE_API_KEY` | `opencode_zen/gpt-5.3-codex` |
-| [OpenCode Go](https://opencode.ai/auth) | `OPENCODE_API_KEY` | `opencode_go/minimax-m2.7` |
 | [Vercel AI Gateway](https://vercel.com/docs/ai-gateway/models-and-providers) | `AI_GATEWAY_API_KEY` | `vercel/openai/gpt-5.5` |
 | [Amazon Bedrock](https://console.aws.amazon.com/bedrock/) | `AWS_BEARER_TOKEN_BEDROCK` | `bedrock/openai.gpt-oss-120b` |
 | [Hugging Face Inference Providers](https://huggingface.co/settings/tokens) | `HUGGINGFACE_API_KEY` | `huggingface/Qwen/Qwen3-Coder-480B-A35B-Instruct:fastest` |
@@ -201,8 +194,6 @@ extensions unchanged.
   use `qwencloud/`. The keys and endpoints are not interchangeable. Coding Plan
   is for local, personal, interactive coding-agent use under the
   [Coding Plan terms](https://www.alibabacloud.com/help/en/model-studio/coding-plan).
-- OpenCode Zen and OpenCode Go share `OPENCODE_API_KEY` but use the explicit
-  `opencode_zen/` and `opencode_go/` model prefixes.
 - For Amazon Bedrock, set `BEDROCK_BASE_URL` to the URL for the same region as
   the API key and select one of the listed models.
 - Vertex AI uses Google Application Default Credentials instead of an API key.
@@ -239,177 +230,18 @@ Use the tag shown by `ollama list` with the `ollama/` prefix. `OLLAMA_BASE_URL` 
 </details>
 
 <details>
-<summary><strong>Optional model-tier routing</strong></summary>
-
-`MODEL` is the fallback for every request. Select a model for `MODEL_FABLE`, `MODEL_OPUS`, `MODEL_SONNET`, or `MODEL_HAIKU` to override an individual Claude Code tier; select **None** to use `MODEL`.
-
-For example, route Opus to `nvidia_nim/nvidia/nemotron-3-super-120b-a12b`, Sonnet to `open_router/openrouter/free`, Haiku to `lmstudio/qwen3.5-coder`, and keep `MODEL` on `zai/glm-5.2`.
-
-</details>
-
-<details>
 <summary><strong>Reasoning control</strong></summary>
 
 Open **Admin UI → Model Config → Reasoning** and select the behavior you want.
 
 | Selection | Behavior |
 | --- | --- |
-| **From client** (default) | Use the effort sent by Claude Code, Codex, Pi, OpenCode, or Cline. If none is sent, keep the provider default. |
+| **From client** (default) | Use the effort sent by Codex or Cline. If none is sent, keep the provider default. |
 | **Off** | Request reasoning to be disabled. |
 | **Low**, **Medium**, **High**, **X-High**, or **Max** | Override the client with the selected reasoning level. |
-| **Inherit** (Fable, Opus, Sonnet, and Haiku only) | Use the root Reasoning selection. |
+| **Inherit** (Sonnet and Haiku only) | Use the root Reasoning selection. |
 
 Providers that do not support a selected control retain their own behavior.
-
-</details>
-
-<a id="connect-your-client"></a>
-
-## Connect Your Client
-
-For terminal use, start `cdx-server`, then run `cdx-claude`, `cdx-codex`,
-`cdx-pi`, `cdx-opencode`, or `cdx-cline`. Use the guides below for editor integrations.
-
-<details>
-<summary><strong>Claude Code in VS Code</strong></summary>
-
-Install the [Claude Code extension](https://marketplace.visualstudio.com/items?itemName=anthropic.claude-code). Open VS Code's user settings as JSON and add:
-
-```json
-"claudeCode.disableLoginPrompt": true,
-"claudeCode.environmentVariables": [
-  { "name": "ANTHROPIC_BASE_URL", "value": "http://localhost:8082" },
-  { "name": "ANTHROPIC_AUTH_TOKEN", "value": "codexcc" },
-  { "name": "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "value": "1" },
-  { "name": "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "value": "190000" },
-  { "name": "DISABLE_AUTOUPDATER", "value": "1" },
-  { "name": "DISABLE_FEEDBACK_COMMAND", "value": "1" },
-  { "name": "DISABLE_ERROR_REPORTING", "value": "1" }
-]
-```
-
-Match the port and authentication token to the Admin UI, then reload the extension.
-
-</details>
-
-<details>
-<summary><strong>Codex App</strong></summary>
-
-Start CDX, then edit your Codex configuration:
-
-- Windows: `%USERPROFILE%\.codex\config.toml`
-- macOS: `~/.codex/config.toml`
-
-Add the matching model-catalog path and replace `YOUR_USERNAME`.
-
-Windows:
-
-```toml
-model_catalog_json = "C:/Users/YOUR_USERNAME/.cdx/codex-model-catalog.json"
-```
-
-macOS:
-
-```toml
-model_catalog_json = "/Users/YOUR_USERNAME/.cdx/codex-model-catalog.json"
-```
-
-Then add the shared CDX settings:
-
-```toml
-model_provider = "cdx"
-model = "nvidia_nim/nvidia/nemotron-3-super-120b-a12b"
-
-[model_providers.cdx]
-name = "CodexProxy"
-base_url = "http://127.0.0.1:8082/v1"
-wire_api = "responses"
-
-[model_providers.cdx.auth]
-command = "cdx-codex"
-args = ["--print-proxy-auth-token"]
-```
-
-Match the model and port to the Admin UI. The auth command reads CDX's current
-proxy token automatically. Restart the Codex App after setup or model changes,
-then select an CDX model from its model picker.
-
-</details>
-
-<details>
-<summary><strong>Codex in VS Code</strong></summary>
-
-Install the [Codex extension](https://marketplace.visualstudio.com/items?itemName=openai.chatgpt). Create or edit `~/.codex/config.toml` (`%USERPROFILE%\.codex\config.toml` on Windows):
-
-```toml
-model_provider = "cdx"
-model = "nvidia_nim/nvidia/nemotron-3-super-120b-a12b"
-
-[model_providers.cdx]
-name = "CodexProxy"
-base_url = "http://127.0.0.1:8082/v1"
-wire_api = "responses"
-
-[model_providers.cdx.auth]
-command = "cdx-codex"
-args = ["--print-proxy-auth-token"]
-```
-
-Match `model` and the port to the Admin UI. The auth command reads CDX's current
-proxy token automatically. Restart VS Code after setup or model changes. For
-WSL-backed Codex, edit the file inside WSL.
-
-</details>
-
-<details>
-<summary><strong>Claude Code in JetBrains ACP</strong></summary>
-
-Edit the installed Claude ACP configuration:
-
-- Windows: `C:\Users\%USERNAME%\AppData\Roaming\JetBrains\acp-agents\installed.json`
-- Linux/macOS: `~/.jetbrains/acp.json`
-
-Set the environment for `acp.registry.claude-acp`:
-
-```json
-"env": {
-  "ANTHROPIC_BASE_URL": "http://localhost:8082",
-  "ANTHROPIC_AUTH_TOKEN": "codexcc",
-  "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
-  "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "190000",
-  "DISABLE_AUTOUPDATER": "1",
-  "DISABLE_FEEDBACK_COMMAND": "1",
-  "DISABLE_ERROR_REPORTING": "1"
-}
-```
-
-Match the port and token to the Admin UI, then restart the IDE.
-
-</details>
-
-<details>
-<summary><strong>Claude Code still asks you to log in</strong></summary>
-
-If Claude Code asks you to log in after you configure the CDX URL and token, open its state file:
-
-- Windows: `%USERPROFILE%\.claude.json`
-- macOS/Linux/WSL: `~/.claude.json`
-
-Merge this property into the existing JSON without removing its other fields:
-
-```json
-"hasCompletedOnboarding": true
-```
-
-If the file does not exist, create it with a complete JSON object:
-
-```json
-{
-  "hasCompletedOnboarding": true
-}
-```
-
-Restart Claude Code or the IDE after saving the file.
 
 </details>
 
@@ -505,7 +337,7 @@ Stop every running CDX command before uninstalling.
 **Keeps**
 
 - uv and Python
-- Claude Code, Codex, Pi, OpenCode, Cline, and RTK
+- Codex, Cline, and RTK
 - Shared PATH entries
 
 macOS/Linux:

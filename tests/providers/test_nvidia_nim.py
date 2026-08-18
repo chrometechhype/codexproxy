@@ -918,7 +918,7 @@ async def test_stream_response_restores_aliased_tool_arguments(nim_provider):
 
 @pytest.mark.asyncio
 async def test_stream_response_buffers_chunked_aliased_tool_arguments(nim_provider):
-    """Chunked aliased args are emitted once as restored Claude Code args."""
+    """Chunked aliased args are emitted once as restored proxy args."""
     req = make_request(
         tools=[
             tool(
