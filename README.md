@@ -358,6 +358,11 @@ Windows PowerShell:
 | --- | --- |
 | `cdx-server` | Start the proxy |
 | `cdx-codex` | Write config + launch Codex CLI |
+| `cdx-codex-app` | Launch Codex Desktop App |
+| `cdx-codex-config` | Write Codex config only (for Desktop App) |
+| `cdx-restore` | Restore pre-CodexProxy configuration |
+| `cdx-delete` | Complete removal of all CodexProxy files |
+| `cdx-init` | Optional scaffold for advanced setup |
 | `cdx-desktop` | Launch the desktop app (tray) |
 
 ## Project Links
