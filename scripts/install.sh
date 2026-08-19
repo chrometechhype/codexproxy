@@ -10,7 +10,7 @@ RTK_RELEASE_BASE_URL="https://github.com/rtk-ai/rtk/releases/download/v$RTK_VERS
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 CODEX_PROXY_MACOS_BUNDLE_ID="io.github.alishahryar1.codexproxy"
 CODEX_PROXY_MACOS_OWNER_FILE=".codexproxy-owner"
-CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-codex cdx-init codexproxy"
+CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-codex"
 
 dry_run=0
 voice_nim=0

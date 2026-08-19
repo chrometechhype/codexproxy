@@ -28,8 +28,7 @@ $script:EnableRtk = $Rtk.IsPresent
 $FccCommands = @(
     "cdx-desktop",
     "cdx-server",
-    "cdx-codex",
-    "codexproxy"
+    "cdx-codex"
 )
 
 function Show-Usage {

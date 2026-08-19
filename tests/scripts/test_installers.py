@@ -14,12 +14,7 @@ import pytest
 CODEX_PROXY_COMMANDS = (
     "cdx-desktop",
     "cdx-server",
-    "cdx-claude",
     "cdx-codex",
-    "cdx-pi",
-    "cdx-opencode",
-    "cdx-init",
-    "codexproxy",
 )
 
 
