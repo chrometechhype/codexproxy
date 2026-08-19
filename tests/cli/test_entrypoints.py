@@ -62,7 +62,6 @@ def test_cli_scripts_are_registered() -> None:
     assert pyproject["project"]["scripts"] == {
         "cdx-server": "codexproxy.cli.entrypoints:serve",
         "cdx-codex": "codexproxy.cli.launchers.codex:launch",
-        "cdx-cline": "codexproxy.cli.launchers.cline:launch",
     }
     assert pyproject["project"]["gui-scripts"] == {
         "cdx-desktop": "codexproxy.cli.desktop_entrypoint:launch",

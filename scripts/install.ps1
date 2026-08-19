@@ -14,24 +14,21 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$RepoArchiveUrl = "https://github.com/Alishahryar1/codexproxy/archive/refs/heads/main.zip"
+$RepoArchiveUrl = "https://github.com/chrometechhype/codexproxy/archive/refs/heads/main.zip"
 $PythonRequest = "cpython-3.14.0-windows-x86_64-none"
 $MinUvVersion = "0.11.16"
 $CodexInstallUrl = "https://chatgpt.com/codex/install.ps1"
-$MinClineVersion = "3.0.55"
 $RtkVersion = "0.44.2"
 $RtkReleaseBaseUrl = "https://github.com/rtk-ai/rtk/releases/download/v$RtkVersion"
 $RtkWindowsAssetName = "rtk-x86_64-pc-windows-msvc.zip"
 $RtkWindowsAssetSha256 = "3a1e114edce9080f8a10663e9c87488363a82f14a5ca8aab2ad416817f89d47c"
 $UvInstallUrl = "https://astral.sh/uv/install.ps1"
 $script:InstallCodex = $true
-$script:InstallCline = $false
 $script:EnableRtk = $Rtk.IsPresent
 $FccCommands = @(
     "cdx-desktop",
     "cdx-server",
     "cdx-codex",
-    "cdx-cline",
     "codexproxy"
 )
 
@@ -88,11 +85,8 @@ function Read-YesNo {
 function Select-CodingAgents {
     while ($true) {
         $script:InstallCodex = Read-YesNo "Install or verify Codex for cdx-codex?"
-        $script:InstallCline = Read-YesNo `
-            -Prompt "Install or verify Cline CLI for cdx-cline?" `
-            -DefaultYes $script:InstallCline
 
-        if ($script:InstallCodex -or $script:InstallCline) {
+        if ($script:InstallCodex) {
             break
         }
         Write-Host "Select at least one coding agent."
@@ -489,9 +483,6 @@ function Configure-RtkForSelectedAgents {
     if ($script:InstallCodex) {
         Invoke-RtkCommand -Arguments @("init", "--global", "--codex")
     }
-    if ($script:InstallCline) {
-        Write-Host "Optional for each project: cd <project>; `$env:RTK_TELEMETRY_DISABLED='1'; rtk init --agent cline"
-    }
 }
 
 function Ensure-Codex {
@@ -512,7 +503,7 @@ function Convert-SemanticVersionOutput {
     if ([string]::IsNullOrWhiteSpace($Output)) {
         return ""
     }
-    if ($Output -match '(?m)^\s*(?:(?:uv|cline)(?:\s+version)?\s+|v)?(?<version>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?)(?:\s+\([^\r\n]*\))?\s*$') {
+    if ($Output -match '(?m)^\s*(?:(?:uv|codex)(?:\s+version)?\s+|v)?(?<version>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?)(?:\s+\([^\r\n]*\))?\s*$') {
         return $Matches["version"]
     }
     return ""
@@ -536,90 +527,6 @@ function Test-SupportedStableVersion {
     $normalizedVersion = $parsedVersion -replace '\+.*$', ''
     $normalizedMinimum = $parsedMinimum -replace '\+.*$', ''
     return ([version] $normalizedVersion) -ge ([version] $normalizedMinimum)
-}
-
-function Get-ClineVersion {
-    param([string] $ClinePath)
-
-    $output = Invoke-Utf8NativeCapture -FilePath $ClinePath -Arguments @("--version")
-    $version = Convert-SemanticVersionOutput $output
-    if ([string]::IsNullOrWhiteSpace($version)) {
-        throw "Cline is present, but 'cline --version' did not return a valid semantic version."
-    }
-    return $version
-}
-
-function Confirm-ClineApplication {
-    if ($DryRun) {
-        Write-Host "+ cline --version"
-        return
-    }
-
-    $command = Get-ApplicationCommand "cline"
-    if (-not $command) {
-        throw "Cline was installed, but 'cline' is not available on PATH."
-    }
-    $version = Get-ClineVersion $command.Source
-    if (-not (Test-SupportedStableVersion -Version $version -Minimum $MinClineVersion)) {
-        throw "Stable Cline $MinClineVersion or newer is required; found Cline $version after installation."
-    }
-    Write-Host "Verified Cline $version."
-}
-
-function Ensure-Cline {
-    Add-NpmBinDirectories
-
-    if ($DryRun) {
-        if (Get-ApplicationCommand "cline") {
-            Write-Host "+ cline --version"
-            Write-Host "A compatible Cline will be preserved; an older version will be upgraded with cline update."
-        }
-        elseif (Get-ApplicationCommand "npm") {
-            Write-Host "+ npm install -g cline"
-        }
-        else {
-            throw "Cline installation requires npm. Install Node.js from https://nodejs.org/en/download, then rerun the installer."
-        }
-        Confirm-ClineApplication
-        return
-    }
-
-    $command = Get-ApplicationCommand "cline"
-    if ($command) {
-        $version = Get-ClineVersion $command.Source
-        if (Test-SupportedStableVersion -Version $version -Minimum $MinClineVersion) {
-            Write-Host "Cline $version already satisfies >=$MinClineVersion; leaving it unchanged."
-            return
-        }
-        Write-Host "Cline $version does not satisfy stable >=$MinClineVersion; upgrading it with Cline."
-        Invoke-NativeCommand -FilePath $command.Source -Arguments @("update")
-    }
-    else {
-        $npm = Get-ApplicationCommand "npm"
-        if (-not $npm) {
-            throw "Cline installation requires npm. Install Node.js from https://nodejs.org/en/download, then rerun the installer."
-        }
-        Invoke-NativeCommand -FilePath $npm.Source -Arguments @("install", "-g", "cline")
-    }
-
-    Add-NpmBinDirectories
-    Confirm-ClineApplication
-}
-
-function Ensure-SelectedCodingAgents {
-    if ($script:InstallCodex) {
-        Write-Step "Ensuring Codex is installed"
-        Ensure-Codex
-    }
-
-    if ($script:InstallCline) {
-        Write-Step "Ensuring Cline CLI is installed"
-        Ensure-Cline
-    }
-
-    if ((-not $script:InstallCodex) -and (-not $script:InstallCline)) {
-        throw "No selected coding agent was installed. Re-run the installer and choose at least one."
-    }
 }
 
 function Get-UvVersion {
@@ -771,7 +678,7 @@ function Configure-AndConfirmCodexProxy {
     if ($DryRun) {
         Write-Host "+ uv tool update-shell"
         Write-Host "+ uv tool dir --bin"
-        Write-Host "+ verify cdx-desktop, cdx-server, cdx-codex, cdx-cline, and cdx-init in the uv tool bin directory"
+        Write-Host "+ verify cdx-desktop, cdx-server, cdx-codex, and cdx-init in the uv tool bin directory"
         Write-Host "+ cdx-server --version"
         Export-FccDesktopIcon `
             -DesktopCommand "<uv-tool-bin>\cdx-desktop.exe" `
@@ -901,7 +808,6 @@ if ((-not [string]::IsNullOrWhiteSpace($TorchBackend)) -and (-not ($VoiceLocal -
 }
 
 Add-KnownBinDirectories
-$script:InstallCline = [bool] ((Get-ApplicationCommand "cline") -or (Get-ApplicationCommand "npm"))
 
 Write-Step "Checking for running CodexProxy processes"
 Assert-NoFccProcessesRunning
@@ -932,11 +838,5 @@ else {
     Write-Host "For terminal use, start the proxy with: cdx-server"
     if ($script:InstallCodex) {
         Write-Host "Run Codex with: cdx-codex"
-    }
-    if ($script:InstallCline) {
-        Write-Host "Run Cline with: cdx-cline"
-    }
-    else {
-        Write-Host "The cdx-cline wrapper is ready after you install Cline CLI."
     }
 }

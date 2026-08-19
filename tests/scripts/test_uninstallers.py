@@ -10,7 +10,6 @@ CODEX_PROXY_COMMANDS = (
     "cdx-desktop",
     "cdx-server",
     "cdx-codex",
-    "cdx-cline",
     "cdx-init",
     "codexproxy",
 )

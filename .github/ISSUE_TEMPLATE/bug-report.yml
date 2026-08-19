@@ -19,7 +19,6 @@ body:
       description: If the problem occurred while using a coding CLI, select it.
       options:
         - Codex (cdx-codex)
-        - Cline (cdx-cline)
 
   - type: input
     id: selected-models

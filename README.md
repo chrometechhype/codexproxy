@@ -24,7 +24,7 @@
 ## What You Get
 
 - **48 ToS-friendly providers. 1.3B+ free tokens every month.** Use free, paid, subscription, and local models from one searchable UI without putting your account at risk. CDX follows provider terms and removes integrations if they stop being allowed.
-- **2 coding agents. One model catalog.** Run Codex or Cline with your CDX models.
+- **1 coding agent. One model catalog.** Run Codex with your CDX models.
 - **Up to 90% fewer terminal-output tokens.** Optional [RTK](https://github.com/rtk-ai/rtk) filters common command output, while five CDX optimizations handle quota probes, command-prefix detection, titles, suggestions, and filepaths without calling a provider.
 - **Terminal, desktop, IDE, or phone.** Work through native launchers, VS Code, Codex App, JetBrains, Discord, or Telegram.
 - **Voice notes in. Code out.** Talk to your agent using local Whisper or NVIDIA NIM transcription.
@@ -103,7 +103,7 @@ Codex:
 cdx-codex
 ```
 
-Codex and Cline both use the current Admin UI settings. Use the agent's model picker to choose from the models CDX exposes. Normal CLI arguments still work, for example:
+Codex uses the current Admin UI settings. Use the agent's model picker to choose from the models CDX exposes. Normal CLI arguments still work, for example:
 
 ```bash
 cdx-codex exec "hello"
@@ -129,7 +129,6 @@ extensions unchanged.
 | [NVIDIA NIM](https://build.nvidia.com/settings/api-keys) | `NVIDIA_NIM_API_KEY` | `nvidia_nim/nvidia/nemotron-3-super-120b-a12b` |
 | [OpenRouter](https://openrouter.ai/keys) | `OPENROUTER_API_KEY` | `open_router/openrouter/free` |
 | [Groq](https://console.groq.com/keys) | `GROQ_API_KEY` | `groq/llama-3.3-70b-versatile` |
-| [ClinePass](https://docs.cline.bot/getting-started/clinepass) | `CLINE_API_KEY` | `cline_pass/cline-pass/kimi-k3` |
 | [OpenAI / ChatGPT](https://learn.chatgpt.com/docs/auth) | Connect ChatGPT in the Admin UI | `openai/<model-id>` |
 | [xAI (Grok)](https://console.x.ai/team/default/api-keys) | `XAI_API_KEY` | `xai/grok-4.5` |
 | [QwenCloud Token Plan](https://home.qwencloud.com/api-keys) | `QWENCLOUD_API_KEY` | `qwencloud/qwen3.7-plus` |
@@ -236,10 +235,10 @@ Open **Admin UI → Model Config → Reasoning** and select the behavior you wan
 
 | Selection | Behavior |
 | --- | --- |
-| **From client** (default) | Use the effort sent by Codex or Cline. If none is sent, keep the provider default. |
+| **From client** (default) | Use the effort sent by Codex. If none is sent, keep the provider default. |
 | **Off** | Request reasoning to be disabled. |
 | **Low**, **Medium**, **High**, **X-High**, or **Max** | Override the client with the selected reasoning level. |
-| **Inherit** (Sonnet and Haiku only) | Use the root Reasoning selection. |
+| **Inherit** | Use the root Reasoning selection. |
 
 Providers that do not support a selected control retain their own behavior.
 
@@ -337,7 +336,7 @@ Stop every running CDX command before uninstalling.
 **Keeps**
 
 - uv and Python
-- Codex, Cline, and RTK
+- Codex and RTK
 - Shared PATH entries
 
 macOS/Linux:

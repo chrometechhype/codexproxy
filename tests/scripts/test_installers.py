@@ -18,7 +18,6 @@ CODEX_PROXY_COMMANDS = (
     "cdx-codex",
     "cdx-pi",
     "cdx-opencode",
-    "cdx-cline",
     "cdx-init",
     "codexproxy",
 )
@@ -49,7 +48,7 @@ def _braced_body(text: str, declaration: str) -> str:
 
 
 def _posix_command(name: str) -> str:
-    version = {"opencode": "1.18.18", "cline": "3.0.55"}.get(name, "1.0.0")
+    version = {"opencode": "1.18.18"}.get(name, "1.0.0")
     help_output = (
         '    echo "  --extension, -e <path>  Load an extension"\n'
         '    echo "  --models <patterns>     Scope models"'
@@ -73,13 +72,6 @@ fi
 def _posix_npm_command() -> str:
     return """#!/bin/sh
 echo "npm:$*" >> "$CALL_LOG"
-if [ "${1:-}" = "install" ] && [ "${2:-}" = "-g" ] && [ "${3:-}" = "cline" ]; then
-    [ "$FAIL_STEP" = "cline-install" ] && exit 72
-    mkdir -p "$FAKE_NPM_PREFIX/bin"
-    cp "$FAKE_FIXTURES/cline-command.sh" "$FAKE_NPM_PREFIX/bin/cline"
-    chmod +x "$FAKE_NPM_PREFIX/bin/cline"
-    exit 0
-fi
 if [ "${1:-}" = "prefix" ] && [ "${2:-}" = "-g" ]; then
     printf '%s\n' "$FAKE_NPM_PREFIX"
     exit 0
@@ -115,7 +107,6 @@ if [ "${{1:-}}" = "tool" ] && [ "${{2:-}}" = "install" ]; then
     cp "$FAKE_FIXTURES/cdx-command.sh" "$FAKE_TOOL_BIN/cdx-claude"
     cp "$FAKE_FIXTURES/cdx-command.sh" "$FAKE_TOOL_BIN/cdx-pi"
     cp "$FAKE_FIXTURES/cdx-command.sh" "$FAKE_TOOL_BIN/cdx-opencode"
-    cp "$FAKE_FIXTURES/cdx-command.sh" "$FAKE_TOOL_BIN/cdx-cline"
     if [ "$FAIL_STEP" != "cdx-missing" ]; then
         cp "$FAKE_FIXTURES/cdx-command.sh" "$FAKE_TOOL_BIN/cdx-codex"
     fi
@@ -387,7 +378,6 @@ chmod +x "$HOME/.local/bin/uv"
     _write_executable(fixtures / "codex-command.sh", _posix_command("codex"))
     _write_executable(fixtures / "pi-command.sh", _posix_command("pi"))
     _write_executable(fixtures / "opencode-command.sh", _posix_command("opencode"))
-    _write_executable(fixtures / "cline-command.sh", _posix_command("cline"))
     rtk_command = _posix_rtk_command().encode()
     with tarfile.open(
         fixtures / "rtk-x86_64-unknown-linux-musl.tar.gz", "w:gz"
@@ -473,7 +463,6 @@ def test_install_sh_fresh_install_is_verified(posix_harness: PosixHarness) -> No
     assert calls.index("codex-install:1") < calls.index("codex:--version")
     assert calls.index("pi-install") < calls.index("pi:--version")
     assert calls.index("opencode-install") < calls.index("opencode:--version")
-    assert calls.index("npm:install -g cline") < calls.index("cline:--version")
     assert calls.index("uv-install") < calls.index("uv:--version")
     assert any(
         call.startswith(
@@ -632,7 +621,6 @@ def test_install_sh_reprompts_then_installs_only_selected_agent(
     assert "Run Claude Code with: cdx-claude" not in result.stdout
     assert "Run Pi with: cdx-pi" not in result.stdout
     assert "Run OpenCode with: cdx-opencode" not in result.stdout
-    assert "Run Cline with: cdx-cline" not in result.stdout
     calls = posix_harness.calls()
     assert "codex-install:1" in calls
     assert not any("claude.ai" in call for call in calls)
@@ -741,7 +729,6 @@ def test_install_sh_preserves_valid_existing_tools(
     posix_harness.add_client("claude")
     posix_harness.add_client("codex")
     posix_harness.add_client("pi")
-    posix_harness.add_client("cline")
     posix_harness.add_uv(uv_version)
 
     result = posix_harness.run()
@@ -881,8 +868,6 @@ def test_install_sh_replaces_prerelease_uv(
         "opencode-download",
         "opencode-install",
         "opencode-verify",
-        "cline-install",
-        "cline-verify",
         "uv-download",
         "uv-install",
         "uv-verify",
@@ -915,8 +900,6 @@ def test_install_sh_stops_without_success_on_each_failure(
         "opencode-download": "opencode-install",
         "opencode-install": "opencode:--version",
         "opencode-verify": "astral.sh",
-        "cline-install": "cline:--version",
-        "cline-verify": "astral.sh",
         "uv-download": "uv-install",
         "uv-install": "uv:--version",
         "uv-verify": "uv:tool install",
@@ -1179,7 +1162,7 @@ def _windows_shortcut_icon(
 
 
 def _batch_client(name: str) -> str:
-    version = {"opencode": "1.18.18", "cline": "3.0.55"}.get(name, "1.0.0")
+    version = {"opencode": "1.18.18"}.get(name, "1.0.0")
     help_output = (
         "echo   --extension, -e ^<path^>  Load an extension\n"
         "echo   --models ^<patterns^>     Scope models"
@@ -1200,15 +1183,9 @@ exit /b 0
 def _batch_npm() -> str:
     return r"""@echo off
 echo npm:%*>>"%CALL_LOG%"
-if "%1"=="install" if "%2"=="-g" if "%3"=="cline" goto install_cline
 if "%1"=="prefix" if "%2"=="-g" echo %FAKE_NPM_PREFIX%& exit /b 0
 if "%1"=="config" if "%2"=="get" if "%3"=="prefix" echo %FAKE_NPM_PREFIX%& exit /b 0
 exit /b 71
-:install_cline
-if "%FAIL_STEP%"=="cline-install" exit /b 72
-if not exist "%FAKE_NPM_PREFIX%" mkdir "%FAKE_NPM_PREFIX%"
-copy /y "%FAKE_FIXTURES%\cline-command.cmd" "%FAKE_NPM_PREFIX%\cline.cmd" >nul
-exit /b 0
 """
 
 
@@ -1228,13 +1205,12 @@ exit /b 0
 :install
 if "%FAIL_STEP%"=="cdx-install" exit /b 53
 if not exist "%FAKE_TOOL_BIN%" mkdir "%FAKE_TOOL_BIN%"
-copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-server.cmd" >nul
-copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-desktop.cmd" >nul
-copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-claude.cmd" >nul
-copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-pi.cmd" >nul
-copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-opencode.cmd" >nul
-copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-cline.cmd" >nul
-if not "%FAIL_STEP%"=="cdx-missing" copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-codex.cmd" >nul
+    copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-server.cmd" >nul
+    copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-desktop.cmd" >nul
+    copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-claude.cmd" >nul
+    copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-pi.cmd" >nul
+    copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-opencode.cmd" >nul
+    if not "%FAIL_STEP%"=="cdx-missing" copy /y "%FAKE_FIXTURES%\cdx-command.cmd" "%FAKE_TOOL_BIN%\cdx-codex.cmd" >nul
 exit /b 0
 :update_shell
 if "%FAIL_STEP%"=="path-update" exit /b 54
@@ -1357,9 +1333,6 @@ def powershell_harness(
     (fixtures / "pi-command.cmd").write_text(_batch_client("pi"), encoding="utf-8")
     (fixtures / "opencode-command.cmd").write_text(
         _batch_client("opencode"), encoding="utf-8"
-    )
-    (fixtures / "cline-command.cmd").write_text(
-        _batch_client("cline"), encoding="utf-8"
     )
     (fixtures / "rtk-command.cmd").write_text(_batch_rtk(), encoding="utf-8")
     (fixtures / "uv-command.cmd").write_text(_batch_uv("0.11.28"), encoding="utf-8")
@@ -1562,7 +1535,6 @@ def test_install_ps1_fresh_install_is_verified(
     assert calls.index("codex-install:1") < calls.index("codex:--version")
     assert calls.index("pi-install") < calls.index("pi:--version")
     assert any("anomalyco/opencode" in call for call in calls)
-    assert calls.index("npm:install -g cline") < calls.index("cline:--version")
     assert calls.index("uv-install") < calls.index("uv:--version")
     assert any(
         call.startswith(
@@ -1799,7 +1771,6 @@ def test_install_ps1_preserves_valid_existing_tools(
     powershell_harness.add_client("claude")
     powershell_harness.add_client("codex")
     powershell_harness.add_client("pi")
-    powershell_harness.add_client("cline")
     powershell_harness.add_uv(uv_version)
 
     result = powershell_harness.run()
@@ -1941,8 +1912,6 @@ def test_install_ps1_replaces_prerelease_uv(
         "opencode-download",
         "opencode-archive",
         "opencode-verify",
-        "cline-install",
-        "cline-verify",
         "uv-download",
         "uv-install",
         "uv-verify",
@@ -1975,8 +1944,6 @@ def test_install_ps1_stops_without_success_on_each_failure(
         "opencode-download": "uv-install",
         "opencode-archive": "uv-install",
         "opencode-verify": "astral.sh",
-        "cline-install": "cline:--version",
-        "cline-verify": "astral.sh",
         "uv-download": "uv-install",
         "uv-install": "uv:--version",
         "uv-verify": "uv:tool install",

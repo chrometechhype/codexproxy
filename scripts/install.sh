@@ -1,24 +1,22 @@
 #!/bin/sh
 set -eu
 
-REPO_ARCHIVE_URL="https://github.com/Alishahryar1/codexproxy/archive/refs/heads/main.zip"
+REPO_ARCHIVE_URL="https://github.com/chrometechhype/codexproxy/archive/refs/heads/main.zip"
 PYTHON_VERSION="3.14.0"
 MIN_UV_VERSION="0.11.16"
 CODEX_INSTALL_URL="https://chatgpt.com/codex/install.sh"
-MIN_CLINE_VERSION="3.0.55"
 RTK_VERSION="0.44.2"
 RTK_RELEASE_BASE_URL="https://github.com/rtk-ai/rtk/releases/download/v$RTK_VERSION"
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 CODEX_PROXY_MACOS_BUNDLE_ID="io.github.alishahryar1.codexproxy"
 CODEX_PROXY_MACOS_OWNER_FILE=".codexproxy-owner"
-CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-codex cdx-cline cdx-init codexproxy"
+CODEX_PROXY_COMMANDS="cdx-desktop cdx-server cdx-codex cdx-init codexproxy"
 
 dry_run=0
 voice_nim=0
 voice_local=0
 voice_all=0
 install_codex=1
-install_cline=0
 enable_rtk=0
 torch_backend=""
 temporary_file=""
@@ -93,18 +91,7 @@ choose_coding_agents() {
             install_codex=0
         fi
 
-        if [ "$install_cline" -eq 1 ]; then
-            cline_default=yes
-        else
-            cline_default=no
-        fi
-        if prompt_yes_no "Install or verify Cline CLI for cdx-cline?" "$cline_default"; then
-            install_cline=1
-        else
-            install_cline=0
-        fi
-
-        if [ "$install_codex" -eq 1 ] || [ "$install_cline" -eq 1 ]; then
+        if [ "$install_codex" -eq 1 ]; then
             break
         fi
         printf 'Select at least one coding agent.\n\n' >&4
@@ -467,74 +454,6 @@ configure_rtk_for_selected_agents() {
     if [ "$install_codex" -eq 1 ]; then
         run_rtk_init init --global --codex
     fi
-    if [ "$install_cline" -eq 1 ]; then
-        printf 'Optional for each project: cd <project> && RTK_TELEMETRY_DISABLED=1 rtk init --agent cline\n'
-    fi
-}
-
-current_cline_version() {
-    if output=$(cline --version 2>/dev/null); then
-        :
-    else
-        return 1
-    fi
-
-    version=$(printf '%s\n' "$output" | awk '
-        /^[[:space:]]*((cline( version)?[[:space:]]+)|v)?[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?[[:space:]]*$/ &&
-        match($0, /[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?/) {
-            print substr($0, RSTART, RLENGTH)
-            exit
-        }
-    ')
-    [ -n "$version" ] || return 1
-    printf '%s\n' "$version"
-}
-
-verify_cline_command() {
-    if [ "$dry_run" -eq 1 ]; then
-        print_command cline --version
-        return 0
-    fi
-
-    command -v cline >/dev/null 2>&1 || fail "Cline was installed, but 'cline' is not available on PATH."
-    version=$(current_cline_version) || fail "Cline is present, but 'cline --version' did not return a valid semantic version."
-    if ! stable_version_is_supported "$version" "$MIN_CLINE_VERSION"; then
-        fail "Stable Cline $MIN_CLINE_VERSION or newer is required; found Cline $version after installation."
-    fi
-    printf 'Verified Cline %s.\n' "$version"
-}
-
-ensure_cline() {
-    add_npm_bin_directories
-
-    if [ "$dry_run" -eq 1 ]; then
-        if command -v cline >/dev/null 2>&1; then
-            print_command cline --version
-            printf 'A compatible Cline will be preserved; an older version will be upgraded with cline update.\n'
-        elif command -v npm >/dev/null 2>&1; then
-            print_command npm install -g cline
-        else
-            fail "Cline installation requires npm. Install Node.js from https://nodejs.org/en/download, then rerun the installer."
-        fi
-        verify_cline_command
-        return 0
-    fi
-
-    if command -v cline >/dev/null 2>&1; then
-        version=$(current_cline_version) || fail "Cline is present, but 'cline --version' did not return a valid semantic version."
-        if stable_version_is_supported "$version" "$MIN_CLINE_VERSION"; then
-            printf 'Cline %s already satisfies >=%s; leaving it unchanged.\n' "$version" "$MIN_CLINE_VERSION"
-            return 0
-        fi
-        printf 'Cline %s does not satisfy stable >=%s; upgrading it with Cline.\n' "$version" "$MIN_CLINE_VERSION"
-        run cline update
-    else
-        command -v npm >/dev/null 2>&1 || fail "Cline installation requires npm. Install Node.js from https://nodejs.org/en/download, then rerun the installer."
-        run npm install -g cline
-    fi
-
-    add_npm_bin_directories
-    verify_cline_command
 }
 
 ensure_codex() {
@@ -554,12 +473,7 @@ ensure_selected_coding_agents() {
         ensure_codex
     fi
 
-    if [ "$install_cline" -eq 1 ]; then
-        step "Ensuring Cline CLI is installed"
-        ensure_cline
-    fi
-
-    if [ "$install_codex" -eq 0 ] && [ "$install_cline" -eq 0 ]; then
+    if [ "$install_codex" -eq 0 ]; then
         fail "No selected coding agent was installed. Re-run the installer and choose at least one."
     fi
 }
@@ -746,7 +660,7 @@ configure_and_verify_codexproxy() {
 
     if [ "$dry_run" -eq 1 ]; then
         print_command uv tool dir --bin
-        printf '+ verify cdx-desktop, cdx-server, cdx-codex, and cdx-cline in the uv tool bin directory\n'
+        printf '+ verify cdx-desktop, cdx-server, cdx-codex, and cdx-init in the uv tool bin directory\n'
         print_command cdx-server --version
         return 0
     fi
@@ -764,7 +678,7 @@ configure_and_verify_codexproxy() {
     export PATH
     hash -r 2>/dev/null || true
 
-    for command_name in cdx-desktop cdx-server cdx-codex cdx-cline; do
+    for command_name in cdx-desktop cdx-server cdx-codex; do
         [ -x "$tool_bin/$command_name" ] || fail "CodexProxy installation did not create $tool_bin/$command_name."
     done
 
@@ -863,9 +777,6 @@ PLIST
 parse_args "$@"
 validate_args
 add_known_bin_directories
-if command -v cline >/dev/null 2>&1 || command -v npm >/dev/null 2>&1; then
-    install_cline=1
-fi
 
 step "Checking for running CodexProxy processes"
 assert_no_fcc_processes_running
@@ -916,10 +827,5 @@ else
     fi
     if [ "$install_codex" -eq 1 ]; then
         printf 'Run Codex with: cdx-codex\n'
-    fi
-    if [ "$install_cline" -eq 1 ]; then
-        printf 'Run Cline with: cdx-cline\n'
-    else
-        printf 'The cdx-cline wrapper is ready after you install Cline CLI.\n'
     fi
 fi

@@ -489,20 +489,6 @@ CAPABILITY_CONTRACTS: tuple[CapabilityContract, ...] = (
         (),
     ),
     CapabilityContract(
-        "cli",
-        "cline_cli_integration",
-        "cline_cli_integration",
-        "codexproxy.cli.launchers.cline",
-        "Cline binary, live CDX model catalog, and protected child-process files",
-        "Responses provider scoped to CDX for attached local sessions",
-        "version, detached mode, proxy, or catalog failure exits without fallback",
-        (
-            "tests/cli/test_cline_launcher.py",
-            "tests/cli/test_model_catalog.py",
-        ),
-        ("test_cline_cli_prompt_e2e",),
-    ),
-    CapabilityContract(
         "extensibility",
         "provider_platform_abcs",
         "extensible_provider_platform_abcs",

@@ -161,15 +161,12 @@ for real prompts against supported providers:
   Codex relies on, including native/interleaved reasoning, function and custom
   tool calls, generated `/model` catalog support, Responses stream lifecycle
   events, and Responses-to-Anthropic conversion at the adapter boundary.
-- `cdx-opencode`, stable OpenCode V1, and the OpenAI Responses behavior it
+- `cdx-codex`, stable Codex CLI, and the OpenAI Responses behavior it
   relies on, including an CDX-scoped model catalog and process-local provider
   configuration.
-- `cdx-cline`, stable Cline CLI, and the OpenAI Responses behavior it relies
-  on, including an CDX-scoped model catalog, attached local sessions, and
-  process-local provider configuration.
 - Configured Discord and Telegram messaging bridges, including command handling,
   reply-based conversation branches, status updates, transcript rendering,
-  managed Claude/Codex task execution where configured, task stop/clear flows,
+  managed agent task execution where configured, task stop/clear flows,
   persistence, and optional voice-note transcription.
 - Installation, update, and uninstall scripts insofar as they make the
   above workflows available on a user's machine.
@@ -229,7 +226,7 @@ per-user application bundle and desktop link. [scripts/uninstall.sh](scripts/uni
 and [scripts/uninstall.ps1](scripts/uninstall.ps1) remove those exact desktop
 artifacts, the CDX uv tool, and the managed `~/.cdx/` tree from
 [config/paths.py](src/codexproxy/config/paths.py); they do not remove
-uv, Codex, Cline, or uv-managed Python runtimes. [scripts/ci.sh](scripts/ci.sh) and
+uv, Codex, or uv-managed Python runtimes. [scripts/ci.sh](scripts/ci.sh) and
 [scripts/ci.ps1](scripts/ci.ps1) mirror [.github/workflows/tests.yml](.github/workflows/tests.yml)
 for local pre-push verification.
 
@@ -795,13 +792,6 @@ because its subscription key, quota, endpoint, and personal interactive-use
 contract are separate. It uses the ordinary OpenAI Chat transport, preserves
 reasoning history through `reasoning_content`, and does not impose one reasoning
 control or output-token default across its heterogeneous model catalog.
-ClinePass is a distinct subscription provider using Cline's programmatic
-`CLINE_API_KEY` and fixed OpenAI Chat Completions endpoint. Its declarative
-profile discovers only the dynamic `clinePass` catalog collection, consumes
-plaintext `reasoning`, preserves documented opaque `reasoning_details`, and
-sends no invented catalog-wide reasoning control. General Cline usage billing,
-CLI account authentication, and Cline-native tools remain separate product
-decisions.
 Z.ai Coding Plan (`zai`) and Z.ai API (`zai_api`) are distinct provider
 identities because their fixed endpoints select Coding Plan quota versus
 pay-as-you-go balance. They share the upstream `ZAI_API_KEY` and one declarative
@@ -1186,57 +1176,20 @@ client environment.
 owns the client-neutral projection from CDX's `/v1/models` response to direct,
 nested `provider/model` routes. It removes Claude-only compatibility aliases,
 deduplicates normal and no-thinking forms deterministically, and is shared by
-Codex, OpenCode, and Cline. Each launcher remains responsible for translating those
+Codex. The launcher remains responsible for translating those
 neutral entries into its client's configuration format.
 
-[cli/launchers/opencode.py](src/codexproxy/cli/launchers/opencode.py) and
-[cli/launchers/opencode_config.py](src/codexproxy/cli/launchers/opencode_config.py)
-own the installed `cdx-opencode` launcher for stable OpenCode V1:
+[cli/launchers/codex.py](src/codexproxy/cli/launchers/codex.py) and
+[cli/launchers/codex_model_catalog.py](src/codexproxy/cli/launchers/codex_model_catalog.py)
+own the installed `cdx-codex` launcher for stable Codex CLI:
 
-- Inference commands require OpenCode V1 1.18.18 or newer, a reachable CDX
-  server, and a non-empty routable `/v1/models` snapshot. Preparation is
-  fail-closed so OpenCode cannot fall back to a native provider.
+- Inference commands require a reachable CDX server and a non-empty
+  routable `/v1/models` snapshot. Preparation is fail-closed.
 - The launcher creates a temporary, secret-free `codexproxy` provider
-  catalog and a protected process overlay. The provider uses `@ai-sdk/openai`
+  catalog and a protected process overlay. The provider uses OpenAI Responses
   against CDX's `/v1` Responses surface, and bearer material is carried only in
   the child environment.
-- Existing `OPENCODE_CONFIG` or `OPENCODE_CONFIG_CONTENT` overrides are rejected
-  because their precedence would make CDX routing ambiguous. Persistent OpenCode
-  config, data, credentials, plugins, and sessions remain OpenCode-owned and are
-  never rewritten.
-- Native help, version, authentication, upgrade, uninstall, and completion
-  commands pass through without requiring CDX. Other arguments are forwarded
-  unchanged after the CDX process configuration is ready.
-
-[cli/launchers/cline.py](src/codexproxy/cli/launchers/cline.py) and
-[cli/launchers/cline_config.py](src/codexproxy/cli/launchers/cline_config.py)
-own the installed `cdx-cline` launcher for Cline CLI 3.0.55 or newer:
-
-- Attached inference sessions require a reachable CDX server and a non-empty
-  routable `/v1/models` snapshot. Preparation is fail-closed, and the launcher
-  prepends Cline's built-in `openai-native` provider while leaving an explicit
-  caller `--model` selection intact.
-- The launcher creates protected temporary `providers.json` and `models.json`
-  files. For that child only, they retarget Cline's existing OpenAI Responses
-  transport to CDX's `/v1` surface, rename it to CodexProxy, replace its
-  catalog with nested CDX model slugs, and carry the canonical proxy token.
-  Cline 3.0.55's session gateway cannot instantiate user-defined provider IDs,
-  so this built-in transport seam is required even though its startup picker can
-  read custom providers.
-- `CLINE_PROVIDER_SETTINGS_PATH` points only that child at the generated
-  settings, and `CLINE_SESSION_BACKEND_MODE=local` keeps attached sessions in
-  the launcher lifecycle. Native Cline config, data, credentials, plugins, and
-  sessions remain Cline-owned.
-- Native configuration and package-management commands pass through without
-  requiring CDX. Hub, dashboard, schedule, connection, hook, kanban, and Zen
-  surfaces are rejected because they can outlive the temporary credential and
-  must be run with ordinary `cline`.
-- Cline sandbox data overrides are also rejected: released Cline rewrites its
-  provider-settings path in that mode, which would displace CDX's ephemeral
-  credential file. Ordinary Cline remains the owner of sandboxed runs.
-- Cline's provider picker can still expose its native providers. Startup and
-  command-line routing remain CDX-owned; deliberately switching providers
-  inside the running Cline process is an explicit opt-out for that process.
+- Native Codex commands pass through without requiring CDX.
 
 [cli/managed/](src/codexproxy/cli/managed/) owns managed agent subprocesses used by
 Discord and Telegram messaging. Managed task invocations extend the same proxy
@@ -1261,8 +1214,8 @@ reports a count-only failure, and leaves failures available for the next cleanup
 attempt. Real-session registration is collision-safe and becomes durable tree
 state only after the manager accepts it.
 
-Codex, Pi, OpenCode, and Cline are supported through their installed launchers. CDX
-does not keep internal managed session runners for them because no user-facing
+Codex is supported through its installed launcher. CDX
+does not keep internal managed session runners for other clients because no user-facing
 messaging setting selects those clients for Discord or Telegram.
 
 ## Messaging Architecture
