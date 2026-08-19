@@ -62,6 +62,11 @@ def test_cli_scripts_are_registered() -> None:
     assert pyproject["project"]["scripts"] == {
         "cdx-server": "codexproxy.cli.entrypoints:serve",
         "cdx-codex": "codexproxy.cli.launchers.codex:launch",
+        "cdx-codex-app": "codexproxy.cli.entrypoints:launch_codex_app",
+        "cdx-codex-config": "codexproxy.cli.entrypoints:write_codex_config_only",
+        "cdx-restore": "codexproxy.cli.entrypoints:restore_codex_defaults",
+        "cdx-delete": "codexproxy.cli.entrypoints:delete_codexproxy_data",
+        "cdx-init": "codexproxy.cli.entrypoints:init_codexproxy",
     }
     assert pyproject["project"]["gui-scripts"] == {
         "cdx-desktop": "codexproxy.cli.desktop_entrypoint:launch",
