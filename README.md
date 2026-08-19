@@ -12,7 +12,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json&style=for-the-badge)](https://github.com/astral-sh/uv)
-[![Testing: Pytest](https://img.shields.io/badge/Testing-Pytest-00c0ff.svg?style=for-the-badge)](https://github.com/Alishahryar1/codexproxy/actions/workflows/tests.yml)
+[![Testing: Pytest](https://img.shields.io/badge/Testing-Pytest-00c0ff.svg?style=for-the-badge)](https://github.com/chrometechhype/codexproxy/actions/workflows/tests.yml)
 [![Type checking: Ty](https://img.shields.io/badge/type%20checking-ty-ffcc00.svg?style=for-the-badge)](https://pypi.org/project/ty/)
 [![Code style: Ruff](https://img.shields.io/badge/code%20formatting-ruff-f5a623.svg?style=for-the-badge)](https://github.com/astral-sh/ruff)
 [![Logging: Loguru](https://img.shields.io/badge/logging-loguru-4ecdc4.svg?style=for-the-badge)](https://github.com/Delgan/loguru)
@@ -33,8 +33,8 @@
 Free-tier availability and limits are controlled by each provider and may change.
 
 <div align="center">
-  <img src="assets/pic.png" alt="A coding agent running with CodexProxy" width="700">
-  <p><em>A coding agent running with CDX.</em></p>
+  <img src="assets/cdxrun.png" alt="Codex CLI running with CodexProxy" width="700">
+  <p><em>Codex CLI running through the CodexProxy proxy.</em></p>
 </div>
 
 ## Quick Start
@@ -93,10 +93,11 @@ To protect the local proxy with a bearer token, enable **Proxy Authentication**
 in Admin.
 
 <div align="center">
-  <img src="assets/admin-page.png" alt="CodexProxy Admin UI" width="700">
+  <img src="assets/adminnew.png" alt="CodexProxy Admin UI" width="700">
 </div>
 
 ### 4. Run Your Coding Agent
+
 Codex:
 
 ```bash
@@ -224,7 +225,7 @@ ollama pull llama3.1
 ollama serve
 ```
 
-Use the tag shown by `ollama list` with the `ollama/` prefix. `OLLAMA_BASE_URL` defaults to `http://localhost:11434`; CDX accepts either the root URL or an explicit `/v1` suffix.
+Use the tag shown by `ollama list` with the `ollama/` prefix. `OLLAMA_BASE_URL` defaults to `http://localhost:11434`; CDX accepts either the server root or an explicit `/v1` suffix.
 
 </details>
 
@@ -303,13 +304,13 @@ replace the final option with the matching one from the table.
 macOS/Linux:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.sh" | sh -s -- --voice-nim
+curl -fsSL "https://raw.githubusercontent.com/chrometechhype/codexproxy/main/scripts/install.sh" | sh -s -- --voice-nim
 ```
 
 Windows PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/install.ps1"))) -VoiceNim
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/chrometechhype/codexproxy/main/scripts/install.ps1"))) -VoiceNim
 ```
 
 Restart `cdx-server`. In **Admin UI → Messaging → Voice**, enable voice notes, select `cpu`, `cuda`, or `nvidia_nim`, and choose the Whisper model. Local gated models need `HUGGINGFACE_API_KEY`; NVIDIA NIM transcription needs `NVIDIA_NIM_API_KEY`.
@@ -342,18 +343,26 @@ Stop every running CDX command before uninstalling.
 macOS/Linux:
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/uninstall.sh" | sh
+curl -fsSL "https://raw.githubusercontent.com/chrometechhype/codexproxy/main/scripts/uninstall.sh" | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/codexproxy/main/scripts/uninstall.ps1")))
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/chrometechhype/codexproxy/main/scripts/uninstall.ps1")))
 ```
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `cdx-server` | Start the proxy |
+| `cdx-codex` | Write config + launch Codex CLI |
+| `cdx-desktop` | Launch the desktop app (tray) |
 
 ## Project Links
 
-- [Report bugs or request features](https://github.com/Alishahryar1/codexproxy/issues)
+- [Report bugs or request features](https://github.com/chrometechhype/codexproxy/issues)
 - [Architecture and extension guide](ARCHITECTURE.md)
 - [Contributing guide](CONTRIBUTING.md)
 
