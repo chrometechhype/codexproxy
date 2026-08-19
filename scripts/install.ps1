@@ -100,6 +100,12 @@ function Select-CodingAgents {
     }
 }
 
+function Ensure-SelectedCodingAgents {
+    if (-not $script:InstallCodex) {
+        throw "No selected coding agent was installed. Re-run the installer and choose at least one."
+    }
+}
+
 function Format-Argument {
     param([string] $Value)
 
