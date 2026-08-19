@@ -39,7 +39,7 @@ cdx-desktop = "codexproxy.cli.desktop_entrypoint:launch"
 voice = [
     "grpcio>=1.83.0",
     "grpcio-tools>=1.81.1",
-    "nvidia-riva-client>=2.26.0",
+    "nvidia-riva-client>=2.27.0",
 ]
 voice_local = [
     "torch>=2.13.0",
